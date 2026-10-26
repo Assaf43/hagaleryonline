@@ -1,13 +1,252 @@
-// Hagalery LaKol data model. Domain models (Product, Variant, Category, Room...) are added in Phase 1.
-// See ../../../../Lets start - md files/architecture.md §6 for the entity list.
+// Hagalery LaKol data model. Spec: Lets start - md files/architecture.md §6 and categories.md.
+// Phase 1 holds the catalog only; customers, orders, payments etc. are added in the phase that uses them.
+//
+// Conventions (CLAUDE.md §4.3):
+//   - identifiers, codes and enum values are English; everything a customer reads has a Hebrew field (*He)
+//   - money is stored in agorot (integer), prices include VAT
+//   - dimensions are numbers in cm, never text
 
 generator client {
-  provider               = "prisma-client"
-  output                 = "../src/generated/prisma"
-  moduleFormat           = "esm"
-  importFileExtension    = "js"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+/// Delivery mode of a variant (PRD-09, ADM-12).
+enum FulfillmentMode {
+  IN_STOCK      @map("in_stock")
+  PRE_ORDER     @map("pre_order")
+  MADE_TO_ORDER @map("made_to_order")
+  OUT_OF_STOCK  @map("out_of_stock")
+
+  @@map("fulfillment_mode")
+}
+
+/// Where an attribute value is chosen: once per product (style) or per variant (color, fabric).
+enum AttributeScope {
+  PRODUCT @map("product")
+  VARIANT @map("variant")
+
+  @@map("attribute_scope")
+}
+
+/// White-background cut-out or lifestyle ("atmosphere") photo (PRD-01).
+enum ImageKind {
+  CUTOUT    @map("cutout")
+  LIFESTYLE @map("lifestyle")
+
+  @@map("image_kind")
+}
+
+/// Furniture-type tree (sofas → corner sofas). A product belongs to exactly one category.
+model Category {
+  id        Int     @id @default(autoincrement())
+  slug      String  @unique
+  nameHe    String  @map("name_he")
+  parentId  Int?    @map("parent_id")
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  parent     Category?           @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children   Category[]          @relation("CategoryTree")
+  products   Product[]
+  attributes CategoryAttribute[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+/// Room for the main menu (decision 44). A product can appear in many rooms.
+model Room {
+  id        Int     @id @default(autoincrement())
+  slug      String  @unique
+  nameHe    String  @map("name_he")
+  sortOrder Int     @default(0) @map("sort_order")
+  active    Boolean @default(true)
+
+  products ProductRoom[]
+
+  @@map("rooms")
+}
+
+model Product {
+  id               Int      @id @default(autoincrement())
+  slug             String   @unique
+  /// English model name, required and unique (decision 46), e.g. ALBA.
+  modelName        String   @unique @map("model_name")
+  nameHe           String   @map("name_he")
+  descriptionHe    String   @default("") @map("description_he")
+  categoryId       Int      @map("category_id")
+  countryOfOrigin  String?  @map("country_of_origin")
+  warrantyMonths   Int?     @map("warranty_months")
+  careHe           String?  @map("care_he")
+  requiresAssembly Boolean  @default(false) @map("requires_assembly")
+  active           Boolean  @default(true)
+  /// "Recommended" sort: lower first.
+  sortOrder        Int      @default(0) @map("sort_order")
+  /// "Best sellers" sort: higher first. Updated from orders in a later phase.
+  popularity       Int      @default(0)
+  /// Denormalized text for search (decision 47): model name, SKUs, Hebrew name, description,
+  /// category and attribute labels. Rebuilt whenever the product changes; trigram-indexed.
+  searchText       String   @default("") @map("search_text")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  category        Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  rooms           ProductRoom[]
+  variants        Variant[]
+  images          Image[]
+  attributeValues ProductAttributeValue[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model ProductRoom {
+  productId Int @map("product_id")
+  roomId    Int @map("room_id")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  room    Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([productId, roomId])
+  @@index([roomId])
+  @@map("product_rooms")
+}
+
+/// One purchasable combination (color × fabric × chaise side × size). Dimensions live here because
+/// size variants differ in width (categories.md §6).
+model Variant {
+  id             Int             @id @default(autoincrement())
+  productId      Int             @map("product_id")
+  sku            String          @unique
+  /// Agorot, VAT included.
+  price          Int
+  /// Price before discount, agorot. Null = not on sale.
+  compareAtPrice Int?            @map("compare_at_price")
+  stock          Int             @default(0)
+  fulfillment    FulfillmentMode @default(IN_STOCK)
+  /// Maximum delivery time in business days (PRD-09).
+  leadTimeDays   Int             @map("lead_time_days")
+  /// Business days of manufacturing, for MADE_TO_ORDER.
+  productionDays Int?            @map("production_days")
+  /// Expected arrival, for PRE_ORDER.
+  expectedAt     DateTime?       @map("expected_at") @db.Date
+  sortOrder      Int             @default(0) @map("sort_order")
+  active         Boolean         @default(true)
+
+  widthCm       Decimal  @map("width_cm") @db.Decimal(6, 1)
+  depthCm       Decimal  @map("depth_cm") @db.Decimal(6, 1)
+  heightCm      Decimal  @map("height_cm") @db.Decimal(6, 1)
+  weightKg      Decimal? @map("weight_kg") @db.Decimal(6, 1)
+  /// Sofa and armchair fields (categories.md §5.1) — needed by the future room-fit feature.
+  seatHeightCm  Decimal? @map("seat_height_cm") @db.Decimal(6, 1)
+  seatDepthCm   Decimal? @map("seat_depth_cm") @db.Decimal(6, 1)
+  chaiseWidthCm Decimal? @map("chaise_width_cm") @db.Decimal(6, 1)
+  chaiseDepthCm Decimal? @map("chaise_depth_cm") @db.Decimal(6, 1)
+
+  product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  images          Image[]
+  attributeValues VariantAttributeValue[]
+
+  @@index([productId])
+  @@map("variants")
+}
+
+/// Closed-list attribute (ADM-03): color, fabric, style... Values are English codes with Hebrew labels.
+model Attribute {
+  id         Int            @id @default(autoincrement())
+  code       String         @unique
+  nameHe     String         @map("name_he")
+  scope      AttributeScope
+  filterable Boolean        @default(true)
+  sortOrder  Int            @default(0) @map("sort_order")
+
+  values     AttributeValue[]
+  categories CategoryAttribute[]
+
+  @@map("attributes")
+}
+
+model AttributeValue {
+  id          Int     @id @default(autoincrement())
+  attributeId Int     @map("attribute_id")
+  code        String
+  labelHe     String  @map("label_he")
+  /// Swatch color for color values.
+  swatchHex   String? @map("swatch_hex")
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  attribute Attribute               @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  products  ProductAttributeValue[]
+  variants  VariantAttributeValue[]
+
+  @@unique([attributeId, code])
+  @@map("attribute_values")
+}
+
+/// Which attributes a category uses for filters and variant options (categories.md §5).
+model CategoryAttribute {
+  categoryId  Int @map("category_id")
+  attributeId Int @map("attribute_id")
+  sortOrder   Int @default(0) @map("sort_order")
+
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attribute Attribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, attributeId])
+  @@map("category_attributes")
+}
+
+model ProductAttributeValue {
+  productId        Int @map("product_id")
+  attributeValueId Int @map("attribute_value_id")
+
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  attributeValue AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Restrict)
+
+  @@id([productId, attributeValueId])
+  @@map("product_attribute_values")
+}
+
+model VariantAttributeValue {
+  variantId        Int @map("variant_id")
+  attributeValueId Int @map("attribute_value_id")
+
+  variant        Variant        @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  attributeValue AttributeValue @relation(fields: [attributeValueId], references: [id], onDelete: Restrict)
+
+  @@id([variantId, attributeValueId])
+  @@map("variant_attribute_values")
+}
+
+model Image {
+  id        Int       @id @default(autoincrement())
+  productId Int       @map("product_id")
+  /// Null = shown for every variant.
+  variantId Int?      @map("variant_id")
+  url       String
+  altHe     String    @map("alt_he")
+  kind      ImageKind @default(CUTOUT)
+  sortOrder Int       @default(0) @map("sort_order")
+
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant Variant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("images")
+}
+
+/// Admin-managed search synonyms (decision 47), e.g. ספה ↔ sofa, כורסה ↔ כורסא.
+/// Every term in a group is treated as equivalent to the others.
+model SearchSynonym {
+  id    Int      @id @default(autoincrement())
+  terms String[]
+
+  @@map("search_synonyms")
 }
