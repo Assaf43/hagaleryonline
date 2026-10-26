@@ -9,6 +9,8 @@
   "scripts": {
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
+    "db:migrate": "npm run prisma:deploy -w @hg/api",
+    "db:seed": "npm run db:seed -w @hg/api",
     "build:libs": "npm run build -w @hg/models -w @hg/theme",
     "prisma:generate": "npm run prisma:generate -w @hg/api",
     "predev": "npm run build:libs && npm run prisma:generate",
