@@ -1,0 +1,33 @@
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-text);
+  transition: background var(--duration-fast) var(--ease);
+}
+.theme-toggle:hover {
+  background: var(--color-surface-alt);
+}
+.icon-sun {
+  display: none;
+}
+:host-context([data-theme='dark']) .icon-sun {
+  display: block;
+}
+:host-context([data-theme='dark']) .icon-moon {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :host-context(html:not([data-theme])) .icon-sun {
+    display: block;
+  }
+  :host-context(html:not([data-theme])) .icon-moon {
+    display: none;
+  }
+}

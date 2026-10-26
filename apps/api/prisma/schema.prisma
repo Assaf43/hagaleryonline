@@ -1,0 +1,13 @@
+// Hagalery LaKol data model. Domain models (Product, Variant, Category, Room...) are added in Phase 1.
+// See ../../../../Lets start - md files/architecture.md §6 for the entity list.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

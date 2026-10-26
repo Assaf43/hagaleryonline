@@ -1,0 +1,15 @@
+{
+  "extends": ["stylelint-config-standard-scss"],
+  "plugins": ["stylelint-use-logical"],
+  "ignoreFiles": ["**/dist/**", "**/node_modules/**", "**/.angular/**", "**/coverage/**"],
+  "rules": {
+    "csstools/use-logical": ["always", { "severity": "error" }],
+    "selector-type-no-unknown": [true, { "ignore": ["custom-elements"] }],
+    "selector-pseudo-element-no-unknown": [true, { "ignorePseudoElements": ["ng-deep"] }],
+    "color-hex-length": null,
+    "custom-property-empty-line-before": null,
+    "declaration-empty-line-before": null,
+    "rule-empty-line-before": null,
+    "scss/dollar-variable-empty-line-before": null
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "hagaleryonline",
+  "private": true,
+  "description": "Hagalery LaKol online furniture store",
+  "workspaces": [
+    "apps/*",
+    "libs/shared/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "build:libs": "npm run build -w @hg/models -w @hg/theme",
+    "prisma:generate": "npm run prisma:generate -w @hg/api",
+    "predev": "npm run build:libs && npm run prisma:generate",
+    "dev": "concurrently -k -n api,store,admin,models,theme -c yellow,magenta,cyan,gray,gray \"npm run start:dev -w @hg/api\" \"npm start -w @hg/storefront\" \"npm start -w @hg/admin\" \"npm run watch -w @hg/models\" \"npm run watch -w @hg/theme\"",
+    "prebuild": "npm run build:libs && npm run prisma:generate",
+    "build": "npm run build -w @hg/api -w @hg/storefront -w @hg/admin",
+    "pretest": "npm run build:libs && npm run prisma:generate",
+    "test": "npm run test -w @hg/theme -w @hg/api -w @hg/storefront -w @hg/admin",
+    "test:e2e": "npm run test:e2e -w @hg/api",
+    "lint": "oxlint && npm run lint -w @hg/api && npm run lint:styles",
+    "lint:styles": "stylelint \"apps/*/src/**/*.scss\" \"libs/shared/**/*.scss\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "oxlint": "^1.89.0",
+    "postcss": "^8.5.31",
+    "prettier": "^3.9.10",
+    "stylelint": "^17.16.0",
+    "stylelint-config-standard-scss": "^17.0.0",
+    "stylelint-use-logical": "^2.1.3",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true,
+    "esbuild@0.28.2": true,
+    "lmdb@3.5.6": true,
+    "msgpackr-extract@3.0.4": true,
+    "@prisma/engines@7.10.1": true,
+    "prisma@7.10.1": true
+  }
+}

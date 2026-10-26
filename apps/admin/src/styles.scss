@@ -1,0 +1,45 @@
+@use '@angular/material' as mat;
+@use '@hg/styles/fonts';
+@use '@hg/styles/tokens';
+@use '@hg/styles/base';
+
+// Angular Material theme built from the same tokens as the storefront (BRAND.md).
+// theme-type: color-scheme follows the `color-scheme` that the tokens set for light / dark,
+// and the overrides point Material's system colors at our tokens.
+html {
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$orange-palette,
+        theme-type: color-scheme,
+      ),
+      typography: (
+        plain-family: var(--font-sans),
+        brand-family: var(--font-serif),
+      ),
+      density: 0,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      primary: var(--color-accent),
+      on-primary: var(--color-on-accent),
+      primary-container: var(--color-accent-soft),
+      on-primary-container: var(--color-on-accent-soft),
+      background: var(--color-bg),
+      on-background: var(--color-text),
+      surface: var(--color-surface),
+      on-surface: var(--color-text),
+      on-surface-variant: var(--color-text-secondary),
+      surface-container: var(--color-surface),
+      surface-container-low: var(--color-surface),
+      surface-container-high: var(--color-surface-alt),
+      outline: var(--color-border-strong),
+      outline-variant: var(--color-border),
+      error: var(--color-danger),
+      corner-small: var(--radius-sm),
+      corner-medium: var(--radius-md),
+      corner-large: var(--radius-lg),
+    )
+  );
+}

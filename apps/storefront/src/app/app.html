@@ -1,0 +1,16 @@
+<header class="header">
+  <div class="container header-row">
+    <a href="/" class="logo">הגלריה לכולם</a>
+    <hg-theme-toggle />
+  </div>
+</header>
+
+<main class="container">
+  <section class="hero">
+    <p class="eyebrow">בקרוב</p>
+    <h1 class="display">בית שמרגיש<br />כמו שלכם</h1>
+    <p class="lead">ספות, כורסאות ואביזרים לסלון, עם מידות מלאות לכל דגם.</p>
+    <p class="status" [class]="apiCheck().tone" role="status">{{ apiCheck().text }}</p>
+  </section>
+  <router-outlet />
+</main>

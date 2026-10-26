@@ -1,0 +1,17 @@
+{
+  "name": "@hg/models",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Types and DTOs shared by the storefront, the admin and the API",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch --preserveWatchOutput"
+  }
+}

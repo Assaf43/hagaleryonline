@@ -1,0 +1,17 @@
+{
+  "name": "@hg/styles",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Design tokens and base styles from dev/BRAND.md, shared by the storefront and the admin",
+  "exports": {
+    "./tokens": {
+      "sass": "./_tokens.scss"
+    },
+    "./base": {
+      "sass": "./_base.scss"
+    },
+    "./fonts": {
+      "sass": "./_fonts.scss"
+    }
+  }
+}

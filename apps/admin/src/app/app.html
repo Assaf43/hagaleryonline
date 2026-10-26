@@ -1,0 +1,29 @@
+<mat-toolbar class="toolbar">
+  <span class="logo">הגלריה לכולם</span>
+  <span class="section">ניהול</span>
+  <span class="spacer"></span>
+  <hg-theme-toggle />
+</mat-toolbar>
+
+<main class="container content">
+  <h1>ממשק הניהול</h1>
+  <p class="muted">מוצרים, קטגוריות, הזמנות ומבצעים יתווספו בשלבים הבאים.</p>
+  <p class="status" role="status">
+    @switch (apiOk()) {
+      @case (null) {
+        בודק חיבור לשרת…
+      }
+      @case (true) {
+        <span class="up">השרת ומסד הנתונים פעילים</span>
+      }
+      @default {
+        <span class="down">השרת או מסד הנתונים לא זמינים</span>
+      }
+    }
+  </p>
+  <div class="actions">
+    <button matButton="filled">פעולה ראשית</button>
+    <button matButton="outlined">פעולה משנית</button>
+  </div>
+  <router-outlet />
+</main>
