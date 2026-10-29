@@ -36,6 +36,5 @@ jobs:
       - run: npm run build
       - run: npm run lint
       - run: npm test
-      - run: npm run db:migrate
-      - run: npm run db:seed
+      # e2e creates, migrates and seeds its own <db>_test database (apps/api/test/e2e-global-setup.ts)
       - run: npm run test:e2e

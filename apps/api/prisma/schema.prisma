@@ -250,3 +250,129 @@ model SearchSynonym {
 
   @@map("search_synonyms")
 }
+
+// ---------------------------------------------------------------------------
+// Admin users, permissions and login (Phase 2a, decisions 48–54, 59)
+// ---------------------------------------------------------------------------
+
+enum AdminUserStatus {
+  /// Created by the Super Admin; has not set a password yet.
+  INVITED  @map("invited")
+  ACTIVE   @map("active")
+  DISABLED @map("disabled")
+
+  @@map("admin_user_status")
+}
+
+enum AdminTokenType {
+  INVITE         @map("invite")
+  PASSWORD_RESET @map("password_reset")
+
+  @@map("admin_token_type")
+}
+
+model AdminUser {
+  id                 Int             @id @default(autoincrement())
+  /// Stored lower-case.
+  email              String          @unique
+  name               String
+  /// Exactly one user is the Super Admin (decision 48), enforced by a partial unique index.
+  isSuperAdmin       Boolean         @default(false) @map("is_super_admin")
+  status             AdminUserStatus @default(INVITED)
+  /// argon2id hash; null until the user accepts the invite. Nobody ever sees the password (decision 59).
+  passwordHash       String?         @map("password_hash")
+  /// Permission template code (decision 49), e.g. "manager". Ignored for the Super Admin.
+  template           String?
+  /// Single permissions added on top of the template.
+  extraPermissions   String[]        @default([]) @map("extra_permissions")
+  /// Single permissions removed from the template.
+  removedPermissions String[]        @default([]) @map("removed_permissions")
+  /// TOTP secret, AES-256-GCM encrypted with TOTP_ENCRYPTION_KEY. Set during setup, trusted once enabled.
+  totpSecretEnc      String?         @map("totp_secret_enc")
+  totpEnabledAt      DateTime?       @map("totp_enabled_at")
+  /// Progressive delay after failed logins (decision 59): no hard lock-out.
+  failedLogins       Int             @default(0) @map("failed_logins")
+  loginBlockedUntil  DateTime?       @map("login_blocked_until")
+  lastLoginAt        DateTime?       @map("last_login_at")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  sessions      AdminSession[]
+  tokens        AdminToken[]
+  recoveryCodes AdminRecoveryCode[]
+  auditEntries  AuditLog[]
+
+  @@map("admin_users")
+}
+
+/// Server-side session; the cookie holds a random token and only its SHA-256 is stored.
+model AdminSession {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  tokenHash   String    @unique @map("token_hash")
+  /// False between password and 2FA; such a session can only finish 2FA.
+  mfaVerified Boolean   @default(false) @map("mfa_verified")
+  /// "Remember this device": no idle timeout, the session lasts up to 30 days (decision 53).
+  trusted     Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  ip          String?
+  userAgent   String?   @map("user_agent")
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("admin_sessions")
+}
+
+/// One-time links: invite (decision 52) and password reset (decision 59). Only the SHA-256 is stored.
+model AdminToken {
+  id        Int            @id @default(autoincrement())
+  userId    Int            @map("user_id")
+  type      AdminTokenType
+  tokenHash String         @unique @map("token_hash")
+  expiresAt DateTime       @map("expires_at")
+  usedAt    DateTime?      @map("used_at")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("admin_tokens")
+}
+
+/// 10 single-use recovery codes per user (decision 51), argon2-hashed.
+model AdminRecoveryCode {
+  id       Int       @id @default(autoincrement())
+  userId   Int       @map("user_id")
+  codeHash String    @map("code_hash")
+  usedAt   DateTime? @map("used_at")
+
+  user AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("admin_recovery_codes")
+}
+
+/// Who changed what, when, before and after (decision 54). Kept two years.
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  /// Null for system actions (CLI, seed).
+  actorId    Int?     @map("actor_id")
+  /// e.g. "user.create", "user.permissions", "auth.login", "auth.2fa_reset"
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
