@@ -3,9 +3,11 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import type { ProductDetail, ProductListResponse, RoomMenuItem, SearchSuggestions } from '@hg/models';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './../src/app.module.js';
+import { configureApp } from './../src/configure-app.js';
 
-// Runs against the seeded database: `npm run db:up`, `npm run prisma:deploy -w @hg/api`, `npm run db:seed -w @hg/api`.
+// Runs against the e2e test database, migrated and seeded by test/e2e-global-setup.ts (needs `npm run db:up`).
 describe('Catalog API (e2e)', () => {
   let app: INestApplication<App>;
   const get = (url: string) => request(app.getHttpServer()).get(url);
@@ -15,8 +17,7 @@ describe('Catalog API (e2e)', () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
+    app = configureApp(moduleRef.createNestApplication<NestExpressApplication>());
     await app.init();
   });
 

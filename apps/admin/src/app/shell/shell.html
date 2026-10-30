@@ -1,0 +1,61 @@
+<mat-toolbar class="toolbar">
+  @if (isPhone()) {
+    <button matIconButton type="button" aria-label="תפריט" (click)="drawer.toggle()">
+      <svg lucideMenu></svg>
+    </button>
+  }
+  <a routerLink="/" class="logo">הגלריה לכולם</a>
+  <span class="section">ניהול</span>
+  <span class="spacer"></span>
+  <hg-theme-toggle />
+  <button matButton type="button" class="user-button" [matMenuTriggerFor]="userMenu">
+    <svg lucideUserRound></svg>
+    <span class="user-name">{{ auth.me()?.name }}</span>
+  </button>
+  <mat-menu #userMenu="matMenu" xPosition="before">
+    <button mat-menu-item type="button" (click)="changePassword()">
+      <svg lucideKeyRound></svg>
+      <span>החלפת סיסמה</span>
+    </button>
+    <button mat-menu-item type="button" (click)="logout()">
+      <svg lucideLogOut></svg>
+      <span>יציאה</span>
+    </button>
+    <button mat-menu-item type="button" (click)="logout(true)">
+      <svg lucideLogOut></svg>
+      <span>יציאה מכל המכשירים</span>
+    </button>
+  </mat-menu>
+</mat-toolbar>
+
+<mat-sidenav-container class="container-area">
+  <mat-sidenav #drawer [mode]="isPhone() ? 'over' : 'side'" [opened]="!isPhone()" position="start" class="nav">
+    <nav aria-label="ניווט ראשי">
+      <a
+        class="nav-link"
+        routerLink="/"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        (click)="isPhone() && drawer.close()"
+      >
+        <svg lucideLayoutDashboard></svg>
+        לוח בקרה
+      </a>
+      @if (auth.isSuperAdmin()) {
+        <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideUsers></svg>
+          משתמשים והרשאות
+        </a>
+      }
+      @if (canSeeAudit()) {
+        <a class="nav-link" routerLink="/audit" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideScrollText></svg>
+          יומן שינויים
+        </a>
+      }
+    </nav>
+  </mat-sidenav>
+  <mat-sidenav-content class="content">
+    <router-outlet />
+  </mat-sidenav-content>
+</mat-sidenav-container>

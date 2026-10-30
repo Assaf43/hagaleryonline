@@ -1,0 +1,74 @@
+<header class="page-head">
+  <div>
+    <h1>משתמשים והרשאות</h1>
+    <p class="page-intro">רק ה-Super Admin רואה את המסך הזה. משתמש חדש מקבל קישור הזמנה ובוחר בו סיסמה בעצמו.</p>
+  </div>
+  <button matButton="filled" type="button" (click)="create()">
+    <svg lucidePlus></svg>
+    משתמש חדש
+  </button>
+</header>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (users(); as list) {
+  <ul class="user-list">
+    @for (user of list; track user.id) {
+      <li class="user-card" [class.disabled]="user.status === 'disabled'">
+        <div class="user-main">
+          <p class="user-name">
+            {{ user.name }}
+            @if (user.isSuperAdmin) {
+              <span class="badge badge-accent">
+                <svg lucideShieldCheck></svg>
+                Super Admin
+              </span>
+            }
+          </p>
+          <p class="user-email">
+            <bdi dir="ltr">{{ user.email }}</bdi>
+          </p>
+          <p class="user-meta">
+            <span class="badge" [class]="'badge-' + user.status">{{ statusLabel[user.status] }}</span>
+            <span>{{ templateLabel(user) }}</span>
+            @if (user.status === 'active') {
+              <span>{{ user.twoFactorEnabled ? 'אימות דו-שלבי פעיל' : 'אימות דו-שלבי לא הוגדר' }}</span>
+            }
+            <span>
+              כניסה אחרונה: {{ user.lastLoginAt ? (user.lastLoginAt | date: 'd.M.yyyy HH:mm') : 'עדיין לא' }}
+            </span>
+          </p>
+        </div>
+        @if (!user.isSuperAdmin) {
+          <button
+            matIconButton
+            type="button"
+            [matMenuTriggerFor]="actions"
+            [attr.aria-label]="'פעולות עבור ' + user.name"
+          >
+            <svg lucideEllipsisVertical></svg>
+          </button>
+          <mat-menu #actions="matMenu" xPosition="before">
+            <button mat-menu-item type="button" (click)="edit(user)">עריכת שם והרשאות</button>
+            @if (user.status === 'invited') {
+              <button mat-menu-item type="button" (click)="inviteLink(user)">קישור הזמנה חדש</button>
+            }
+            @if (user.status === 'active') {
+              <button mat-menu-item type="button" (click)="resetPassword(user)">קישור לאיפוס סיסמה</button>
+              <button mat-menu-item type="button" (click)="resetTwoFactor(user)">איפוס אימות דו-שלבי</button>
+              <button mat-menu-item type="button" (click)="revokeSessions(user)">ניתוק מכל המכשירים</button>
+              <button mat-menu-item type="button" (click)="setStatus(user, 'disabled')">השבתה</button>
+            }
+            @if (user.status === 'disabled') {
+              <button mat-menu-item type="button" (click)="setStatus(user, 'active')">הפעלה מחדש</button>
+            }
+          </mat-menu>
+        }
+      </li>
+    }
+  </ul>
+} @else if (!error()) {
+  <p class="page-intro">טוען…</p>
+}

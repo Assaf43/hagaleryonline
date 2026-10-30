@@ -49,10 +49,15 @@ a {
   color: inherit;
 }
 
-img,
-svg {
+img {
   display: block;
   max-inline-size: 100%;
+}
+
+// Icons sit inline with their label (buttons, menus); size them where they are used.
+svg {
+  flex: none;
+  vertical-align: middle;
 }
 
 button {

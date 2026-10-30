@@ -43,3 +43,208 @@ html {
     )
   );
 }
+
+// ---------- Admin layout pieces shared by several screens ----------
+
+mat-form-field {
+  inline-size: 100%;
+}
+
+h1 {
+  margin-block-end: var(--space-2);
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-block-end: var(--space-5);
+}
+
+.page-intro {
+  color: var(--color-text-secondary);
+  margin-block-end: var(--space-5);
+}
+
+.panel {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.permission-list {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
+.form-error,
+.auth-error {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+}
+
+.badge-accent {
+  background: var(--color-accent-soft);
+  color: var(--color-on-accent-soft);
+}
+
+.badge-active {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.badge-invited {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.badge-disabled {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+// ---------- Dialogs ----------
+
+.dialog-form {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.dialog-note {
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.permissions {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0;
+  display: grid;
+}
+
+.permissions legend {
+  padding-inline: var(--space-1);
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.custom-mark {
+  font-size: var(--font-caption);
+  color: var(--color-accent);
+  margin-inline-start: var(--space-1);
+}
+
+.link-box {
+  padding: var(--space-3);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  font-family: monospace;
+  font-size: var(--font-small);
+  overflow-wrap: anywhere;
+  margin-block-start: var(--space-3);
+}
+
+mat-dialog-actions svg,
+.page-head svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+// ---------- Login screens (no shell) ----------
+
+.auth-page {
+  min-block-size: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5) var(--gutter);
+}
+
+.auth-card {
+  inline-size: 100%;
+  max-inline-size: 440px;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.auth-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.auth-brand {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--color-accent);
+}
+
+.auth-text,
+.auth-steps {
+  color: var(--color-text-secondary);
+}
+
+.auth-steps {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+}
+
+.auth-hint {
+  font-size: var(--font-small);
+  color: var(--color-text-muted);
+}
+
+.auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.qr {
+  justify-self: center;
+  border-radius: var(--radius-sm);
+  background: #fff; // QR codes must stay dark-on-white to scan, in dark mode too
+  padding: var(--space-2);
+}
+
+.secret {
+  font-family: monospace;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+}
+
+.recovery-codes {
+  margin: 0;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+  font-family: monospace;
+  font-size: 16px;
+  columns: 2;
+}
