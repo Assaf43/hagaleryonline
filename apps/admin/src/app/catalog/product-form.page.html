@@ -1,0 +1,446 @@
+<header class="page-head">
+  <div>
+    <a matButton routerLink="/catalog/products" class="back">
+      <svg lucideArrowRight></svg>
+      כל המוצרים
+    </a>
+    <h1>
+      @if (isNew()) {
+        מוצר חדש
+      } @else if (product(); as p) {
+        <bdi dir="ltr" class="model">{{ p.modelName }}</bdi> {{ p.nameHe }}
+      }
+    </h1>
+  </div>
+  @if (product(); as p) {
+    <span class="badge" [class.badge-active]="p.active">{{ p.active ? 'מוצג באתר' : 'מוסתר מהאתר' }}</span>
+  }
+</header>
+
+@if (!loaded()) {
+  @if (error()) {
+    <p class="form-error" role="alert">{{ error() }}</p>
+  } @else {
+    <p class="page-intro">טוען…</p>
+  }
+} @else {
+  <form class="product-form" (ngSubmit)="save()">
+    <fieldset class="form-body" [disabled]="!canEdit()">
+      <!-- Details -->
+      <section class="panel" aria-labelledby="details-title">
+        <h2 id="details-title">פרטי המוצר</h2>
+        <div class="grid-2">
+          <mat-form-field>
+            <mat-label>שם דגם באנגלית</mat-label>
+            <input
+              matInput
+              name="modelName"
+              dir="ltr"
+              required
+              maxlength="40"
+              [(ngModel)]="draft.modelName"
+              (ngModelChange)="modelOrCategoryChanged()"
+            />
+            <mat-hint>ייחודי לכל דגם, למשל ALBA</mat-hint>
+          </mat-form-field>
+          <mat-form-field>
+            <mat-label>שם בעברית</mat-label>
+            <input
+              matInput
+              name="nameHe"
+              required
+              maxlength="150"
+              [(ngModel)]="draft.nameHe"
+              (ngModelChange)="touch()"
+            />
+          </mat-form-field>
+          <mat-form-field>
+            <mat-label>קטגוריה</mat-label>
+            <mat-select
+              name="categoryId"
+              required
+              [(ngModel)]="draft.categoryId"
+              (ngModelChange)="modelOrCategoryChanged()"
+            >
+              @for (c of categories(); track c.id) {
+                <mat-option [value]="c.id">{{ c.label }}{{ c.active ? '' : ' (מוסתרת)' }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field>
+            <mat-label>כתובת באתר</mat-label>
+            <input matInput name="slug" dir="ltr" required [(ngModel)]="draft.slug" (ngModelChange)="slugEdited()" />
+            <mat-hint>
+              <bdi dir="ltr">/product/{{ draft.slug }}</bdi>
+            </mat-hint>
+          </mat-form-field>
+        </div>
+        @if (slugChangedWhileLive()) {
+          <p class="warning" role="status">
+            המוצר כבר מוצג באתר. שינוי הכתובת ישבור קישורים ישנים אליו, ממנועי חיפוש ומשיתופים.
+          </p>
+        }
+
+        <fieldset class="permissions">
+          <legend>חדרים</legend>
+          <div class="checks">
+            @for (room of structure()!.rooms; track room.id) {
+              <mat-checkbox [checked]="draft.roomIds.includes(room.id)" (change)="toggleRoom(room.id, $event.checked)">
+                {{ room.nameHe }}
+              </mat-checkbox>
+            }
+          </div>
+        </fieldset>
+
+        <div class="grid-2">
+          <mat-slide-toggle name="active" [(ngModel)]="draft.active" (ngModelChange)="touch()">
+            מוצג באתר
+          </mat-slide-toggle>
+          <mat-form-field>
+            <mat-label>סדר בתצוגה "מומלצים"</mat-label>
+            <input
+              matInput
+              type="number"
+              min="0"
+              name="sortOrder"
+              [(ngModel)]="draft.sortOrder"
+              (ngModelChange)="touch()"
+            />
+            <mat-hint>מספר נמוך מופיע קודם</mat-hint>
+          </mat-form-field>
+        </div>
+      </section>
+
+      <!-- Description -->
+      <section class="panel" aria-labelledby="description-title">
+        <h2 id="description-title">תיאור</h2>
+        <hga-rich-text-editor
+          label="תיאור המוצר"
+          [value]="draft.descriptionHe"
+          (valueChange)="descriptionChanged($event)"
+        />
+      </section>
+
+      <!-- Attributes -->
+      @if (productAttributes().length) {
+        <section class="panel" aria-labelledby="attributes-title">
+          <h2 id="attributes-title">מאפיינים</h2>
+          <p class="muted">משמשים לסינון באתר ולטבלת המפרט בדף המוצר.</p>
+          <div class="grid-2">
+            @for (a of productAttributes(); track a.id) {
+              <mat-form-field>
+                <mat-label>{{ a.nameHe }}</mat-label>
+                <mat-select
+                  multiple
+                  [name]="'attr-' + a.code"
+                  [ngModel]="draft.attributes[a.code] ?? []"
+                  (ngModelChange)="setAttribute(a.code, $event)"
+                >
+                  @for (v of a.values; track v.id) {
+                    <mat-option [value]="v.code">{{ v.labelHe }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            }
+          </div>
+        </section>
+      }
+
+      <!-- More details -->
+      <section class="panel" aria-labelledby="more-title">
+        <h2 id="more-title">פרטים נוספים</h2>
+        <div class="grid-2">
+          <mat-form-field>
+            <mat-label>ארץ ייצור</mat-label>
+            <input matInput name="country" [(ngModel)]="draft.countryOfOrigin" (ngModelChange)="touch()" />
+          </mat-form-field>
+          <mat-form-field>
+            <mat-label>אחריות (חודשים)</mat-label>
+            <input
+              matInput
+              type="number"
+              min="0"
+              name="warranty"
+              [(ngModel)]="draft.warrantyMonths"
+              (ngModelChange)="touch()"
+            />
+          </mat-form-field>
+        </div>
+        <mat-form-field>
+          <mat-label>הוראות טיפול וניקוי</mat-label>
+          <textarea matInput rows="3" name="care" [(ngModel)]="draft.careHe" (ngModelChange)="touch()"></textarea>
+        </mat-form-field>
+        <mat-checkbox name="assembly" [(ngModel)]="draft.requiresAssembly" (ngModelChange)="touch()">
+          דורש הרכבה
+        </mat-checkbox>
+      </section>
+
+      <!-- Images (Phase 2d) -->
+      <section class="panel images-placeholder" aria-labelledby="images-title">
+        <h2 id="images-title">תמונות</h2>
+        <p class="muted">
+          <svg lucideImage></svg>
+          העלאת תמונות תתווסף בשלב הבא (גרירה או צילום מהטלפון).
+        </p>
+      </section>
+
+      <!-- Variants -->
+      <section class="panel" aria-labelledby="variants-title">
+        <div class="variants-head">
+          <h2 id="variants-title">וריאנטים ({{ rows.length }})</h2>
+          @if (canEdit()) {
+            <div class="variants-actions">
+              <button matButton="tonal" type="button" (click)="openGenerator()" [disabled]="!draft.modelName">
+                <svg lucideSparkles></svg>
+                יצירת צירופים
+              </button>
+              <button matButton="outlined" type="button" (click)="openBulkEdit()" [disabled]="!rows.length">
+                עריכה מרובה{{ selected().size ? ' (' + selected().size + ')' : '' }}
+              </button>
+              <button matButton type="button" (click)="addRow()">
+                <svg lucidePlus></svg>
+                שורה
+              </button>
+            </div>
+          }
+        </div>
+        <p class="muted">מחירים בש"ח כולל מע"מ, מידות בס"מ. סמנו שורות כדי לערוך כמה יחד.</p>
+
+        @if (rows.length) {
+          <div class="table-scroll" tabindex="0" role="region" aria-label="טבלת וריאנטים">
+            <table class="variants">
+              <thead>
+                <tr>
+                  <th>
+                    <mat-checkbox
+                      aria-label="בחירת כל השורות"
+                      [checked]="selected().size === rows.length"
+                      [indeterminate]="selected().size > 0 && selected().size < rows.length"
+                      (change)="toggleAll($event.checked)"
+                    />
+                  </th>
+                  <th>אפשרויות</th>
+                  <th>מק"ט</th>
+                  <th>מחיר</th>
+                  <th>לפני הנחה</th>
+                  <th>מלאי</th>
+                  <th>אספקה</th>
+                  <th>ימים</th>
+                  <th>רוחב</th>
+                  <th>עומק</th>
+                  <th>גובה</th>
+                  <th>פעיל</th>
+                  <th><span class="visually-hidden">פעולות</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rows; track row.key; let i = $index) {
+                  <tr [class.inactive]="!row.active">
+                    <td>
+                      <mat-checkbox
+                        [aria-label]="'בחירת שורה ' + (i + 1)"
+                        [checked]="selected().has(row.key)"
+                        (change)="toggleSelected(row, $event.checked)"
+                      />
+                    </td>
+                    <td class="options-cell">{{ optionLabel(row) || '—' }}</td>
+                    <td>
+                      <input
+                        class="cell sku"
+                        dir="ltr"
+                        [name]="'sku' + row.key"
+                        [attr.aria-label]="'מק&quot;ט בשורה ' + (i + 1)"
+                        [(ngModel)]="row.sku"
+                        (ngModelChange)="touch()"
+                        required
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="cell num"
+                        type="number"
+                        min="1"
+                        [name]="'price' + row.key"
+                        [attr.aria-label]="'מחיר בשורה ' + (i + 1)"
+                        [(ngModel)]="row.price"
+                        (ngModelChange)="touch()"
+                        required
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="cell num"
+                        type="number"
+                        min="1"
+                        [name]="'compare' + row.key"
+                        [attr.aria-label]="'מחיר לפני הנחה בשורה ' + (i + 1)"
+                        [(ngModel)]="row.compareAtPrice"
+                        (ngModelChange)="touch()"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="cell num short"
+                        type="number"
+                        min="0"
+                        [name]="'stock' + row.key"
+                        [attr.aria-label]="'מלאי בשורה ' + (i + 1)"
+                        [(ngModel)]="row.stock"
+                        (ngModelChange)="touch()"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        class="cell"
+                        [name]="'ful' + row.key"
+                        [attr.aria-label]="'מצב אספקה בשורה ' + (i + 1)"
+                        [(ngModel)]="row.fulfillment"
+                        (ngModelChange)="touch()"
+                      >
+                        @for (f of fulfillments; track f[0]) {
+                          <option [value]="f[0]">{{ f[1] }}</option>
+                        }
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        class="cell num short"
+                        type="number"
+                        min="0"
+                        [name]="'lead' + row.key"
+                        [attr.aria-label]="'זמן אספקה בימים בשורה ' + (i + 1)"
+                        [(ngModel)]="row.leadTimeDays"
+                        (ngModelChange)="touch()"
+                      />
+                    </td>
+                    @for (dim of ['widthCm', 'depthCm', 'heightCm']; track dim) {
+                      <td>
+                        <input
+                          class="cell num short"
+                          type="number"
+                          min="1"
+                          step="0.1"
+                          [name]="dim + row.key"
+                          [attr.aria-label]="dimLabel(dim) + ' בשורה ' + (i + 1)"
+                          [(ngModel)]="$any(row)[dim]"
+                          (ngModelChange)="touch()"
+                        />
+                      </td>
+                    }
+                    <td>
+                      <mat-checkbox
+                        [name]="'active' + row.key"
+                        [aria-label]="'שורה ' + (i + 1) + ' פעילה'"
+                        [(ngModel)]="row.active"
+                        (ngModelChange)="touch()"
+                      />
+                    </td>
+                    <td class="row-actions">
+                      <button
+                        matIconButton
+                        type="button"
+                        [attr.aria-label]="'פרטים נוספים לשורה ' + (i + 1)"
+                        [attr.aria-expanded]="expanded().has(row.key)"
+                        (click)="toggleExpanded(row)"
+                      >
+                        @if (expanded().has(row.key)) {
+                          <svg lucideChevronUp></svg>
+                        } @else {
+                          <svg lucideChevronDown></svg>
+                        }
+                      </button>
+                      @if (canEdit()) {
+                        <button
+                          matIconButton
+                          type="button"
+                          [attr.aria-label]="'מחיקת שורה ' + (i + 1)"
+                          (click)="removeRow(row)"
+                        >
+                          <svg lucideTrash2></svg>
+                        </button>
+                      }
+                    </td>
+                  </tr>
+                  @if (expanded().has(row.key)) {
+                    <tr class="details-row">
+                      <td colspan="13">
+                        <div class="details">
+                          @for (a of variantAttributes(); track a.id) {
+                            <mat-form-field>
+                              <mat-label>{{ a.nameHe }}</mat-label>
+                              <mat-select
+                                [name]="'opt-' + a.code + row.key"
+                                [ngModel]="row.options[a.code] ?? null"
+                                (ngModelChange)="setOption(row, a.code, $event)"
+                              >
+                                <mat-option [value]="null">—</mat-option>
+                                @for (v of a.values; track v.id) {
+                                  <mat-option [value]="v.code">{{ v.labelHe }}</mat-option>
+                                }
+                              </mat-select>
+                            </mat-form-field>
+                          }
+                          @for (f of extraFields; track f.key) {
+                            <mat-form-field>
+                              <mat-label>{{ f.label }}</mat-label>
+                              <input
+                                matInput
+                                type="number"
+                                min="0"
+                                [step]="f.step"
+                                [name]="f.key + row.key"
+                                [(ngModel)]="$any(row)[f.key]"
+                                (ngModelChange)="touch()"
+                              />
+                            </mat-form-field>
+                          }
+                          @if (row.fulfillment === 'pre_order') {
+                            <mat-form-field>
+                              <mat-label>תאריך הגעה צפוי</mat-label>
+                              <input
+                                matInput
+                                type="date"
+                                [name]="'exp' + row.key"
+                                [(ngModel)]="row.expectedAt"
+                                (ngModelChange)="touch()"
+                              />
+                            </mat-form-field>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="empty">עדיין אין וריאנטים. "יצירת צירופים" יוצר את כל השילובים של מידות, צבעים ובדים בבת אחת.</p>
+        }
+      </section>
+    </fieldset>
+
+    @if (canEdit()) {
+      <div class="save-bar">
+        @if (error()) {
+          <p class="form-error" role="alert">
+            {{ error() }}
+            @if (conflict()) {
+              <button matButton type="button" (click)="reload()">טעינת הגרסה העדכנית</button>
+            }
+          </p>
+        }
+        <div class="save-actions">
+          <span class="muted" aria-live="polite">{{ dirty() ? 'יש שינויים שלא נשמרו' : 'הכול שמור' }}</span>
+          <span class="spacer"></span>
+          @if (isSuperAdmin() && product()) {
+            <button matButton type="button" class="danger" (click)="remove()">מחיקה לצמיתות</button>
+          }
+          <button matButton="filled" type="submit" [disabled]="busy() || !dirty()">
+            {{ busy() ? 'שומר…' : 'שמירה' }}
+          </button>
+        </div>
+      </div>
+    }
+  </form>
+}

@@ -19,7 +19,45 @@ const ACTIONS: Record<string, string> = {
   'user.password_reset_link': 'קישור לאיפוס סיסמה',
   'user.2fa_reset': 'איפוס אימות דו-שלבי',
   'user.sessions_revoked': 'ניתוק כל ההתחברויות',
+  'product.create': 'יצירת מוצר',
+  'product.update': 'עדכון מוצר',
+  'product.delete': 'מחיקת מוצר לצמיתות',
+  'variant.create': 'הוספת וריאנט',
+  'variant.update': 'עדכון וריאנט',
+  'variant.delete': 'מחיקת וריאנט',
+  'category.create': 'יצירת קטגוריה',
+  'category.update': 'עדכון קטגוריה',
+  'room.create': 'יצירת חדר',
+  'room.update': 'עדכון חדר',
+  'attribute.create': 'יצירת רשימת ערכים',
+  'attribute.update': 'עדכון רשימת ערכים',
+  'attribute_value.create': 'הוספת ערך לרשימה',
+  'attribute_value.update': 'עדכון ערך ברשימה',
+  'attribute_value.delete': 'מחיקת ערך מרשימה',
+  'synonym.create': 'הוספת מילים נרדפות',
+  'synonym.update': 'עדכון מילים נרדפות',
+  'synonym.delete': 'מחיקת מילים נרדפות',
 };
+
+const ENTITIES: Record<string, string> = {
+  admin_user: 'משתמש',
+  product: 'מוצר',
+  variant: 'וריאנט',
+  category: 'קטגוריה',
+  room: 'חדר',
+  attribute: 'רשימה',
+  attribute_value: 'ערך',
+  synonym: 'מילים נרדפות',
+};
+
+/** Prices are stored in agorot; show them in shekels. */
+const MONEY = new Set(['price', 'compareAtPrice']);
+const ILS = new Intl.NumberFormat('he-IL', {
+  style: 'currency',
+  currency: 'ILS',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
 
 const FIELDS: Record<string, string> = {
   name: 'שם',
@@ -28,6 +66,42 @@ const FIELDS: Record<string, string> = {
   template: 'תבנית',
   extraPermissions: 'הרשאות שנוספו',
   removedPermissions: 'הרשאות שהוסרו',
+  modelName: 'שם דגם',
+  nameHe: 'שם',
+  slug: 'כתובת באתר',
+  descriptionHe: 'תיאור',
+  categoryId: 'קטגוריה',
+  roomIds: 'חדרים',
+  attributes: 'מאפיינים',
+  countryOfOrigin: 'ארץ ייצור',
+  warrantyMonths: 'אחריות (חודשים)',
+  careHe: 'הוראות טיפול',
+  requiresAssembly: 'דורש הרכבה',
+  active: 'מוצג / פעיל',
+  sortOrder: 'סדר',
+  sku: 'מק"ט',
+  price: 'מחיר',
+  compareAtPrice: 'מחיר לפני הנחה',
+  stock: 'מלאי',
+  fulfillment: 'מצב אספקה',
+  leadTimeDays: 'זמן אספקה (ימים)',
+  productionDays: 'ימי ייצור',
+  expectedAt: 'תאריך הגעה',
+  widthCm: 'רוחב',
+  depthCm: 'עומק',
+  heightCm: 'גובה',
+  weightKg: 'משקל',
+  seatHeightCm: 'גובה מושב',
+  seatDepthCm: 'עומק מושב',
+  chaiseWidthCm: 'רוחב שזלונג',
+  chaiseDepthCm: 'עומק שזלונג',
+  options: 'אפשרויות',
+  parentId: 'קטגוריית אב',
+  attributeCodes: 'מסננים',
+  labelHe: 'שם בעברית',
+  swatchHex: 'צבע דוגמית',
+  filterable: 'לסינון',
+  terms: 'מילים',
 };
 
 /** Who changed what and when (ADM-11, decision 54). */
@@ -37,7 +111,9 @@ const FIELDS: Record<string, string> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h1>יומן שינויים</h1>
-    <p class="page-intro">כל שינוי במשתמשים, בהרשאות ובהתחברויות. בהמשך גם מוצרים, מחירים ומלאי. נשמר שנתיים.</p>
+    <p class="page-intro">
+      כל שינוי במשתמשים, בהרשאות, בהתחברויות, במוצרים, במחירים, במלאי ובמבנה הקטלוג. נשמר שנתיים.
+    </p>
     @if (error()) {
       <p class="form-error" role="alert">{{ error() }}</p>
     }
@@ -52,7 +128,7 @@ const FIELDS: Record<string, string> = {
             <p class="muted">
               {{ entry.actor ? 'על ידי ' + entry.actor.name : 'פעולת מערכת' }}
               @if (entry.entityId) {
-                · {{ entry.entityType === 'admin_user' ? 'משתמש' : entry.entityType }}:
+                · {{ entityLabel(entry.entityType) }}:
                 {{ entry.entityLabel ?? '#' + entry.entityId }}
               }
             </p>
@@ -143,6 +219,10 @@ export class AuditPageComponent implements OnInit {
     }
   }
 
+  entityLabel(type: string): string {
+    return ENTITIES[type] ?? type;
+  }
+
   actionLabel(action: string): string {
     return ACTIONS[action] ?? action;
   }
@@ -151,18 +231,38 @@ export class AuditPageComponent implements OnInit {
     return Math.ceil(d.total / d.pageSize);
   }
 
-  /** Fields that differ between before and after, for "user.update". */
+  /** Fields that differ between before and after (only changed fields are recorded for catalog entries). */
   changes(entry: AuditEntry): { field: string; label: string; before: string; after: string }[] {
     const before = (entry.before ?? {}) as Record<string, unknown>;
     const after = (entry.after ?? {}) as Record<string, unknown>;
     if (!entry.before || !entry.after) return [];
     return Object.keys(FIELDS)
-      .filter((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
-      .map((field) => ({ field, label: FIELDS[field], before: show(before[field]), after: show(after[field]) }));
+      .filter(
+        (field) =>
+          (field in before || field in after) && JSON.stringify(before[field]) !== JSON.stringify(after[field]),
+      )
+      .map((field) => ({
+        field,
+        label: FIELDS[field],
+        before: show(field, before[field]),
+        after: show(field, after[field]),
+      }));
   }
 }
 
-function show(value: unknown): string {
+function show(field: string, value: unknown): string {
+  if (value == null || value === '') return '—';
+  if (MONEY.has(field) && typeof value === 'number') return ILS.format(value / 100);
+  // A description is HTML and can be long: say it changed rather than print it.
+  if (field === 'descriptionHe') return '(טקסט)';
+  if (typeof value === 'boolean') return value ? 'כן' : 'לא';
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
-  return value == null || value === '' ? '—' : String(value);
+  if (typeof value === 'object') {
+    return (
+      Object.entries(value as Record<string, unknown>)
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join('/') : String(v)}`)
+        .join(', ') || '—'
+    );
+  }
+  return String(value);
 }
