@@ -1,0 +1,220 @@
+.back {
+  margin-inline-start: calc(-1 * var(--space-3));
+  margin-block-end: var(--space-1);
+}
+
+.back svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.model {
+  color: var(--color-accent);
+}
+
+.product-form {
+  display: grid;
+  gap: var(--space-4);
+  padding-block-end: var(--space-9);
+}
+
+.form-body {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.form-body > *,
+.panel > * {
+  // Let the wide variants table scroll inside its box instead of widening the page.
+  min-inline-size: 0;
+}
+
+.panel h2 {
+  font-size: var(--font-h3);
+  margin: 0;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-1) var(--space-4);
+  align-items: center;
+}
+
+@media (width < 720px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+}
+
+.muted,
+.empty {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+  margin: 0;
+}
+
+.warning {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+}
+
+.images-placeholder svg {
+  inline-size: 18px;
+  block-size: 18px;
+  margin-inline-end: var(--space-1);
+}
+
+// ---------- Variants table ----------
+
+.variants-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.variants-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.variants-actions svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.table-scroll {
+  // relative: the visually-hidden header text is absolutely positioned and must be clipped here too.
+  position: relative;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.variants {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-small);
+}
+
+.variants th {
+  text-align: start;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-alt);
+  padding: var(--space-2);
+  white-space: nowrap;
+}
+
+.variants td {
+  padding: var(--space-1) var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.variants tr.inactive td {
+  color: var(--color-text-muted);
+}
+
+.options-cell {
+  white-space: nowrap;
+}
+
+.cell {
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  inline-size: 100%;
+  min-inline-size: 72px;
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+.cell.sku {
+  min-inline-size: 170px;
+  font-family: monospace;
+}
+
+.cell.num {
+  min-inline-size: 90px;
+}
+
+select.cell {
+  min-inline-size: 150px;
+}
+
+.cell.short {
+  min-inline-size: 64px;
+}
+
+.row-actions {
+  white-space: nowrap;
+}
+
+.row-actions svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.details-row td {
+  background: var(--color-surface-alt);
+}
+
+.details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0 var(--space-3);
+  padding-block-start: var(--space-2);
+}
+
+// ---------- Save bar ----------
+
+.save-bar {
+  position: sticky;
+  inset-block-end: 0;
+  z-index: 2;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 8%);
+}
+
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.danger {
+  color: var(--color-danger);
+}

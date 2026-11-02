@@ -7,7 +7,7 @@ import { AuthService } from '../core/auth.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h1>שלום, {{ auth.me()?.name }}</h1>
-    <p class="page-intro">ניהול הקטלוג, התמונות והייבוא יתווספו בשלבים הבאים.</p>
+    <p class="page-intro">תמונות וייבוא מ-Excel יתווספו בשלבים הבאים.</p>
     <section class="panel">
       <h2>ההרשאות שלכם</h2>
       @if (auth.isSuperAdmin()) {

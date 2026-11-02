@@ -37,6 +37,25 @@ export const routes: Routes = [
         title: 'משתמשים והרשאות',
       },
       {
+        path: 'catalog/products',
+        canMatch: [hasPermission('catalog.view')],
+        loadComponent: () => import('./catalog/products.page').then((m) => m.ProductsPage),
+        title: 'מוצרים',
+      },
+      {
+        path: 'catalog/products/:id',
+        canMatch: [hasPermission('catalog.view')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
+        loadComponent: () => import('./catalog/product-form.page').then((m) => m.ProductFormPage),
+        title: 'עריכת מוצר',
+      },
+      {
+        path: 'catalog/structure',
+        canMatch: [hasPermission('catalog.view')],
+        loadComponent: () => import('./catalog/structure.page').then((m) => m.StructurePage),
+        title: 'מבנה הקטלוג',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),

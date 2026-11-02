@@ -41,6 +41,26 @@
         <svg lucideLayoutDashboard></svg>
         לוח בקרה
       </a>
+      @if (can('catalog.view')) {
+        <a
+          class="nav-link"
+          routerLink="/catalog/products"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideSofa></svg>
+          מוצרים
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/catalog/structure"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideFolderTree></svg>
+          מבנה הקטלוג
+        </a>
+      }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>

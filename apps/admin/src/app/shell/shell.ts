@@ -9,14 +9,17 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { map } from 'rxjs';
 import {
+  LucideFolderTree,
   LucideKeyRound,
   LucideLayoutDashboard,
   LucideLogOut,
   LucideMenu,
   LucideScrollText,
+  LucideSofa,
   LucideUserRound,
   LucideUsers,
 } from '@lucide/angular';
+import type { Permission } from '@hg/models';
 import { ThemeToggle } from '@hg/ui';
 import { AuthService } from '../core/auth.service';
 import { ChangePasswordDialog } from './change-password.dialog';
@@ -33,11 +36,13 @@ import { ChangePasswordDialog } from './change-password.dialog';
     MatSidenavModule,
     MatToolbarModule,
     ThemeToggle,
+    LucideFolderTree,
     LucideKeyRound,
     LucideLayoutDashboard,
     LucideLogOut,
     LucideMenu,
     LucideScrollText,
+    LucideSofa,
     LucideUserRound,
     LucideUsers,
   ],
@@ -56,7 +61,11 @@ export class Shell {
       .pipe(map((s) => s.matches)),
     { initialValue: false },
   );
-  protected readonly canSeeAudit = computed(() => this.auth.me()?.permissions.includes('audit.view') ?? false);
+  protected readonly canSeeAudit = computed(() => this.can('audit.view'));
+
+  protected can(permission: Permission): boolean {
+    return this.auth.me()?.permissions.includes(permission) ?? false;
+  }
 
   changePassword() {
     this.dialog.open(ChangePasswordDialog, { width: '440px', maxWidth: '95vw' });

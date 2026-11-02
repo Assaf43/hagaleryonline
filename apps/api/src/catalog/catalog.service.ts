@@ -14,7 +14,7 @@ import { queryProducts } from './product-query.js';
 import { SearchProvider } from './search/search-provider.js';
 import { normalizeSearchText, tokenizeQuery } from './search/search-text.js';
 
-/** Catalog read model TTL. Admin changes (Phase 2) will also invalidate the `catalog:` prefix. */
+/** Catalog read model TTL. Admin saves (catalog-admin) also invalidate the `catalog:` prefix right away. */
 export const CATALOG_TTL_MS = 60_000;
 const SUGGEST_PRODUCTS = 6;
 const SUGGEST_CATEGORIES = 4;

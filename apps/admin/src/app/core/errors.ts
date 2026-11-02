@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import type { AuthErrorCode } from '@hg/models';
+import type { ActivationProblem, AuthErrorCode, CatalogErrorCode } from '@hg/models';
 
 const MESSAGES: Record<AuthErrorCode, string> = {
   invalid_credentials: 'האימייל או הסיסמה שגויים.',
@@ -20,10 +20,86 @@ const WEAK_PASSWORD: Record<string, string> = {
   too_personal: 'הסיסמה לא יכולה לכלול את השם או האימייל שלכם.',
 };
 
+/** Field names the catalog API reports, in Hebrew. Variant fields arrive as "variants.<row>.<field>". */
+const FIELDS: Record<string, string> = {
+  slug: 'כתובת באתר',
+  modelName: 'שם דגם',
+  nameHe: 'שם',
+  descriptionHe: 'תיאור',
+  categoryId: 'קטגוריה',
+  roomIds: 'חדרים',
+  attributes: 'מאפיינים',
+  warrantyMonths: 'אחריות',
+  sortOrder: 'סדר',
+  parentId: 'קטגוריית אב',
+  attributeCodes: 'מסננים',
+  code: 'קוד באנגלית',
+  labelHe: 'שם בעברית',
+  swatchHex: 'צבע לדוגמית',
+  scope: 'רמת המאפיין',
+  terms: 'מילים',
+  value: 'ערך',
+  sku: 'מק"ט',
+  price: 'מחיר',
+  compareAtPrice: 'מחיר לפני הנחה',
+  stock: 'מלאי',
+  fulfillment: 'מצב אספקה',
+  leadTimeDays: 'זמן אספקה',
+  productionDays: 'ימי ייצור',
+  expectedAt: 'תאריך הגעה',
+  options: 'אפשרויות',
+  widthCm: 'רוחב',
+  depthCm: 'עומק',
+  heightCm: 'גובה',
+  weightKg: 'משקל',
+  seatHeightCm: 'גובה מושב',
+  seatDepthCm: 'עומק מושב',
+  chaiseWidthCm: 'רוחב שזלונג',
+  chaiseDepthCm: 'עומק שזלונג',
+};
+
+const ACTIVATION: Record<ActivationProblem, string> = {
+  no_variants: 'צריך לפחות וריאנט פעיל אחד',
+  category_hidden: 'הקטגוריה מוסתרת',
+};
+
+/** "variants.3.price" → "מחיר בשורה 4"; "slug" → "כתובת באתר". */
+export function fieldLabel(field: string): string {
+  const variant = /^variants\.(\d+)\.(\w+)$/.exec(field);
+  if (variant) return `${FIELDS[variant[2]] ?? variant[2]} בשורה ${Number(variant[1]) + 1}`;
+  return FIELDS[field] ?? field;
+}
+
+function catalogMessage(body: {
+  code?: CatalogErrorCode;
+  field?: string;
+  value?: string;
+  reasons?: ActivationProblem[];
+}): string | null {
+  switch (body.code) {
+    case 'conflict':
+      return 'מישהו אחר שמר את המוצר בזמן שעבדתם עליו. טענו אותו מחדש כדי לראות את השינויים, ואז ערכו שוב.';
+    case 'duplicate':
+      return `${fieldLabel(body.field ?? '')}${body.value ? ` "${body.value}"` : ''} כבר קיים. בחרו ערך אחר.`;
+    case 'invalid':
+      return `יש לבדוק את השדה: ${fieldLabel(body.field ?? '')}.`;
+    case 'in_use':
+      return 'אי אפשר למחוק, כי יש מוצרים שמשתמשים בזה.';
+    case 'incomplete':
+      return `אי אפשר להציג את המוצר באתר עדיין: ${(body.reasons ?? []).map((r) => ACTIVATION[r]).join(', ')}.`;
+    case 'not_found':
+      return 'הפריט לא נמצא. ייתכן שנמחק.';
+    default:
+      return null;
+  }
+}
+
 /** A Hebrew sentence for any error the admin API returns. */
 export function errorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'משהו השתבש. נסו שוב.';
   if (error.status === 0) return 'אין חיבור לשרת. בדקו את החיבור לאינטרנט.';
+  const catalog = catalogMessage(error.error ?? {});
+  if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };
   if (body.code === 'weak_password' && body.reason) return WEAK_PASSWORD[body.reason] ?? MESSAGES.weak_password;
   if (body.code === 'too_many_attempts' && body.retryAfterSeconds) {

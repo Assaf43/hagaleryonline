@@ -64,14 +64,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
         include: { actor: { select: { id: true, name: true } } },
       }),
     ]);
-    const userIds = [
-      ...new Set(rows.filter((r) => r.entityType === 'admin_user' && r.entityId).map((r) => Number(r.entityId))),
-    ];
-    const names = new Map(
-      (await this.prisma.adminUser.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })).map(
-        (u) => [String(u.id), u.name],
-      ),
-    );
+    const labels = await this.labels(rows);
     return {
       total,
       page: filter.page,
@@ -83,11 +76,67 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
         action: r.action,
         entityType: r.entityType,
         entityId: r.entityId,
-        entityLabel: r.entityType === 'admin_user' && r.entityId ? (names.get(r.entityId) ?? null) : null,
+        entityLabel: (r.entityId && labels.get(`${r.entityType}:${r.entityId}`)) || deletedLabel(r.before),
         before: r.before,
         after: r.after,
       })),
     };
+  }
+
+  /** Readable names for the entities on a page: user name, model name, SKU, category or value label. */
+  private async labels(rows: { entityType: string; entityId: string | null }[]): Promise<Map<string, string>> {
+    const idsOf = (type: string) => [
+      ...new Set(rows.filter((r) => r.entityType === type && r.entityId).map((r) => Number(r.entityId))),
+    ];
+    const lookups: [string, Promise<{ id: number; label: string }[]>][] = [
+      [
+        'admin_user',
+        this.prisma.adminUser
+          .findMany({ where: { id: { in: idsOf('admin_user') } } })
+          .then((l) => l.map((u) => ({ id: u.id, label: u.name }))),
+      ],
+      [
+        'product',
+        this.prisma.product
+          .findMany({ where: { id: { in: idsOf('product') } } })
+          .then((l) => l.map((p) => ({ id: p.id, label: `${p.modelName} · ${p.nameHe}` }))),
+      ],
+      [
+        'variant',
+        this.prisma.variant
+          .findMany({ where: { id: { in: idsOf('variant') } } })
+          .then((l) => l.map((v) => ({ id: v.id, label: v.sku }))),
+      ],
+      [
+        'category',
+        this.prisma.category
+          .findMany({ where: { id: { in: idsOf('category') } } })
+          .then((l) => l.map((c) => ({ id: c.id, label: c.nameHe }))),
+      ],
+      [
+        'room',
+        this.prisma.room
+          .findMany({ where: { id: { in: idsOf('room') } } })
+          .then((l) => l.map((r) => ({ id: r.id, label: r.nameHe }))),
+      ],
+      [
+        'attribute',
+        this.prisma.attribute
+          .findMany({ where: { id: { in: idsOf('attribute') } } })
+          .then((l) => l.map((a) => ({ id: a.id, label: a.nameHe }))),
+      ],
+      [
+        'attribute_value',
+        this.prisma.attributeValue
+          .findMany({ where: { id: { in: idsOf('attribute_value') } } })
+          .then((l) => l.map((v) => ({ id: v.id, label: v.labelHe }))),
+      ],
+    ];
+    const labels = new Map<string, string>();
+    for (const [type, lookup] of lookups) {
+      for (const { id, label } of await lookup) labels.set(`${type}:${id}`, label);
+    }
+    return labels;
   }
 
   async purgeExpired(now = new Date()): Promise<number> {
@@ -97,6 +146,13 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     if (count) this.logger.log(`Purged ${count} audit entries older than two years`);
     return count;
   }
+}
+
+/** A deleted entity has no row to name it; fall back to what was recorded about it. */
+function deletedLabel(before: Prisma.JsonValue): string | null {
+  const b = (before ?? {}) as Record<string, unknown>;
+  for (const key of ['sku', 'modelName', 'labelHe', 'nameHe']) if (typeof b[key] === 'string') return b[key] as string;
+  return null;
 }
 
 function toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
