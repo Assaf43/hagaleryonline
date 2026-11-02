@@ -168,3 +168,60 @@ export type CatalogErrorCode =
 
 /** Why a product cannot be shown yet: no active variant, or its category is hidden. */
 export type ActivationProblem = 'no_variants' | 'category_hidden';
+
+/** Hebrew names of the fulfillment modes, used by the admin and the Excel template. */
+export const FULFILLMENT_LABELS_HE: Record<FulfillmentMode, string> = {
+  in_stock: 'במלאי',
+  pre_order: 'בהזמנה מוקדמת',
+  made_to_order: 'בייצור לפי הזמנה',
+  out_of_stock: 'אזל',
+};
+
+// ---------- Excel import and export (Phase 2c, ADM-09) ----------
+
+export type ImportIssueCode =
+  /** The file is not an .xlsx this system made, or has no products sheet. */
+  | 'bad_file'
+  | 'missing_column'
+  | 'no_rows'
+  | 'too_many_rows'
+  | 'required'
+  | 'number'
+  | 'date'
+  | 'yes_no'
+  | 'not_in_list'
+  /** Rows of the same model disagree on a product-level column (e.g. two categories). */
+  | 'mixed_values'
+  /** The SKU appears twice in the file. */
+  | 'duplicate_sku'
+  /** The SKU belongs to another model. */
+  | 'sku_taken'
+  /** Refused when saving: `catalogCode` says why (same codes as the product form). */
+  | 'rejected';
+
+export interface ImportIssue {
+  /** Excel row number, as the user sees it. Null for problems with the whole file. */
+  row: number | null;
+  /** Column header, as in the file. */
+  column: string | null;
+  code: ImportIssueCode;
+  value?: string;
+  catalogCode?: CatalogErrorCode;
+}
+
+export interface ImportSummary {
+  rows: number;
+  productsCreated: number;
+  productsUpdated: number;
+  productsUnchanged: number;
+  variantsCreated: number;
+  variantsUpdated: number;
+  priceChanges: number;
+}
+
+/** POST /api/admin/catalog/excel/check and /import. Nothing is saved unless `applied`. */
+export interface ImportReport {
+  applied: boolean;
+  errors: ImportIssue[];
+  summary: ImportSummary;
+}

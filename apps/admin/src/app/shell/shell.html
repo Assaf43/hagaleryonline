@@ -61,6 +61,12 @@
           מבנה הקטלוג
         </a>
       }
+      @if (can('catalog.import')) {
+        <a class="nav-link" routerLink="/catalog/excel" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideFileSpreadsheet></svg>
+          ייבוא וייצוא Excel
+        </a>
+      }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>

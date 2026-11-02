@@ -1,4 +1,4 @@
-import type { AdminCategory, FulfillmentMode } from '@hg/models';
+import { FULFILLMENT_LABELS_HE, type AdminCategory, type FulfillmentMode } from '@hg/models';
 
 /** Prices are agorot in the API and shekels on screen (decision: typed in ₪, VAT included). */
 export function toShekels(agorot: number | null): number | null {
@@ -20,12 +20,7 @@ export function formatPrice(agorot: number | null): string {
   return agorot === null ? '—' : ILS.format(agorot / 100);
 }
 
-export const FULFILLMENT_LABEL: Record<FulfillmentMode, string> = {
-  in_stock: 'במלאי',
-  pre_order: 'בהזמנה מוקדמת',
-  made_to_order: 'בייצור לפי הזמנה',
-  out_of_stock: 'אזל',
-};
+export const FULFILLMENT_LABEL: Record<FulfillmentMode, string> = FULFILLMENT_LABELS_HE;
 
 /** "corner-sofas" + "ALBA" → "alba-corner-sofa": the model name, then the category in the singular. */
 export function suggestSlug(modelName: string, categorySlug: string | undefined): string {

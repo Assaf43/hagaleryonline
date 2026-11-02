@@ -38,7 +38,7 @@ const productInclude = {
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 type VariantRow = ProductRow['variants'][number];
 
-type Meta = { actorId: number; ip?: string };
+export type Meta = { actorId: number; ip?: string };
 
 /**
  * Products and their variants in the admin (Phase 2b, ADM-02, ADM-12). One save writes the whole
@@ -148,172 +148,183 @@ export class ProductsAdminService {
 
   private async save(id: number | null, input: AdminProductInput, meta: Meta): Promise<AdminProduct> {
     const productId = await this.prisma
-      .$transaction(
-        async (tx) => {
-          // Lock the row so two saves of the same product run one after the other.
-          if (id) await tx.$queryRaw`SELECT id FROM products WHERE id = ${id} FOR UPDATE`;
-          const existing = id ? await tx.product.findUnique({ where: { id }, include: productInclude }) : null;
-          if (id && !existing) throw notFound();
-          if (existing && existing.updatedAt.toISOString() !== input.expectedUpdatedAt) throw conflict();
-
-          const category = await tx.category.findUnique({ where: { id: input.categoryId } });
-          if (!category) throw invalid('categoryId');
-          if ((await tx.room.count({ where: { id: { in: input.roomIds } } })) !== input.roomIds.length)
-            throw invalid('roomIds');
-          const { productValueIds, variantValueIds } = await resolveValues(tx, input);
-          await checkUnique(tx, id, input);
-
-          const existingVariants = new Map(existing?.variants.map((v) => [v.id, v]));
-          input.variants.forEach((v, i) => {
-            if (v.id !== undefined && !existingVariants.has(v.id)) throw invalid(`variants.${i}.id`);
-          });
-          if (input.active) {
-            const problems = activationProblems(input, category.active);
-            if (problems.length) throw incomplete(problems);
-          }
-
-          // Product, rooms and product attributes.
-          const data = {
-            slug: input.slug,
-            modelName: input.modelName,
-            nameHe: input.nameHe,
-            descriptionHe: input.descriptionHe,
-            categoryId: input.categoryId,
-            countryOfOrigin: input.countryOfOrigin,
-            warrantyMonths: input.warrantyMonths,
-            careHe: input.careHe,
-            requiresAssembly: input.requiresAssembly,
-            active: input.active,
-            sortOrder: input.sortOrder,
-          };
-          const product = id ? await tx.product.update({ where: { id }, data }) : await tx.product.create({ data });
-          await tx.productRoom.deleteMany({ where: { productId: product.id } });
-          await tx.productRoom.createMany({ data: input.roomIds.map((roomId) => ({ productId: product.id, roomId })) });
-          await tx.productAttributeValue.deleteMany({ where: { productId: product.id } });
-          await tx.productAttributeValue.createMany({
-            data: productValueIds.map((attributeValueId) => ({ productId: product.id, attributeValueId })),
-          });
-
-          if (existing) {
-            const change = changedFields(productSummary(toAdminProduct(existing)), productSummary(input));
-            if (change)
-              await this.audit.record(
-                {
-                  ...auditBase(meta),
-                  action: 'product.update',
-                  entityType: 'product',
-                  entityId: product.id,
-                  ...change,
-                },
-                tx,
-              );
-          } else {
-            await this.audit.record(
-              {
-                ...auditBase(meta),
-                action: 'product.create',
-                entityType: 'product',
-                entityId: product.id,
-                after: { modelName: input.modelName, nameHe: input.nameHe, active: input.active },
-              },
-              tx,
-            );
-          }
-
-          // Variants: removed first, so a SKU can move to another row in the same save.
-          const kept = new Set(input.variants.map((v) => v.id).filter((v) => v !== undefined));
-          const removed = [...existingVariants.values()].filter((v) => !kept.has(v.id));
-          await tx.variant.deleteMany({ where: { id: { in: removed.map((v) => v.id) } } });
-          for (const v of removed) {
-            await this.audit.record(
-              {
-                ...auditBase(meta),
-                action: 'variant.delete',
-                entityType: 'variant',
-                entityId: v.id,
-                before: variantSummary(toAdminVariant(v)),
-              },
-              tx,
-            );
-          }
-
-          for (const [i, v] of input.variants.entries()) {
-            const vData = {
-              sku: v.sku,
-              price: v.price,
-              compareAtPrice: v.compareAtPrice,
-              stock: v.stock,
-              fulfillment: TO_DB[v.fulfillment],
-              leadTimeDays: v.leadTimeDays,
-              productionDays: v.productionDays,
-              expectedAt: v.expectedAt ? new Date(`${v.expectedAt}T00:00:00Z`) : null,
-              active: v.active,
-              sortOrder: i,
-              widthCm: v.widthCm,
-              depthCm: v.depthCm,
-              heightCm: v.heightCm,
-              weightKg: v.weightKg,
-              seatHeightCm: v.seatHeightCm,
-              seatDepthCm: v.seatDepthCm,
-              chaiseWidthCm: v.chaiseWidthCm,
-              chaiseDepthCm: v.chaiseDepthCm,
-            };
-            const before = v.id === undefined ? undefined : existingVariants.get(v.id)!;
-            if (before) {
-              const change = changedFields(variantSummary(toAdminVariant(before)), variantSummary(v));
-              if (!change && before.sortOrder === i) continue;
-              await tx.variant.update({ where: { id: before.id }, data: vData });
-              await tx.variantAttributeValue.deleteMany({ where: { variantId: before.id } });
-              await tx.variantAttributeValue.createMany({
-                data: variantValueIds[i].map((attributeValueId) => ({ variantId: before.id, attributeValueId })),
-              });
-              if (change)
-                await this.audit.record(
-                  {
-                    ...auditBase(meta),
-                    action: 'variant.update',
-                    entityType: 'variant',
-                    entityId: before.id,
-                    before: { sku: before.sku, ...change.before },
-                    after: { sku: v.sku, ...change.after },
-                  },
-                  tx,
-                );
-            } else {
-              const created = await tx.variant.create({
-                data: {
-                  ...vData,
-                  productId: product.id,
-                  attributeValues: { create: variantValueIds[i].map((attributeValueId) => ({ attributeValueId })) },
-                },
-              });
-              await this.audit.record(
-                {
-                  ...auditBase(meta),
-                  action: 'variant.create',
-                  entityType: 'variant',
-                  entityId: created.id,
-                  after: variantSummary(v),
-                },
-                tx,
-              );
-            }
-          }
-
-          await this.indexer.reindex([product.id], tx);
-          return product.id;
-        },
-        { timeout: 30_000 },
-      )
-      .catch((e: unknown) => {
-        // A unique index caught what the checks above could not (two saves racing for the same SKU).
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw duplicate('sku');
-        throw e;
-      });
-
+      .$transaction((tx) => this.saveInTx(tx, id, input, meta), { timeout: 30_000 })
+      .catch(uniqueToDuplicate);
     await this.cache.invalidate('catalog:');
     return this.get(productId);
   }
+
+  /** The editable form of a product, read inside a transaction (the Excel import merges into it). */
+  async getInTx(tx: Prisma.TransactionClient, id: number): Promise<AdminProduct> {
+    const row = await tx.product.findUnique({ where: { id }, include: productInclude });
+    if (!row) throw notFound();
+    return toAdminProduct(row);
+  }
+
+  /**
+   * Writes one product inside the caller's transaction: checks, product, rooms, attributes,
+   * variants, audit entries and search text. The caller invalidates the catalog cache afterwards.
+   */
+  async saveInTx(tx: Prisma.TransactionClient, id: number | null, input: AdminProductInput, meta: Meta) {
+    // Lock the row so two saves of the same product run one after the other.
+    if (id) await tx.$queryRaw`SELECT id FROM products WHERE id = ${id} FOR UPDATE`;
+    const existing = id ? await tx.product.findUnique({ where: { id }, include: productInclude }) : null;
+    if (id && !existing) throw notFound();
+    if (existing && existing.updatedAt.toISOString() !== input.expectedUpdatedAt) throw conflict();
+
+    const category = await tx.category.findUnique({ where: { id: input.categoryId } });
+    if (!category) throw invalid('categoryId');
+    if ((await tx.room.count({ where: { id: { in: input.roomIds } } })) !== input.roomIds.length)
+      throw invalid('roomIds');
+    const { productValueIds, variantValueIds } = await resolveValues(tx, input);
+    await checkUnique(tx, id, input);
+
+    const existingVariants = new Map(existing?.variants.map((v) => [v.id, v]));
+    input.variants.forEach((v, i) => {
+      if (v.id !== undefined && !existingVariants.has(v.id)) throw invalid(`variants.${i}.id`);
+    });
+    if (input.active) {
+      const problems = activationProblems(input, category.active);
+      if (problems.length) throw incomplete(problems);
+    }
+
+    // Product, rooms and product attributes.
+    const data = {
+      slug: input.slug,
+      modelName: input.modelName,
+      nameHe: input.nameHe,
+      descriptionHe: input.descriptionHe,
+      categoryId: input.categoryId,
+      countryOfOrigin: input.countryOfOrigin,
+      warrantyMonths: input.warrantyMonths,
+      careHe: input.careHe,
+      requiresAssembly: input.requiresAssembly,
+      active: input.active,
+      sortOrder: input.sortOrder,
+    };
+    const product = id ? await tx.product.update({ where: { id }, data }) : await tx.product.create({ data });
+    await tx.productRoom.deleteMany({ where: { productId: product.id } });
+    await tx.productRoom.createMany({ data: input.roomIds.map((roomId) => ({ productId: product.id, roomId })) });
+    await tx.productAttributeValue.deleteMany({ where: { productId: product.id } });
+    await tx.productAttributeValue.createMany({
+      data: productValueIds.map((attributeValueId) => ({ productId: product.id, attributeValueId })),
+    });
+
+    if (existing) {
+      const change = changedFields(productSummary(toAdminProduct(existing)), productSummary(input));
+      if (change)
+        await this.audit.record(
+          {
+            ...auditBase(meta),
+            action: 'product.update',
+            entityType: 'product',
+            entityId: product.id,
+            ...change,
+          },
+          tx,
+        );
+    } else {
+      await this.audit.record(
+        {
+          ...auditBase(meta),
+          action: 'product.create',
+          entityType: 'product',
+          entityId: product.id,
+          after: { modelName: input.modelName, nameHe: input.nameHe, active: input.active },
+        },
+        tx,
+      );
+    }
+
+    // Variants: removed first, so a SKU can move to another row in the same save.
+    const kept = new Set(input.variants.map((v) => v.id).filter((v) => v !== undefined));
+    const removed = [...existingVariants.values()].filter((v) => !kept.has(v.id));
+    await tx.variant.deleteMany({ where: { id: { in: removed.map((v) => v.id) } } });
+    for (const v of removed) {
+      await this.audit.record(
+        {
+          ...auditBase(meta),
+          action: 'variant.delete',
+          entityType: 'variant',
+          entityId: v.id,
+          before: variantSummary(toAdminVariant(v)),
+        },
+        tx,
+      );
+    }
+
+    for (const [i, v] of input.variants.entries()) {
+      const vData = {
+        sku: v.sku,
+        price: v.price,
+        compareAtPrice: v.compareAtPrice,
+        stock: v.stock,
+        fulfillment: TO_DB[v.fulfillment],
+        leadTimeDays: v.leadTimeDays,
+        productionDays: v.productionDays,
+        expectedAt: v.expectedAt ? new Date(`${v.expectedAt}T00:00:00Z`) : null,
+        active: v.active,
+        sortOrder: i,
+        widthCm: v.widthCm,
+        depthCm: v.depthCm,
+        heightCm: v.heightCm,
+        weightKg: v.weightKg,
+        seatHeightCm: v.seatHeightCm,
+        seatDepthCm: v.seatDepthCm,
+        chaiseWidthCm: v.chaiseWidthCm,
+        chaiseDepthCm: v.chaiseDepthCm,
+      };
+      const before = v.id === undefined ? undefined : existingVariants.get(v.id)!;
+      if (before) {
+        const change = changedFields(variantSummary(toAdminVariant(before)), variantSummary(v));
+        if (!change && before.sortOrder === i) continue;
+        await tx.variant.update({ where: { id: before.id }, data: vData });
+        await tx.variantAttributeValue.deleteMany({ where: { variantId: before.id } });
+        await tx.variantAttributeValue.createMany({
+          data: variantValueIds[i].map((attributeValueId) => ({ variantId: before.id, attributeValueId })),
+        });
+        if (change)
+          await this.audit.record(
+            {
+              ...auditBase(meta),
+              action: 'variant.update',
+              entityType: 'variant',
+              entityId: before.id,
+              before: { sku: before.sku, ...change.before },
+              after: { sku: v.sku, ...change.after },
+            },
+            tx,
+          );
+      } else {
+        const created = await tx.variant.create({
+          data: {
+            ...vData,
+            productId: product.id,
+            attributeValues: { create: variantValueIds[i].map((attributeValueId) => ({ attributeValueId })) },
+          },
+        });
+        await this.audit.record(
+          {
+            ...auditBase(meta),
+            action: 'variant.create',
+            entityType: 'variant',
+            entityId: created.id,
+            after: variantSummary(v),
+          },
+          tx,
+        );
+      }
+    }
+
+    await this.indexer.reindex([product.id], tx);
+    return product.id;
+  }
+}
+
+/** A unique index caught what the checks could not (two saves racing for the same SKU). */
+export function uniqueToDuplicate(e: unknown): never {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw duplicate('sku');
+  throw e;
 }
 
 /** What stops a product from being shown on the site. */

@@ -94,6 +94,19 @@ function catalogMessage(body: {
   }
 }
 
+/** Why a row of an Excel import was refused by the product checks (short, for the issues table). */
+export function catalogIssueText(code: CatalogErrorCode): string {
+  const text: Record<CatalogErrorCode, string> = {
+    invalid: 'הערך לא תקין (למשל מחיר לפני הנחה שלא גבוה מהמחיר)',
+    duplicate: 'הערך כבר קיים במוצר אחר',
+    conflict: 'המוצר השתנה בזמן הייבוא. נסו שוב',
+    in_use: 'בשימוש',
+    incomplete: 'חסר מידע כדי להציג את המוצר',
+    not_found: 'לא נמצא',
+  };
+  return text[code];
+}
+
 /** A Hebrew sentence for any error the admin API returns. */
 export function errorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'משהו השתבש. נסו שוב.';
