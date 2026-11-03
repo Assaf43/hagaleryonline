@@ -1,5 +1,28 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
-import type { AdminProduct, AdminProductPage, AdminSynonym, CatalogStructure, ProductStatusFilter } from '@hg/models';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type {
+  AdminProduct,
+  AdminProductPage,
+  AdminSynonym,
+  CatalogStructure,
+  ImportReport,
+  ProductStatusFilter,
+} from '@hg/models';
 import type { RequestMeta } from '../auth/auth.service.js';
 import { id } from '../auth/body.js';
 import {
@@ -19,6 +42,7 @@ import {
   parseRoomInput,
   parseSynonymTerms,
 } from './catalog-input.js';
+import { ExcelService, XLSX } from './excel/excel.service.js';
 import { ProductsAdminService } from './products-admin.service.js';
 import { StructureAdminService } from './structure-admin.service.js';
 
@@ -200,5 +224,53 @@ export class StructureAdminController {
   @HttpCode(204)
   async deleteSynonym(@Param('id') synonymId: string, @Admin() admin: AdminContext, @ClientMeta() client: RequestMeta) {
     await this.structure.deleteSynonym(id(synonymId), meta(admin, client));
+  }
+}
+
+/** The part of multer's file object we use. */
+type UploadedExcel = { buffer: Buffer };
+
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const upload = FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
+const download = (data: Buffer, name: string) =>
+  new StreamableFile(data, { type: XLSX, disposition: `attachment; filename="${name}"`, length: data.length });
+
+/** Excel template, export and import (ADM-09). Uploads are checked first and saved only on /import. */
+@Controller('admin/catalog/excel')
+@UseGuards(SameOriginGuard, AdminAuthGuard)
+@RequirePermission('catalog.import')
+export class ExcelController {
+  constructor(private readonly excel: ExcelService) {}
+
+  @Get('template')
+  async template(): Promise<StreamableFile> {
+    return download(await this.excel.template(), 'hagalery-template.xlsx');
+  }
+
+  @Get('export')
+  async export(): Promise<StreamableFile> {
+    return download(await this.excel.export(), `hagalery-catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  @Post('check')
+  @HttpCode(200)
+  @UseInterceptors(upload)
+  check(
+    @UploadedFile() file: UploadedExcel | undefined,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<ImportReport> {
+    return this.excel.run(file?.buffer ?? Buffer.alloc(0), meta(admin, client), false);
+  }
+
+  @Post('import')
+  @HttpCode(200)
+  @UseInterceptors(upload)
+  import(
+    @UploadedFile() file: UploadedExcel | undefined,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<ImportReport> {
+    return this.excel.run(file?.buffer ?? Buffer.alloc(0), meta(admin, client), true);
   }
 }

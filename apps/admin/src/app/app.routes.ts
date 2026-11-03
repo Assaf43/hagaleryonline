@@ -50,6 +50,12 @@ export const routes: Routes = [
         title: 'עריכת מוצר',
       },
       {
+        path: 'catalog/excel',
+        canMatch: [hasPermission('catalog.import')],
+        loadComponent: () => import('./catalog/excel.page').then((m) => m.ExcelPage),
+        title: 'ייבוא וייצוא Excel',
+      },
+      {
         path: 'catalog/structure',
         canMatch: [hasPermission('catalog.view')],
         loadComponent: () => import('./catalog/structure.page').then((m) => m.StructurePage),

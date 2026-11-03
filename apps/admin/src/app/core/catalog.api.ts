@@ -11,6 +11,7 @@ import type {
   AdminRoomInput,
   AdminSynonym,
   CatalogStructure,
+  ImportReport,
   ProductStatusFilter,
 } from '@hg/models';
 
@@ -74,6 +75,27 @@ export class CatalogApi {
 
   deleteSynonym(id: number) {
     return firstValueFrom(this.http.delete<void>(`${BASE}/synonyms/${id}`));
+  }
+
+  /** Downloads the template or the catalog export and hands it to the browser as a file. */
+  async downloadExcel(what: 'template' | 'export') {
+    const res = await firstValueFrom(
+      this.http.get(`${BASE}/excel/${what}`, { responseType: 'blob', observe: 'response' }),
+    );
+    const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${what}.xlsx`;
+    const url = URL.createObjectURL(res.body!);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** `check` only reports; `import` saves when the file is clean. */
+  uploadExcel(file: File, step: 'check' | 'import') {
+    const body = new FormData();
+    body.append('file', file);
+    return firstValueFrom(this.http.post<ImportReport>(`${BASE}/excel/${step}`, body));
   }
 
   private save<T = void>(path: string, id: number | null, body: object) {

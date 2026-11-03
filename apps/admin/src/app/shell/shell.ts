@@ -9,6 +9,7 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { map } from 'rxjs';
 import {
+  LucideFileSpreadsheet,
   LucideFolderTree,
   LucideKeyRound,
   LucideLayoutDashboard,
@@ -36,6 +37,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
     MatSidenavModule,
     MatToolbarModule,
     ThemeToggle,
+    LucideFileSpreadsheet,
     LucideFolderTree,
     LucideKeyRound,
     LucideLayoutDashboard,
