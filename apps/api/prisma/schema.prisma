@@ -104,6 +104,8 @@ model Product {
   attributeValues ProductAttributeValue[]
 
   @@index([categoryId])
+  /// Trigram index for fuzzy search (decision 47). Declared here so migrations keep it.
+  @@index([searchText(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_search_text_trgm_idx")
   @@map("products")
 }
 
@@ -151,7 +153,6 @@ model Variant {
   chaiseDepthCm Decimal? @map("chaise_depth_cm") @db.Decimal(6, 1)
 
   product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
-  images          Image[]
   attributeValues VariantAttributeValue[]
 
   @@index([productId])
@@ -185,6 +186,7 @@ model AttributeValue {
   attribute Attribute               @relation(fields: [attributeId], references: [id], onDelete: Cascade)
   products  ProductAttributeValue[]
   variants  VariantAttributeValue[]
+  images    Image[]
 
   @@unique([attributeId, code])
   @@map("attribute_values")
@@ -225,18 +227,30 @@ model VariantAttributeValue {
   @@map("variant_attribute_values")
 }
 
+/// Product photo (Phase 2d, decision 62). Linked to a color, not to a variant: one set of photos
+/// serves every size and fabric of that color. Uploaded photos are stored as resized WebP/AVIF
+/// copies under `storageKey`; the untouched original is kept privately for re-processing.
 model Image {
-  id        Int       @id @default(autoincrement())
-  productId Int       @map("product_id")
-  /// Null = shown for every variant.
-  variantId Int?      @map("variant_id")
-  url       String
-  altHe     String    @map("alt_he")
-  kind      ImageKind @default(CUTOUT)
-  sortOrder Int       @default(0) @map("sort_order")
+  id           Int       @id @default(autoincrement())
+  productId    Int       @map("product_id")
+  /// A value of the `color` attribute. Null = shown for every color.
+  colorValueId Int?      @map("color_value_id")
+  /// Public URL of the default size (or a static placeholder for seeded dev images).
+  url          String
+  /// Storage key of uploaded photos: `products/<id>/<random>`. Null for static placeholders.
+  storageKey   String?   @map("storage_key")
+  /// Widths generated for srcset, ascending.
+  widths       Int[]     @default([])
+  width        Int?
+  height       Int?
+  altHe        String    @map("alt_he")
+  kind         ImageKind @default(CUTOUT)
+  /// Lower first; the first photo is the product's main photo in lists.
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  variant Variant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  product    Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colorValue AttributeValue? @relation(fields: [colorValueId], references: [id], onDelete: Restrict)
 
   @@index([productId])
   @@map("images")

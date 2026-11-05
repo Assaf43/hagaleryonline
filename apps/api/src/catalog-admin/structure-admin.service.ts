@@ -50,7 +50,7 @@ export class StructureAdminService {
         include: {
           values: {
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-            include: { _count: { select: { products: true, variants: true } } },
+            include: { _count: { select: { products: true, variants: true, images: true } } },
           },
         },
       }),
@@ -215,10 +215,10 @@ export class StructureAdminService {
     await this.prisma.$transaction(async (tx) => {
       const value = await tx.attributeValue.findFirst({
         where: { id, attributeId },
-        include: { _count: { select: { products: true, variants: true } } },
+        include: { _count: { select: { products: true, variants: true, images: true } } },
       });
       if (!value) throw notFound();
-      if (value._count.products + value._count.variants > 0) throw inUse('value');
+      if (value._count.products + value._count.variants + value._count.images > 0) throw inUse('value');
       await tx.attributeValue.delete({ where: { id } });
       await this.audit.record(
         {
@@ -301,7 +301,7 @@ function pick<T extends object>(row: T) {
 
 function toAdminAttribute(
   a: Prisma.AttributeGetPayload<{
-    include: { values: { include: { _count: { select: { products: true; variants: true } } } } };
+    include: { values: { include: { _count: { select: { products: true; variants: true; images: true } } } } };
   }>,
 ): AdminAttribute {
   return {
@@ -313,7 +313,7 @@ function toAdminAttribute(
     sortOrder: a.sortOrder,
     values: a.values.map(({ _count, attributeId: _a, ...v }) => ({
       ...v,
-      usageCount: _count.products + _count.variants,
+      usageCount: _count.products + _count.variants + _count.images,
     })),
   };
 }

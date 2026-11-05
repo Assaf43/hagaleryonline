@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { config } from 'dotenv';
 import { defineConfig } from 'vitest/config';
 
@@ -24,6 +26,8 @@ export default defineConfig({
       COOKIE_SECURE: 'false',
       // The suite logs in many times from one IP; the per-IP limit has its own unit test.
       AUTH_IP_ATTEMPT_LIMIT: '1000',
+      // Uploaded test photos go to a temp folder, never to the dev storage.
+      MEDIA_DIR: join(tmpdir(), 'hagalery-e2e-media'),
     },
   },
 });

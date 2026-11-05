@@ -6,6 +6,7 @@ import { CacheModule } from './cache/cache.module.js';
 import { CatalogAdminModule } from './catalog-admin/catalog-admin.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { HealthModule } from './health/health.module.js';
+import { MediaModule } from './media/media.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
 @Module({
@@ -14,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
     PrismaModule,
     CacheModule,
+    MediaModule,
     AuditModule,
     AuthModule,
     HealthModule,

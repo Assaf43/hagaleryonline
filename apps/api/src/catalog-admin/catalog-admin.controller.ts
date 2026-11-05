@@ -15,7 +15,9 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { IMAGE_UPLOAD } from '@hg/models';
 import type {
+  AdminImage,
   AdminProduct,
   AdminProductPage,
   AdminSynonym,
@@ -38,11 +40,14 @@ import {
   parseAttributeInput,
   parseAttributeValueInput,
   parseCategoryInput,
+  parseImageInput,
+  parseImageOrder,
   parseProductInput,
   parseRoomInput,
   parseSynonymTerms,
 } from './catalog-input.js';
 import { ExcelService, XLSX } from './excel/excel.service.js';
+import { ImagesAdminService } from './images-admin.service.js';
 import { ProductsAdminService } from './products-admin.service.js';
 import { StructureAdminService } from './structure-admin.service.js';
 
@@ -100,6 +105,69 @@ export class ProductsAdminController {
   @HttpCode(204)
   async remove(@Param('id') productId: string, @Admin() admin: AdminContext, @ClientMeta() client: RequestMeta) {
     await this.products.remove(id(productId), meta(admin, client));
+  }
+}
+
+/** The part of multer's file object we use. */
+type UploadedBytes = { buffer: Buffer };
+
+/**
+ * Product photos (Phase 2d, ADM-04): multipart field `file`, plus optional fields `colorCode`,
+ * `kind` and `altHe`. Needs media.manage. Uploads over the size limit are cut off by multer (413).
+ */
+@Controller('admin/catalog/products/:productId/images')
+@UseGuards(SameOriginGuard, AdminAuthGuard)
+@RequirePermission('media.manage')
+export class ImagesAdminController {
+  constructor(private readonly images: ImagesAdminService) {}
+
+  @Post()
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IMAGE_UPLOAD.maxBytes, files: 1, fields: 10 } }))
+  upload(
+    @Param('productId') productId: string,
+    @UploadedFile() file: UploadedBytes | undefined,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminImage> {
+    return this.images.upload(
+      id(productId),
+      file?.buffer ?? Buffer.alloc(0),
+      parseImageInput(body, true),
+      meta(admin, client),
+    );
+  }
+
+  @Put('order')
+  reorder(
+    @Param('productId') productId: string,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminImage[]> {
+    return this.images.reorder(id(productId), parseImageOrder(body), meta(admin, client));
+  }
+
+  @Patch(':imageId')
+  update(
+    @Param('productId') productId: string,
+    @Param('imageId') imageId: string,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminImage> {
+    return this.images.update(id(productId), id(imageId), parseImageInput(body), meta(admin, client));
+  }
+
+  @Delete(':imageId')
+  @HttpCode(204)
+  async remove(
+    @Param('productId') productId: string,
+    @Param('imageId') imageId: string,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<void> {
+    await this.images.remove(id(productId), id(imageId), meta(admin, client));
   }
 }
 
@@ -227,9 +295,6 @@ export class StructureAdminController {
   }
 }
 
-/** The part of multer's file object we use. */
-type UploadedExcel = { buffer: Buffer };
-
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const upload = FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
 const download = (data: Buffer, name: string) =>
@@ -256,7 +321,7 @@ export class ExcelController {
   @HttpCode(200)
   @UseInterceptors(upload)
   check(
-    @UploadedFile() file: UploadedExcel | undefined,
+    @UploadedFile() file: UploadedBytes | undefined,
     @Admin() admin: AdminContext,
     @ClientMeta() client: RequestMeta,
   ): Promise<ImportReport> {
@@ -267,7 +332,7 @@ export class ExcelController {
   @HttpCode(200)
   @UseInterceptors(upload)
   import(
-    @UploadedFile() file: UploadedExcel | undefined,
+    @UploadedFile() file: UploadedBytes | undefined,
     @Admin() admin: AdminContext,
     @ClientMeta() client: RequestMeta,
   ): Promise<ImportReport> {
