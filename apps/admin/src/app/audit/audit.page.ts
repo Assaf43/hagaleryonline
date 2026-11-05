@@ -25,6 +25,10 @@ const ACTIONS: Record<string, string> = {
   'variant.create': 'הוספת וריאנט',
   'variant.update': 'עדכון וריאנט',
   'variant.delete': 'מחיקת וריאנט',
+  'image.create': 'העלאת תמונה',
+  'image.update': 'עדכון תמונה',
+  'image.reorder': 'שינוי סדר התמונות',
+  'image.delete': 'מחיקת תמונה',
   'category.create': 'יצירת קטגוריה',
   'category.update': 'עדכון קטגוריה',
   'room.create': 'יצירת חדר',
@@ -102,6 +106,10 @@ const FIELDS: Record<string, string> = {
   swatchHex: 'צבע דוגמית',
   filterable: 'לסינון',
   terms: 'מילים',
+  color: 'צבע התמונה',
+  kind: 'סוג תמונה',
+  altHe: 'תיאור התמונה',
+  order: 'סדר התמונות',
 };
 
 /** Who changed what and when (ADM-11, decision 54). */

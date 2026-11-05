@@ -18,8 +18,14 @@ export const PRODUCT_SORTS: readonly ProductSort[] = [
 ];
 
 export interface ImageRef {
+  /** Default size (WebP), or a static placeholder in dev data. */
   url: string;
   altHe: string;
+  /** Uploaded photos only: `srcset` values for WebP and AVIF, and the size of the largest copy. */
+  srcset?: string;
+  avifSrcset?: string;
+  width?: number;
+  height?: number;
 }
 
 // ---------- Navigation ----------

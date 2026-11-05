@@ -1,10 +1,12 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { HttpClient, type HttpEvent } from '@angular/common/http';
+import { firstValueFrom, type Observable } from 'rxjs';
 import type {
   AdminAttributeInput,
   AdminAttributeValueInput,
   AdminCategoryInput,
+  AdminImage,
+  AdminImageInput,
   AdminProduct,
   AdminProductInput,
   AdminProductPage,
@@ -47,6 +49,31 @@ export class CatalogApi {
 
   deleteProduct(id: number) {
     return firstValueFrom(this.http.delete<void>(`${BASE}/products/${id}`));
+  }
+
+  /** Upload progress events, then the stored photo (Phase 2d). */
+  uploadImage(productId: number, file: File, fields: Partial<AdminImageInput>): Observable<HttpEvent<AdminImage>> {
+    const body = new FormData();
+    if (fields.colorCode) body.append('colorCode', fields.colorCode);
+    if (fields.kind) body.append('kind', fields.kind);
+    if (fields.altHe) body.append('altHe', fields.altHe);
+    body.append('file', file);
+    return this.http.post<AdminImage>(`${BASE}/products/${productId}/images`, body, {
+      reportProgress: true,
+      observe: 'events',
+    });
+  }
+
+  updateImage(productId: number, imageId: number, input: AdminImageInput) {
+    return firstValueFrom(this.http.patch<AdminImage>(`${BASE}/products/${productId}/images/${imageId}`, input));
+  }
+
+  reorderImages(productId: number, ids: number[]) {
+    return firstValueFrom(this.http.put<AdminImage[]>(`${BASE}/products/${productId}/images/order`, { ids }));
+  }
+
+  deleteImage(productId: number, imageId: number) {
+    return firstValueFrom(this.http.delete<void>(`${BASE}/products/${productId}/images/${imageId}`));
   }
 
   saveCategory(id: number | null, input: AdminCategoryInput) {

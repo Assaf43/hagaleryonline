@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { Dimensions, FulfillmentMode, ImageRef, OptionAxis, ProductDetail } from '@hg/models';
-import { AttributeScope, FulfillmentMode as DbFulfillment, ImageKind, Prisma } from '../generated/prisma/client.js';
+import type { Dimensions, FulfillmentMode, OptionAxis, ProductDetail } from '@hg/models';
+import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma } from '../generated/prisma/client.js';
+import { toImageRef as imageRef } from '../media/image-urls.js';
+import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CatalogSnapshot, SnapshotAttribute, SnapshotCategory, SnapshotProduct } from './catalog-snapshot.js';
 
@@ -11,11 +13,15 @@ const FULFILLMENT: Record<DbFulfillment, FulfillmentMode> = {
   OUT_OF_STOCK: 'out_of_stock',
 };
 
-const imageOrder: Prisma.ImageOrderByWithRelationInput[] = [{ kind: 'asc' }, { sortOrder: 'asc' }, { id: 'asc' }];
+/** The admin orders the photos; the first one is the product's main photo (decision 62). */
+const imageOrder: Prisma.ImageOrderByWithRelationInput[] = [{ sortOrder: 'asc' }, { id: 'asc' }];
 
 @Injectable()
 export class CatalogRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageProvider,
+  ) {}
 
   /** The whole active catalog as an in-memory read model. */
   async loadSnapshot(): Promise<CatalogSnapshot> {
@@ -36,7 +42,7 @@ export class CatalogRepository {
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
             include: { attributeValues: { include: { attributeValue: { include: { attribute: true } } } } },
           },
-          images: { where: { variantId: null }, orderBy: imageOrder, take: 1 },
+          images: { orderBy: imageOrder, take: 1 },
         },
       }),
     ]);
@@ -93,7 +99,7 @@ export class CatalogRepository {
             depthCm: v.depthCm.toNumber(),
             options: new Map(v.attributeValues.map(({ attributeValue: av }) => [av.attribute.code, av.code])),
           })),
-          image: toImageRef(p.images[0]),
+          image: p.images[0] ? imageRef(this.storage, p.images[0]) : null,
         };
       });
 
@@ -119,7 +125,6 @@ export class CatalogRepository {
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           include: {
             attributeValues: { include: { attributeValue: { include: { attribute: true } } } },
-            images: { orderBy: imageOrder },
           },
         },
       },
@@ -177,7 +182,8 @@ export class CatalogRepository {
       warrantyMonths: p.warrantyMonths,
       careHe: p.careHe,
       requiresAssembly: p.requiresAssembly,
-      images: p.images.filter((i) => i.variantId === null).map((i) => toImageRef(i)!),
+      // Photos for every color here; each variant gets the photos of its color (decision 62).
+      images: p.images.filter((i) => i.colorValueId === null).map((i) => imageRef(this.storage, i)),
       optionAxes: [...axes.values()]
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map(({ code, nameHe, values, valueOrder }) => ({
@@ -197,7 +203,11 @@ export class CatalogRepository {
         expectedAt: v.expectedAt ? v.expectedAt.toISOString().slice(0, 10) : null,
         dimensions: toDimensions(v),
         options: Object.fromEntries(v.attributeValues.map(({ attributeValue: av }) => [av.attribute.code, av.code])),
-        images: v.images.map((i) => toImageRef(i)!),
+        images: p.images
+          .filter(
+            (i) => i.colorValueId !== null && v.attributeValues.some((a) => a.attributeValueId === i.colorValueId),
+          )
+          .map((i) => imageRef(this.storage, i)),
       })),
     };
   }
@@ -247,10 +257,6 @@ function buildCategoryTree(
     if (category.pathIds.length === 0) byId.delete(id);
   }
   return byId;
-}
-
-function toImageRef(image: { url: string; altHe: string; kind: ImageKind } | undefined): ImageRef | null {
-  return image ? { url: image.url, altHe: image.altHe } : null;
 }
 
 function toDimensions(v: {

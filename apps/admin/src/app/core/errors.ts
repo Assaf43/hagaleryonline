@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import type { ActivationProblem, AuthErrorCode, CatalogErrorCode } from '@hg/models';
+import type { ActivationProblem, AuthErrorCode, CatalogErrorCode, ImageUploadProblem } from '@hg/models';
 
 const MESSAGES: Record<AuthErrorCode, string> = {
   invalid_credentials: 'האימייל או הסיסמה שגויים.',
@@ -56,10 +56,24 @@ const FIELDS: Record<string, string> = {
   seatDepthCm: 'עומק מושב',
   chaiseWidthCm: 'רוחב שזלונג',
   chaiseDepthCm: 'עומק שזלונג',
+  colorCode: 'צבע',
+  kind: 'סוג תמונה',
+  altHe: 'תיאור התמונה',
+  ids: 'סדר התמונות',
+};
+
+/** Why a photo upload was refused (Phase 2d). */
+export const IMAGE_PROBLEMS: Record<ImageUploadProblem, string> = {
+  type: 'אפשר להעלות רק תמונות JPG, PNG או WebP.',
+  too_large: 'התמונה גדולה מדי. עד 15MB לתמונה.',
+  too_small: 'התמונה קטנה מדי. צריך לפחות 600 פיקסלים בצד הארוך.',
+  too_many: 'הגעתם למספר התמונות המרבי למוצר (40).',
+  unreadable: 'לא הצלחנו לקרוא את הקובץ. ייתכן שהוא פגום.',
 };
 
 const ACTIVATION: Record<ActivationProblem, string> = {
   no_variants: 'צריך לפחות וריאנט פעיל אחד',
+  no_images: 'צריך לפחות תמונה אחת',
   category_hidden: 'הקטגוריה מוסתרת',
 };
 
@@ -82,9 +96,11 @@ function catalogMessage(body: {
     case 'duplicate':
       return `${fieldLabel(body.field ?? '')}${body.value ? ` "${body.value}"` : ''} כבר קיים. בחרו ערך אחר.`;
     case 'invalid':
+      if (body.field === 'file' && body.value && body.value in IMAGE_PROBLEMS)
+        return IMAGE_PROBLEMS[body.value as ImageUploadProblem];
       return `יש לבדוק את השדה: ${fieldLabel(body.field ?? '')}.`;
     case 'in_use':
-      return 'אי אפשר למחוק, כי יש מוצרים שמשתמשים בזה.';
+      return 'אי אפשר למחוק, כי יש מוצרים או תמונות שמשתמשים בזה.';
     case 'incomplete':
       return `אי אפשר להציג את המוצר באתר עדיין: ${(body.reasons ?? []).map((r) => ACTIVATION[r]).join(', ')}.`;
     case 'not_found':
@@ -111,6 +127,7 @@ export function catalogIssueText(code: CatalogErrorCode): string {
 export function errorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'משהו השתבש. נסו שוב.';
   if (error.status === 0) return 'אין חיבור לשרת. בדקו את החיבור לאינטרנט.';
+  if (error.status === 413) return IMAGE_PROBLEMS.too_large;
   const catalog = catalogMessage(error.error ?? {});
   if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };
