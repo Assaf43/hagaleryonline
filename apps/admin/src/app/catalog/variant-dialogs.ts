@@ -149,7 +149,7 @@ const FULFILLMENTS = Object.entries(FULFILLMENT_LABEL) as [FulfillmentMode, stri
       inline-size: 14px;
       block-size: 14px;
       border-radius: var(--radius-pill);
-      border: 1px solid var(--color-border-strong);
+      border: var(--border-width) solid var(--color-border-strong);
       vertical-align: middle;
       margin-inline-end: var(--space-1);
     }

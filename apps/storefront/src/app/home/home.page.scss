@@ -45,7 +45,7 @@
   padding: var(--space-5) 0;
   display: grid;
   gap: var(--space-4);
-  border-block: 1px solid var(--color-border);
+  border-block: var(--border-width) solid var(--color-border);
 
   li {
     display: flex;
@@ -94,7 +94,7 @@
   display: block;
   aspect-ratio: 1 / 1;
   background: var(--color-surface-alt);
-  border-radius: var(--radius-md);
+  border-radius: var(--media-radius);
   overflow: hidden;
 }
 

@@ -38,9 +38,9 @@
   place-items: center;
   inline-size: 104px;
   aspect-ratio: 1 / 1;
-  border-radius: var(--radius-md);
+  border-radius: var(--media-radius);
   background: var(--color-surface-alt);
-  border: 2px solid transparent;
+  border: var(--border-width-strong) solid transparent;
   overflow: hidden;
   transition: border-color var(--duration-fast) var(--ease);
 
@@ -88,7 +88,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-5);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
 
   h2 {
     font-size: var(--font-h3);
@@ -106,7 +106,7 @@
   grid-template-columns: 1fr 2fr;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
-  border-block-start: 1px solid var(--color-border);
+  border-block-start: var(--border-width) solid var(--color-border);
 }
 
 // ---------- Toolbar and chips ----------
@@ -116,7 +116,7 @@
   align-items: center;
   gap: var(--space-3);
   padding-block: var(--space-3);
-  border-block: 1px solid var(--color-border);
+  border-block: var(--border-width) solid var(--color-border);
 }
 
 .btn-filter {
@@ -135,7 +135,7 @@
   select {
     block-size: 44px;
     border-radius: var(--radius-md);
-    border: 1px solid var(--color-border-strong);
+    border: var(--border-width) solid var(--color-border-strong);
     background: var(--color-surface);
     color: var(--color-text);
     font: inherit;

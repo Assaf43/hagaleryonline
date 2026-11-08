@@ -142,7 +142,7 @@ import { categoryOptions, formatPrice } from './catalog-format';
       gap: var(--space-2) var(--space-4);
       padding: var(--space-3) var(--space-4);
       background: var(--color-surface);
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-md);
       color: inherit;
       text-decoration: none;
@@ -185,8 +185,8 @@ import { categoryOptions, formatPrice } from './catalog-format';
 
     .page-head svg,
     .filters svg {
-      inline-size: 18px;
-      block-size: 18px;
+      inline-size: var(--icon-size-md);
+      block-size: var(--icon-size-md);
     }
   `,
 })

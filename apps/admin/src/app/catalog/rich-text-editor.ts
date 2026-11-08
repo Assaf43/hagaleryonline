@@ -65,7 +65,7 @@ type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link
   `,
   styles: `
     .rte {
-      border: 1px solid var(--color-border-strong);
+      border: var(--border-width) solid var(--color-border-strong);
       border-radius: var(--radius-sm);
       background: var(--color-surface);
     }
@@ -87,12 +87,12 @@ type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link
       flex-wrap: wrap;
       gap: var(--space-1);
       padding: var(--space-1) var(--space-2);
-      border-block-end: 1px solid var(--color-border);
+      border-block-end: var(--border-width) solid var(--color-border);
     }
 
     .rte-toolbar svg {
-      inline-size: 18px;
-      block-size: 18px;
+      inline-size: var(--icon-size-md);
+      block-size: var(--icon-size-md);
     }
 
     .rte-toolbar .on {

@@ -174,7 +174,7 @@ const FIELDS: Record<string, string> = {
     .audit-item {
       padding: var(--space-3) var(--space-4);
       background: var(--color-surface);
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-md);
       display: grid;
       gap: var(--space-1);

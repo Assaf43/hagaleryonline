@@ -6,7 +6,7 @@
 
 .toolbar {
   gap: var(--space-2);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
   flex: none;
 }
 
@@ -28,8 +28,8 @@
 }
 
 .user-button svg {
-  inline-size: 20px;
-  block-size: 20px;
+  inline-size: var(--icon-size-ui);
+  block-size: var(--icon-size-ui);
 }
 
 .user-name {
@@ -50,7 +50,7 @@
 .nav {
   inline-size: 240px;
   padding-block: var(--space-3);
-  border-inline-end: 1px solid var(--color-border);
+  border-inline-end: var(--border-width) solid var(--color-border);
 }
 
 .nav-link {
@@ -75,8 +75,8 @@
 }
 
 .nav-link svg {
-  inline-size: 20px;
-  block-size: 20px;
+  inline-size: var(--icon-size-ui);
+  block-size: var(--icon-size-ui);
 }
 
 .content {

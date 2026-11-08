@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Design tokens and base styles from dev/BRAND.md, shared by the storefront and the admin",
+  "type": "module",
   "exports": {
     "./tokens": {
       "sass": "./_tokens.scss"
@@ -13,5 +14,8 @@
     "./fonts": {
       "sass": "./_fonts.scss"
     }
+  },
+  "scripts": {
+    "test": "vitest run"
   }
 }

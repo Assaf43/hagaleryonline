@@ -31,7 +31,7 @@
   inset-block-start: 0;
   z-index: 10;
   background: var(--color-surface);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
 }
 
 .header-row {
@@ -61,7 +61,7 @@
   align-items: center;
   gap: var(--space-2);
   background: var(--color-surface);
-  border: 1.5px solid var(--color-border-strong);
+  border: var(--border-width-input) solid var(--color-border-strong);
   border-radius: var(--radius-md);
   padding-inline: var(--space-4);
   block-size: 44px;
@@ -84,8 +84,8 @@
   }
 
   svg {
-    inline-size: 20px;
-    block-size: 20px;
+    inline-size: var(--icon-size-ui);
+    block-size: var(--icon-size-ui);
   }
 }
 
@@ -131,7 +131,7 @@
   .nav-desktop {
     display: block;
     position: relative;
-    border-block-start: 1px solid var(--color-border);
+    border-block-start: var(--border-width) solid var(--color-border);
   }
 }
 
@@ -165,7 +165,7 @@
   text-decoration: none;
   background: none;
   border: none;
-  border-block-end: 2px solid transparent;
+  border-block-end: var(--border-width-strong) solid transparent;
   padding: 0;
 
   &:hover,
@@ -184,7 +184,7 @@
   inset-inline: 0;
   inset-block-start: 100%;
   background: var(--color-surface);
-  border-block: 1px solid var(--color-border);
+  border-block: var(--border-width) solid var(--color-border);
   box-shadow: var(--shadow-float);
 
   &.open {
@@ -203,7 +203,7 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  border-inline-end: 1px solid var(--color-border);
+  border-inline-end: var(--border-width) solid var(--color-border);
   padding-inline-end: var(--space-4);
 
   a {
@@ -220,8 +220,8 @@
   }
 
   svg {
-    inline-size: 16px;
-    block-size: 16px;
+    inline-size: var(--icon-size-sm);
+    block-size: var(--icon-size-sm);
   }
 }
 
@@ -287,7 +287,7 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-3) var(--space-4);
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
 }
 
 .drawer-body {
@@ -303,7 +303,7 @@
   li a {
     display: block;
     padding-block: var(--space-3);
-    border-block-end: 1px solid var(--color-border);
+    border-block-end: var(--border-width) solid var(--color-border);
     text-decoration: none;
   }
 }
@@ -316,7 +316,7 @@
 }
 
 .drawer-room {
-  border-block-end: 1px solid var(--color-border);
+  border-block-end: var(--border-width) solid var(--color-border);
 
   summary {
     list-style: none;

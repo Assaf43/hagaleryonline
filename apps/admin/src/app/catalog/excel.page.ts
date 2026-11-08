@@ -180,8 +180,8 @@ const ISSUES: Record<ImportIssueCode, string> = {
     }
 
     svg {
-      inline-size: 18px;
-      block-size: 18px;
+      inline-size: var(--icon-size-md);
+      block-size: var(--icon-size-md);
     }
 
     .file-button {
@@ -198,8 +198,8 @@ const ISSUES: Record<ImportIssueCode, string> = {
     }
 
     .file-button:focus-within {
-      outline: 2px solid var(--color-accent);
-      outline-offset: 2px;
+      outline: var(--focus-ring-width) solid var(--color-focus-ring);
+      outline-offset: var(--focus-ring-offset);
     }
 
     .file-button.disabled {
@@ -230,7 +230,7 @@ const ISSUES: Record<ImportIssueCode, string> = {
     .table-scroll {
       position: relative;
       overflow-x: auto;
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-sm);
     }
 
@@ -250,7 +250,7 @@ const ISSUES: Record<ImportIssueCode, string> = {
 
     .issues td {
       padding: var(--space-2);
-      border-block-start: 1px solid var(--color-border);
+      border-block-start: var(--border-width) solid var(--color-border);
     }
 
     .summary {

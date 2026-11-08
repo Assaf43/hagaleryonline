@@ -311,7 +311,7 @@ export interface ValueDialogData {
       inline-size: 48px;
       block-size: 32px;
       padding: 0;
-      border: 1px solid var(--color-border-strong);
+      border: var(--border-width) solid var(--color-border-strong);
       border-radius: var(--radius-sm);
       background: none;
     }
