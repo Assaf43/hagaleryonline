@@ -83,6 +83,7 @@ li.active .row,
 .text {
   display: flex;
   flex-direction: column;
+  align-items: start;
   flex: 1;
   min-inline-size: 0;
   font-size: var(--font-small);
@@ -90,7 +91,6 @@ li.active .row,
 
 .model {
   font-weight: 700;
-  text-align: start;
 }
 
 .name,

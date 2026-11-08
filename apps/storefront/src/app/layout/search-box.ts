@@ -75,7 +75,7 @@ export class SearchBox {
     const urls = [
       ...this.products().map((p) => `/product/${p.slug}`),
       ...this.categories().map((c) => `/category/${c.slug}`),
-      `/search?q=${encodeURIComponent(this.query())}`,
+      `/search?q=${encodeURIComponent(this.text().trim())}`,
     ];
     return urls.map((url, i) => ({ id: this.optionId(i), url }));
   });
@@ -113,6 +113,7 @@ export class SearchBox {
     const value = (event.target as HTMLInputElement).value;
     this.text.set(value);
     this.dismissed = false;
+    this.activeIndex.set(-1);
     if (value.trim().length < MIN_CHARS) this.close(false);
     this.typed$.next(value);
   }
@@ -134,7 +135,9 @@ export class SearchBox {
         return;
       case 'Enter': {
         event.preventDefault();
-        const active = this.open() ? this.options()[this.activeIndex()] : undefined;
+        // Suggestions that belong to older text are stale: Enter then searches what is typed now.
+        const stale = this.text().trim() !== this.query();
+        const active = this.open() && !stale ? this.options()[this.activeIndex()] : undefined;
         if (active) {
           this.close(true);
           void this.router.navigateByUrl(active.url);
@@ -182,6 +185,11 @@ export class SearchBox {
 
   protected price(agorot: number) {
     return formatPrice(agorot);
+  }
+
+  /** Keeps focus in the input while an option is pressed, so Safari/iOS does not close the panel before the click. */
+  protected panelMouseDown(event: MouseEvent) {
+    event.preventDefault();
   }
 
   protected linkClick() {

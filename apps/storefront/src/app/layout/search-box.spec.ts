@@ -144,6 +144,31 @@ describe('SearchBox', () => {
     expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('Enter after typing more searches the new text, not the stale active option', async () => {
+    const router = TestBed.inject(Router);
+    const byUrl = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    const nav = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    await open();
+    key('ArrowDown');
+    type('ספות');
+    key('Enter');
+    expect(byUrl).not.toHaveBeenCalled();
+    expect(nav).toHaveBeenCalledWith(['/search'], { queryParams: { q: 'ספות' } });
+  });
+
+  it('keeps focus on mousedown and still navigates on click', async () => {
+    await open();
+    const link = options()[0].querySelector('a')!;
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    link.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    settle();
+    expect(options().length).toBe(11);
+    const nav = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    link.click();
+    expect(nav).toHaveBeenCalledWith(expect.anything(), expect.anything());
+  });
+
   it('Escape closes and keeps the text', async () => {
     await open();
     key('Escape');
