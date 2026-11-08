@@ -235,7 +235,7 @@ mat-dialog-actions svg,
 .qr {
   justify-self: center;
   border-radius: var(--radius-sm);
-  background: #fff; // QR codes must stay dark-on-white to scan, in dark mode too
+  background: var(--color-qr-surface); // QR codes must stay dark-on-white to scan, in dark mode too
   padding: var(--space-2);
 }
 
