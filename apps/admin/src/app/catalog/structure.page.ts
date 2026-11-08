@@ -221,8 +221,8 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
     }
 
     svg {
-      inline-size: 18px;
-      block-size: 18px;
+      inline-size: var(--icon-size-md);
+      block-size: var(--icon-size-md);
     }
 
     .rows {
@@ -240,7 +240,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
       gap: var(--space-1) var(--space-3);
       padding: var(--space-2) var(--space-4);
       background: var(--color-surface);
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-md);
     }
 
@@ -276,7 +276,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
     .attribute {
       padding: var(--space-3) var(--space-4);
       background: var(--color-surface);
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-md);
     }
 
@@ -311,7 +311,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
       gap: var(--space-1);
       padding-inline: var(--space-3) var(--space-1);
       min-block-size: 36px;
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
       border-radius: var(--radius-pill);
       background: var(--color-bg);
       font-size: var(--font-small);
@@ -321,7 +321,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
       inline-size: 14px;
       block-size: 14px;
       border-radius: var(--radius-pill);
-      border: 1px solid var(--color-border-strong);
+      border: var(--border-width) solid var(--color-border-strong);
     }
 
     // A comfortable tap target on tablets and phones (ADM-15) without changing the row height.
@@ -337,8 +337,8 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
     }
 
     .chip-button svg {
-      inline-size: 16px;
-      block-size: 16px;
+      inline-size: var(--icon-size-sm);
+      block-size: var(--icon-size-sm);
     }
   `,
 })

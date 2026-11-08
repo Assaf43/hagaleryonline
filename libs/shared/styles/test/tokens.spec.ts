@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseTokens, resolveTokens } from './resolve-tokens';
+import { parseTokens, resolveAll, resolveTokens } from './resolve-tokens';
 
 describe('design tokens', () => {
   it('semantic tokens resolve to the v2 values', async () => {
@@ -32,6 +32,35 @@ describe('design tokens', () => {
     const t = await resolveTokens();
     expect(t.light['--color-focus-ring']).toBe('#111111');
     expect(t.dark['--color-focus-ring']).toBe('#f2f2f2');
+  });
+
+  it('component tokens', async () => {
+    const t = await resolveAll();
+    const expected: Record<string, string> = {
+      '--control-height': '48px',
+      '--control-height-compact': '40px',
+      '--control-height-sm': '32px',
+      '--icon-button-size': '44px',
+      '--icon-size-xs': '14px',
+      '--icon-size-sm': '16px',
+      '--icon-size-md': '18px',
+      '--icon-size-ui': '20px',
+      '--icon-size-header': '24px',
+      '--border-width': '1px',
+      '--border-width-input': '1.5px',
+      '--border-width-strong': '2px',
+      '--focus-ring-width': '2px',
+      '--focus-ring-offset': '2px',
+      '--badge-padding-block': '2px',
+      '--badge-padding-inline': '10px',
+      '--swatch-size': '26px',
+      '--swatch-ring': '2px',
+      '--card-radius': '10px',
+      '--media-radius': '10px',
+      '--button-padding-inline': '24px',
+    };
+    for (const [name, value] of Object.entries(expected)) expect(t.light[name], name).toBe(value);
+    expect(t['light@1024']['--control-height']).toBe('44px');
   });
 
   it('semantic file has no raw colors', () => {

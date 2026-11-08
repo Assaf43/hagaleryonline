@@ -50,7 +50,7 @@ import { MenuData } from './menu-data';
   styles: `
     .footer {
       background: var(--color-surface);
-      border-block-start: 1px solid var(--color-border);
+      border-block-start: var(--border-width) solid var(--color-border);
       margin-block-start: var(--space-8);
       padding-block: var(--space-7) var(--space-6);
     }
@@ -107,7 +107,7 @@ import { MenuData } from './menu-data';
     .bottom {
       margin-block-start: var(--space-6);
       padding-block-start: var(--space-4);
-      border-block-start: 1px solid var(--color-border);
+      border-block-start: var(--border-width) solid var(--color-border);
       font-size: var(--font-small);
       color: var(--color-text-secondary);
     }

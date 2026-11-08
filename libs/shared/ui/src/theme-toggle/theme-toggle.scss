@@ -2,8 +2,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 44px;
-  block-size: 44px;
+  inline-size: var(--icon-button-size);
+  block-size: var(--icon-button-size);
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;

@@ -5,6 +5,7 @@
 //   - [data-theme="dark"]          -> the user chose dark (saved in a cookie; SSR sets it, so no flash)
 
 @use 'primitives';
+@use 'component-tokens';
 
 @mixin light {
   // Clean, neutral and photo-first (decision 63): white page, black text and actions,
@@ -105,6 +106,8 @@
   --duration-base: var(--ms-200);
   --duration-slow: var(--ms-320);
   --ease: var(--curve-standard);
+
+  @include component-tokens.component-tokens;
 }
 
 :root[data-theme='dark'] {
@@ -120,6 +123,7 @@
 @media (width >= 1024px) {
   :root {
     --gutter: var(--size-32);
+    --control-height: 44px;
     --font-display: var(--text-48);
     --font-h1: var(--text-36);
     --font-h2: var(--text-28);

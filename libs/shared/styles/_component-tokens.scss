@@ -1,0 +1,32 @@
+// Component layer: sizes and widths shared by several components. Values are literals or
+// semantic tokens, never primitives. Components read these instead of repeating numbers.
+
+@mixin component-tokens {
+  --control-height: 48px; // 44px from 1024px (see _tokens.scss)
+  --control-height-compact: 40px;
+  --control-height-sm: 32px;
+  --icon-button-size: 44px;
+
+  --icon-size-xs: 14px;
+  --icon-size-sm: 16px;
+  --icon-size-md: 18px;
+  --icon-size-ui: 20px;
+  --icon-size-header: 24px;
+
+  --border-width: 1px;
+  --border-width-input: 1.5px;
+  --border-width-strong: 2px;
+
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  --badge-padding-block: 2px;
+  --badge-padding-inline: 10px;
+
+  --swatch-size: 26px;
+  --swatch-ring: 2px;
+
+  --card-radius: var(--radius-md);
+  --media-radius: var(--radius-md);
+  --button-padding-inline: var(--space-5);
+}

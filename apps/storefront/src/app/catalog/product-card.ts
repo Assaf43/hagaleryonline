@@ -81,7 +81,7 @@ const MAX_SWATCHES = 4;
       position: relative;
       aspect-ratio: 1 / 1;
       background: var(--color-surface-alt);
-      border-radius: var(--radius-md);
+      border-radius: var(--media-radius);
       overflow: hidden;
       display: grid;
       place-items: center;
@@ -110,7 +110,7 @@ const MAX_SWATCHES = 4;
     .badge-delivery {
       background: var(--color-surface);
       color: var(--color-text);
-      border: 1px solid var(--color-border);
+      border: var(--border-width) solid var(--color-border);
     }
 
     .badge-delivery.out {
@@ -142,7 +142,7 @@ const MAX_SWATCHES = 4;
         content: '';
         position: absolute;
         inset: 0;
-        border-radius: var(--radius-md);
+        border-radius: var(--card-radius);
       }
 
       a:focus-visible {
@@ -150,8 +150,8 @@ const MAX_SWATCHES = 4;
       }
 
       a:focus-visible::after {
-        outline: 2px solid var(--color-text);
-        outline-offset: 4px;
+        outline: var(--focus-ring-width) solid var(--color-focus-ring);
+        outline-offset: calc(var(--focus-ring-offset) * 2);
       }
     }
 
@@ -202,9 +202,9 @@ const MAX_SWATCHES = 4;
     }
 
     .swatch {
-      inline-size: 26px;
-      block-size: 26px;
-      box-shadow: inset 0 0 0 2px var(--color-surface);
+      inline-size: var(--swatch-size);
+      block-size: var(--swatch-size);
+      box-shadow: inset 0 0 0 var(--swatch-ring) var(--color-surface);
     }
 
     .swatch.more {

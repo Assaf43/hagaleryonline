@@ -5,8 +5,8 @@
 }
 
 svg {
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
 }
 
 .drop-zone {
@@ -123,7 +123,7 @@ svg {
   align-content: start;
   gap: var(--space-2);
   padding: var(--space-2);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   min-inline-size: 0;
@@ -161,8 +161,8 @@ svg {
   inset-inline-end: var(--space-2);
   display: grid;
   place-items: center;
-  inline-size: 32px;
-  block-size: 32px;
+  inline-size: var(--control-height-sm);
+  block-size: var(--control-height-sm);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text-secondary);
