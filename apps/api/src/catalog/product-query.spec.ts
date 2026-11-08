@@ -257,43 +257,4 @@ describe('queryProducts', () => {
       expect(imageOf()).toBe(A);
     });
   });
-
-  describe('card photo', () => {
-    const ref = (url: string) => ({ url, altHe: '' });
-    const A = ref('a.webp');
-    const G = ref('olive.webp');
-    const B = ref('beige.webp');
-    const photoProduct = product(
-      7,
-      3,
-      [
-        variant(100_000, 60, { color: 'beige' }),
-        variant(100_000, 60, { color: 'olive' }),
-        variant(100_000, 60, { color: 'gray' }),
-      ],
-      {
-        image: A,
-        colorImages: new Map([
-          ['olive', G],
-          ['beige', B],
-        ]),
-      },
-    );
-    const imageOf = (attributes?: Record<string, string[]>) =>
-      run(buildSnapshot([photoProduct]), { attributes }).items[0].image;
-
-    it('uses the photo of the filtered color', () => {
-      expect(imageOf({ color: ['olive'] })).toBe(G);
-    });
-    it('follows the order of the selected colors', () => {
-      expect(imageOf({ color: ['olive', 'beige'] })).toBe(G);
-      expect(imageOf({ color: ['beige', 'olive'] })).toBe(B);
-    });
-    it('falls back to the general photo when no selected color has one', () => {
-      expect(imageOf({ color: ['gray'] })).toBe(A);
-    });
-    it('unfiltered listing keeps the general photo', () => {
-      expect(imageOf()).toBe(A);
-    });
-  });
 });

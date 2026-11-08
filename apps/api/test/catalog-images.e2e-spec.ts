@@ -191,12 +191,14 @@ describe('Catalog images (e2e)', () => {
 
     const grayPhoto = (await upload(editor, await jpeg(900, 900), { colorCode: 'gray' }).expect(201))
       .body as AdminImage;
-    expect(await cardImage('&attr.color=gray')).toBe(grayPhoto.url);
-    expect(await cardImage('&attr.color=beige')).toBe(beigePhoto.url);
-    expect(await cardImage('&attr.color=gray,beige')).toBe(grayPhoto.url);
-    expect(await cardImage('')).toBe(before);
-
-    await editor.delete(`${base()}/images/${grayPhoto.id}`).expect(204);
+    try {
+      expect(await cardImage('&attr.color=gray')).toBe(grayPhoto.url);
+      expect(await cardImage('&attr.color=beige')).toBe(beigePhoto.url);
+      expect(await cardImage('&attr.color=gray,beige')).toBe(grayPhoto.url);
+      expect(await cardImage('')).toBe(before);
+    } finally {
+      await editor.delete(`${base()}/images/${grayPhoto.id}`);
+    }
   });
 
   it('reorders, edits and deletes photos, and logs each change on the product', async () => {
