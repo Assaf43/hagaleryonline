@@ -1,0 +1,116 @@
+:host {
+  display: block;
+  position: relative;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-surface);
+  border: var(--border-width-input) solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding-inline: var(--space-4);
+  block-size: var(--search-height, 44px);
+  color: var(--color-text-muted);
+  transition: border-color var(--duration-fast) var(--ease);
+
+  input {
+    flex: 1;
+    min-inline-size: 0;
+    block-size: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    outline: none;
+  }
+
+  &:focus-within {
+    border-color: var(--color-text);
+  }
+
+  svg {
+    inline-size: var(--icon-size-ui);
+    block-size: var(--icon-size-ui);
+  }
+}
+
+.panel {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(100% + var(--space-1));
+  z-index: 60;
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  max-block-size: 70vh;
+  overflow-y: auto;
+  color: var(--color-text);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-block-size: 44px;
+  padding: var(--space-2) var(--space-4);
+  color: inherit;
+  text-decoration: none;
+}
+
+li.active .row,
+.row:hover {
+  background: var(--color-surface-alt);
+}
+
+.thumb {
+  flex: none;
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  overflow: hidden;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--font-small);
+}
+
+.model {
+  font-weight: 700;
+  text-align: start;
+}
+
+.name,
+.from {
+  color: var(--color-text-muted);
+}
+
+.price {
+  flex: none;
+  font-size: var(--font-small);
+}
+
+.row.all {
+  border-block-start: var(--border-width) solid var(--color-border);
+  font-weight: 700;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-small);
+  color: var(--color-text-muted);
+}

@@ -1,0 +1,88 @@
+<form class="search" role="search" action="/search" method="get" (submit)="formSubmit($event)">
+  <svg lucideSearch aria-hidden="true"></svg>
+  <input
+    type="search"
+    name="q"
+    maxlength="100"
+    placeholder="חיפוש"
+    aria-label="חיפוש"
+    autocomplete="off"
+    role="combobox"
+    aria-autocomplete="list"
+    [id]="inputId()"
+    [attr.aria-expanded]="open()"
+    [attr.aria-controls]="open() && count() > 0 ? listId() : null"
+    [attr.aria-activedescendant]="open() ? activeId() : null"
+    (input)="typing($event)"
+    (keydown)="keydown($event)"
+    (focus)="focusIn()"
+  />
+
+  <div class="visually-hidden" role="status" aria-live="polite">
+    @if (open()) {
+      {{ count() }} תוצאות
+    }
+  </div>
+
+  @if (open()) {
+    <div class="panel">
+      @if (count() === 0) {
+        <p class="empty">לא נמצאו תוצאות ל־"{{ query() }}"</p>
+      } @else {
+        <ul class="list" role="listbox" [id]="listId()" aria-label="הצעות חיפוש">
+          @for (p of products(); track p.slug; let i = $index) {
+            <li
+              role="option"
+              [id]="optionId(i)"
+              [class.active]="activeIndex() === i"
+              [attr.aria-selected]="activeIndex() === i"
+            >
+              <a class="row" [routerLink]="['/product', p.slug]" tabindex="-1" (click)="linkClick()">
+                <span class="thumb">
+                  @if (p.image; as img) {
+                    <hg-responsive-image [image]="img" sizes="48px" />
+                  }
+                </span>
+                <span class="text">
+                  <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
+                  <span class="name">{{ p.nameHe }}</span>
+                </span>
+                <span class="price"><span class="from">החל מ-</span> {{ price(p.priceFrom) }}</span>
+              </a>
+            </li>
+          }
+          @for (c of categories(); track c.slug; let j = $index) {
+            @let i = products().length + j;
+            <li
+              role="option"
+              [id]="optionId(i)"
+              [class.active]="activeIndex() === i"
+              [attr.aria-selected]="activeIndex() === i"
+            >
+              <a class="row" [routerLink]="['/category', c.slug]" tabindex="-1" (click)="linkClick()">
+                <span class="text">{{ c.nameHe }}</span>
+              </a>
+            </li>
+          }
+          @let last = count();
+          <li
+            role="option"
+            [id]="optionId(last)"
+            [class.active]="activeIndex() === last"
+            [attr.aria-selected]="activeIndex() === last"
+          >
+            <a
+              class="row all"
+              [routerLink]="['/search']"
+              [queryParams]="{ q: query() }"
+              tabindex="-1"
+              (click)="linkClick()"
+            >
+              <span class="text">כל התוצאות</span>
+            </a>
+          </li>
+        </ul>
+      }
+    </div>
+  }
+</form>
