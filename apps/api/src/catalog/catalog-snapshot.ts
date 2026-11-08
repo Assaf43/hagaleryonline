@@ -66,4 +66,6 @@ export interface SnapshotProduct {
   /** Active variants only; products without any are left out of the snapshot. */
   variants: SnapshotVariant[];
   image: ImageRef | null;
+  /** Color value code → first photo linked to that color (image order). */
+  colorImages: Map<string, ImageRef>;
 }

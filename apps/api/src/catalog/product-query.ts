@@ -1,6 +1,7 @@
 import type {
   Facet,
   FulfillmentMode,
+  ImageRef,
   NumericRange,
   ProductCard,
   ProductListQuery,
@@ -50,7 +51,9 @@ export function queryProducts(
   const pageItems = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   return {
-    items: pageItems.map((p) => toCard(snapshot, p, matchingVariants(p, filters), context.now)),
+    items: pageItems.map((p) =>
+      toCard(snapshot, p, matchingVariants(p, filters), context.now, filters.selected.get('color')),
+    ),
     total: matches.length,
     page,
     pageSize,
@@ -256,7 +259,13 @@ function sortProducts(
 
 // ---------- cards ----------
 
-function toCard(snapshot: CatalogSnapshot, p: SnapshotProduct, matching: SnapshotVariant[], now: Date): ProductCard {
+function toCard(
+  snapshot: CatalogSnapshot,
+  p: SnapshotProduct,
+  matching: SnapshotVariant[],
+  now: Date,
+  selectedColors: ReadonlySet<string> | undefined,
+): ProductCard {
   const cheapest = matching.reduce((best, v) => (v.price < best.price ? v : best));
   const sellable = matching.filter((v) => v.fulfillment !== 'out_of_stock');
   const fastest = (sellable.length ? sellable : matching).reduce((best, v) =>
@@ -276,7 +285,7 @@ function toCard(snapshot: CatalogSnapshot, p: SnapshotProduct, matching: Snapsho
     discountPercent: discount,
     hasPriceRange: new Set(p.variants.map((v) => v.price)).size > 1,
     swatches: swatchesOf(snapshot, p),
-    image: p.image,
+    image: cardImage(p, selectedColors),
     fulfillment: fastest.fulfillment,
     leadTimeDays: fastest.leadTimeDays,
     isNew: now.getTime() - p.createdAt.getTime() < NEW_PRODUCT_DAYS * 24 * 60 * 60 * 1000,
@@ -292,4 +301,13 @@ function swatchesOf(snapshot: CatalogSnapshot, p: SnapshotProduct): Swatch[] {
     .filter((value) => !!value)
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((value) => ({ code: value.code, labelHe: value.labelHe, hex: value.hex }));
+}
+
+/** The photo of the first filtered color that has one, else the product's general photo. */
+function cardImage(p: SnapshotProduct, selectedColors: ReadonlySet<string> | undefined): ImageRef | null {
+  for (const code of selectedColors ?? []) {
+    const image = p.colorImages.get(code);
+    if (image) return image;
+  }
+  return p.image;
 }
