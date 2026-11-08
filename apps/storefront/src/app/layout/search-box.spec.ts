@@ -169,6 +169,57 @@ describe('SearchBox', () => {
     expect(nav).toHaveBeenCalledWith(expect.anything(), expect.anything());
   });
 
+  it('Enter on an active option clears focus', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+    document.body.appendChild(el);
+    input.focus();
+    await open();
+    key('ArrowDown');
+    key('Enter');
+    expect(document.activeElement).not.toBe(input);
+    el.remove();
+  });
+
+  it('scrolls the active option into view', async () => {
+    const spy = vi.fn();
+    Element.prototype.scrollIntoView = spy;
+    await open();
+    key('ArrowDown');
+    settle();
+    await fixture.whenStable();
+    expect(spy).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
+  it('reopens when the same text is typed again after Escape', async () => {
+    await open();
+    key('Escape');
+    settle();
+    type('ספ');
+    type('ספה');
+    vi.advanceTimersByTime(200);
+    const [req] = requests();
+    expect(req).toBeTruthy();
+    await flushWith(req, suggestions(1, 0));
+    expect(options().length).toBe(2);
+  });
+
+  it('retries the same query after an error', () => {
+    type('ספה');
+    vi.advanceTimersByTime(200);
+    requests()[0].flush('x', { status: 500, statusText: 'err' });
+    settle();
+    type('ספה');
+    vi.advanceTimersByTime(200);
+    expect(requests().length).toBe(1);
+  });
+
+  it('hovering an option makes it active', async () => {
+    await open();
+    options()[2].dispatchEvent(new MouseEvent('mouseenter'));
+    settle();
+    expect(input.getAttribute('aria-activedescendant')).toBe(options()[2].id);
+  });
+
   it('Escape closes and keeps the text', async () => {
     await open();
     key('Escape');

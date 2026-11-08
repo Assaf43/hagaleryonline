@@ -34,6 +34,7 @@
             <li
               role="option"
               [id]="optionId(i)"
+              (mouseenter)="hover(i)"
               [class.active]="activeIndex() === i"
               [attr.aria-selected]="activeIndex() === i"
             >
@@ -56,6 +57,7 @@
             <li
               role="option"
               [id]="optionId(i)"
+              (mouseenter)="hover(i)"
               [class.active]="activeIndex() === i"
               [attr.aria-selected]="activeIndex() === i"
             >
@@ -68,6 +70,7 @@
           <li
             role="option"
             [id]="optionId(last)"
+            (mouseenter)="hover(last)"
             [class.active]="activeIndex() === last"
             [attr.aria-selected]="activeIndex() === last"
           >

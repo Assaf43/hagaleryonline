@@ -4,6 +4,7 @@ import {
   DestroyRef,
   ElementRef,
   PLATFORM_ID,
+  afterRenderEffect,
   computed,
   inject,
   input,
@@ -13,7 +14,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { LucideSearch } from '@lucide/angular';
-import { Subject, catchError, debounceTime, distinctUntilChanged, filter, map, of, switchMap } from 'rxjs';
+import { Subject, catchError, debounceTime, filter, map, of, switchMap } from 'rxjs';
 import type { SearchSuggestions } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { formatPrice } from '../core/format';
@@ -82,13 +83,21 @@ export class SearchBox {
   protected readonly activeId = computed(() => this.options()[this.activeIndex()]?.id ?? null);
 
   constructor() {
+    // Keep the keyboard-active row visible inside the scrolling panel (browser only).
+    afterRenderEffect(() => {
+      if (this.activeIndex() < 0) return;
+      const row = this.host.nativeElement.querySelector<HTMLElement>('[role="option"].active');
+      row?.scrollIntoView?.({ block: 'nearest' });
+    });
+
     if (isPlatformBrowser(inject(PLATFORM_ID))) {
       this.typed$
         .pipe(
           map((v) => v.trim()),
           debounceTime(DEBOUNCE_MS),
           filter(() => !this.dismissed),
-          distinctUntilChanged(),
+          // Skip only when the panel is already open for this exact query (so Escape or an error can be retried).
+          filter((q) => !(this.open() && this.query() === q)),
           switchMap((q) =>
             q.length < MIN_CHARS
               ? of({ q, data: null })
@@ -139,8 +148,7 @@ export class SearchBox {
         const stale = this.text().trim() !== this.query();
         const active = this.open() && !stale ? this.options()[this.activeIndex()] : undefined;
         if (active) {
-          this.close(true);
-          void this.router.navigateByUrl(active.url);
+          this.go(() => this.router.navigateByUrl(active.url));
         } else {
           this.submit();
         }
@@ -158,9 +166,14 @@ export class SearchBox {
   private submit() {
     const q = this.text().trim();
     if (!q) return;
+    this.go(() => this.router.navigate(['/search'], { queryParams: { q } }));
+  }
+
+  /** Leaving for a result: closes the panel, drops pending requests and clears focus (phone keyboard). */
+  private go(navigate: () => Promise<boolean>) {
     this.close(true);
     this.host.nativeElement.querySelector('input')?.blur();
-    void this.router.navigate(['/search'], { queryParams: { q } });
+    void navigate();
   }
 
   /** `dismiss` also drops requests that are still pending. */
@@ -192,7 +205,12 @@ export class SearchBox {
     event.preventDefault();
   }
 
+  /** The link navigates itself; we only close and clear focus. */
   protected linkClick() {
-    this.close(true);
+    this.go(() => Promise.resolve(true));
+  }
+
+  protected hover(i: number) {
+    this.activeIndex.set(i);
   }
 }
