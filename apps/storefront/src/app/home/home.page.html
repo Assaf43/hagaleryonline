@@ -1,0 +1,76 @@
+<div class="container">
+  <section class="hero">
+    <div class="hero-text">
+      <h1 class="display">בית שמרגיש<br />כמו שלכם</h1>
+      <p class="lead-text">ספות, כורסאות ואביזרים לסלון, עם מידות מלאות לכל דגם, כדי שתדעו בדיוק מה ייכנס הביתה.</p>
+      <div class="ctas">
+        @if (menu.categories()[0]; as c) {
+          <a [routerLink]="['/category', c.slug]" class="btn btn-primary">לכל ה{{ c.nameHe }}</a>
+        }
+        @if (firstRoom(); as r) {
+          <a [routerLink]="['/room', r.slug]" class="btn btn-secondary">קנייה לפי חדר</a>
+        }
+      </div>
+    </div>
+    @if (heroImage(); as img) {
+      <div class="hero-art">
+        <hg-responsive-image [image]="img" sizes="(width >= 1024px) 55vw, 100vw" [priority]="true" />
+      </div>
+    }
+  </section>
+
+  <ul class="trust" aria-label="למה לקנות אצלנו">
+    <li><svg lucideRuler aria-hidden="true"></svg>מידות מלאות לכל דגם</li>
+    <li><svg lucideSlidersHorizontal aria-hidden="true"></svg>סינון לפי רוחב ועומק בס״מ</li>
+    <li><svg lucideTruck aria-hidden="true"></svg>משלוח עד הבית</li>
+  </ul>
+
+  @for (r of menu.rooms(); track r.slug) {
+    <section class="section" [attr.aria-labelledby]="'room-' + r.slug">
+      <div class="section-head">
+        <h2 [id]="'room-' + r.slug">{{ r.nameHe }}</h2>
+        <a [routerLink]="['/room', r.slug]">לכל המוצרים ל{{ r.nameHe }}</a>
+      </div>
+      <ul class="types">
+        @for (c of r.categories; track c.slug) {
+          <li>
+            <a [routerLink]="['/category', c.slug]" class="type">
+              <span class="type-media">
+                @if (typeImages()[c.slug]; as img) {
+                  <hg-responsive-image [image]="img" sizes="(width >= 1024px) 16vw, 42vw" />
+                }
+              </span>
+              {{ c.nameHe }}
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (bestsellers().length) {
+    <section class="section" aria-labelledby="bestsellers">
+      <div class="section-head">
+        <h2 id="bestsellers">הנמכרים ביותר</h2>
+      </div>
+      <ul class="product-grid four">
+        @for (p of bestsellers(); track p.slug) {
+          <li><hg-product-card [product]="p" /></li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (newest().length) {
+    <section class="section" aria-labelledby="newest">
+      <div class="section-head">
+        <h2 id="newest">חדש באתר</h2>
+      </div>
+      <ul class="product-grid four">
+        @for (p of newest(); track p.slug) {
+          <li><hg-product-card [product]="p" /></li>
+        }
+      </ul>
+    </section>
+  }
+</div>

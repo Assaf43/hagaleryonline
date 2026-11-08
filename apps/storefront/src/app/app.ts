@@ -1,37 +1,47 @@
-import { ChangeDetectionStrategy, Component, afterNextRender, computed, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { RouterOutlet } from '@angular/router';
-import type { HealthStatus } from '@hg/models';
-import { ThemeToggle } from '@hg/ui';
+import { ChangeDetectionStrategy, Component, DestroyRef, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
+import { SiteFooter } from './layout/site-footer';
+import { SiteHeader } from './layout/site-header';
+import { MenuData } from './layout/menu-data';
 
 @Component({
   selector: 'hg-root',
-  imports: [RouterOutlet, ThemeToggle],
+  imports: [RouterOutlet, SiteHeader, SiteFooter],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  templateUrl: './app.html',
-  styleUrl: './app.scss',
+  template: `
+    <hg-site-header />
+    <main id="main" tabindex="-1">
+      <router-outlet />
+    </main>
+    <hg-site-footer />
+  `,
+  styles: `
+    main {
+      display: block;
+      min-block-size: 60vh;
+      outline: none;
+    }
+  `,
 })
 export class App {
-  private readonly http = inject(HttpClient);
-
-  /** Phase 0 smoke check: null until the browser has asked the API. */
-  private readonly apiStatus = signal<HealthStatus | 'unreachable' | null>(null);
-
-  protected readonly apiCheck = computed(() => {
-    const s = this.apiStatus();
-    if (s === null) return { text: 'בודק חיבור לשרת…', tone: 'pending' };
-    if (s === 'unreachable') return { text: 'השרת לא זמין', tone: 'down' };
-    return s.status === 'ok'
-      ? { text: 'השרת ומסד הנתונים פעילים', tone: 'up' }
-      : { text: 'מסד הנתונים לא זמין', tone: 'down' };
-  });
-
   constructor() {
-    afterNextRender(() => {
-      this.http.get<HealthStatus>('/api/health').subscribe({
-        next: (status) => this.apiStatus.set(status),
-        error: () => this.apiStatus.set('unreachable'),
-      });
-    });
+    void inject(MenuData).load();
+    // A new page starts at the top; filter and "load more" changes (same path) keep the scroll.
+    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+      let path = '';
+      inject(Router)
+        .events.pipe(
+          filter((e) => e instanceof NavigationEnd),
+          takeUntilDestroyed(inject(DestroyRef)),
+        )
+        .subscribe((e) => {
+          const next = e.urlAfterRedirects.split('?')[0];
+          if (path && next !== path) window.scrollTo({ top: 0 });
+          path = next;
+        });
+    }
   }
 }

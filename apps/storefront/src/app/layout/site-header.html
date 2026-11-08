@@ -1,0 +1,128 @@
+<a class="skip-link" href="#main">דילוג לתוכן</a>
+<p class="announce">משלוח עד הבית · מידות מלאות לכל דגם</p>
+
+<header class="header">
+  <div class="container header-row">
+    <button type="button" class="icon-btn only-mobile" aria-label="תפריט" (click)="openDrawer()">
+      <svg lucideMenu></svg>
+    </button>
+    <a routerLink="/" class="logo">הגלריה לכולם</a>
+
+    <form class="search search-desktop" role="search" (submit)="search($event, desktopQ)">
+      <svg lucideSearch aria-hidden="true"></svg>
+      <input #desktopQ type="search" name="q" maxlength="100" placeholder="חיפוש" aria-label="חיפוש" />
+    </form>
+
+    <div class="header-actions">
+      <hg-theme-toggle />
+    </div>
+  </div>
+
+  <div class="container search-mobile">
+    <form class="search" role="search" (submit)="search($event, mobileQ)">
+      <svg lucideSearch aria-hidden="true"></svg>
+      <input #mobileQ type="search" name="q" maxlength="100" placeholder="חיפוש" aria-label="חיפוש" />
+    </form>
+  </div>
+
+  <nav class="nav-desktop" aria-label="ניווט ראשי">
+    <div class="container nav-row">
+      @if (menu.rooms().length) {
+        <div
+          class="has-mega"
+          (mouseenter)="megaOpen.set(true)"
+          (mouseleave)="megaOpen.set(false)"
+          (focusout)="focusOut($event)"
+        >
+          <button
+            type="button"
+            class="nav-link nav-rooms"
+            [attr.aria-expanded]="megaOpen()"
+            aria-controls="mega"
+            (click)="roomsClick($event)"
+            (keydown.escape)="megaOpen.set(false)"
+          >
+            לפי חדרים
+            <svg lucideChevronDown aria-hidden="true"></svg>
+          </button>
+          <div id="mega" class="mega" [class.open]="megaOpen()" (keydown.escape)="megaOpen.set(false)">
+            <div class="container mega-inner">
+              <ul class="mega-rooms">
+                @for (r of menu.rooms(); track r.slug; let i = $index) {
+                  <li>
+                    <a
+                      [routerLink]="['/room', r.slug]"
+                      [class.active]="i === activeRoom()"
+                      (mouseenter)="activeRoom.set(i)"
+                      (focus)="activeRoom.set(i)"
+                    >
+                      {{ r.nameHe }}
+                      <svg lucideChevronLeft aria-hidden="true"></svg>
+                    </a>
+                  </li>
+                }
+              </ul>
+              @if (room(); as r) {
+                <div class="mega-types">
+                  <ul>
+                    @for (c of r.categories; track c.slug) {
+                      <li>
+                        <a [routerLink]="['/category', c.slug]">{{ c.nameHe }}</a>
+                      </li>
+                    }
+                  </ul>
+                  <a class="mega-all" [routerLink]="['/room', r.slug]">לכל המוצרים ל{{ r.nameHe }}</a>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      }
+      @for (c of menu.categories(); track c.slug) {
+        <a class="nav-link" [routerLink]="['/category', c.slug]" routerLinkActive="active">{{ c.nameHe }}</a>
+      }
+    </div>
+  </nav>
+</header>
+
+<dialog #drawer class="drawer" aria-label="תפריט" (click)="drawerClick($event)">
+  <div class="drawer-panel">
+    <div class="drawer-head">
+      <span class="logo">הגלריה לכולם</span>
+      <button type="button" class="icon-btn" aria-label="סגירת התפריט" (click)="closeDrawer()">
+        <svg lucideX></svg>
+      </button>
+    </div>
+    <nav class="drawer-body" aria-label="תפריט ראשי">
+      @if (menu.rooms().length) {
+        <p class="drawer-label">לפי חדרים</p>
+        @for (r of menu.rooms(); track r.slug; let first = $first) {
+          <details class="drawer-room" [open]="first">
+            <summary>
+              {{ r.nameHe }}
+              <svg lucideChevronDown></svg>
+            </summary>
+            <ul>
+              <li>
+                <a [routerLink]="['/room', r.slug]">כל המוצרים ל{{ r.nameHe }}</a>
+              </li>
+              @for (c of r.categories; track c.slug) {
+                <li>
+                  <a [routerLink]="['/category', c.slug]">{{ c.nameHe }}</a>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      }
+      <p class="drawer-label">לפי סוג רהיט</p>
+      <ul>
+        @for (c of menu.categories(); track c.slug) {
+          <li>
+            <a [routerLink]="['/category', c.slug]">{{ c.nameHe }}</a>
+          </li>
+        }
+      </ul>
+    </nav>
+  </div>
+</dialog>

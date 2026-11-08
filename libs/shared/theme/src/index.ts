@@ -2,8 +2,8 @@
  * Light / dark theme (GEN-05).
  *
  * The saved choice lives in a cookie so the SSR render can set `data-theme` on <html>
- * before first paint. Without a saved choice there is no attribute and the CSS follows
- * `prefers-color-scheme` (see @hg/styles/tokens).
+ * before first paint. Without a saved choice there is no attribute and the site is light
+ * (decision 63: light by default, dark only when chosen; see @hg/styles/tokens).
  */
 
 export type Theme = 'light' | 'dark';
@@ -27,9 +27,9 @@ export function readThemeCookie(cookieHeader: string | null | undefined): Theme 
   return null;
 }
 
-/** The theme currently shown: the saved choice, otherwise the device setting. */
-export function effectiveTheme(saved: Theme | null, prefersDark: boolean): Theme {
-  return saved ?? (prefersDark ? 'dark' : 'light');
+/** The theme currently shown: the saved choice, otherwise light. */
+export function effectiveTheme(saved: Theme | null): Theme {
+  return saved ?? 'light';
 }
 
 /** Applies and remembers the user's choice. Browser only. */

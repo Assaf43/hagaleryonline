@@ -1,0 +1,131 @@
+:host {
+  display: block;
+}
+
+.hero {
+  display: grid;
+  gap: var(--space-5);
+  padding-block: var(--space-5) var(--space-7);
+  align-items: center;
+}
+
+.display {
+  font-size: var(--font-display);
+}
+
+.lead-text {
+  font-size: var(--font-h3);
+  color: var(--color-text-secondary);
+  margin-block: var(--space-4) var(--space-5);
+  max-inline-size: 46ch;
+}
+
+.ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hero-art {
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-lg);
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+
+  hg-responsive-image {
+    inline-size: 86%;
+  }
+}
+
+.trust {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-5) 0;
+  display: grid;
+  gap: var(--space-4);
+  border-block: 1px solid var(--color-border);
+
+  li {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    font-size: var(--font-small);
+    font-weight: 600;
+  }
+
+  svg {
+    inline-size: 28px;
+    block-size: 28px;
+    color: var(--color-accent);
+  }
+}
+
+.types {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 42%;
+  gap: var(--space-3);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+
+  li {
+    scroll-snap-align: start;
+  }
+}
+
+.type {
+  display: grid;
+  gap: var(--space-2);
+  font-weight: 600;
+  text-decoration: none;
+
+  &:hover {
+    color: var(--color-accent);
+  }
+}
+
+.type-media {
+  display: block;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.product-grid.four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (width >= 768px) {
+  .trust {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .types {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: visible;
+  }
+}
+
+@media (width >= 1024px) {
+  .hero {
+    grid-template-columns: 5fr 7fr;
+    gap: var(--space-7);
+    padding-block: var(--space-7) var(--space-8);
+  }
+
+  .types {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .product-grid.four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

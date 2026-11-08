@@ -19,7 +19,6 @@
     "@angular/platform-browser": "^22.2.0",
     "@angular/router": "^22.2.0",
     "@fontsource/assistant": "^5.3.0",
-    "@fontsource/frank-ruhl-libre": "^5.3.0",
     "@hg/models": "^0.0.0",
     "@hg/styles": "^0.0.0",
     "@hg/theme": "^0.0.0",

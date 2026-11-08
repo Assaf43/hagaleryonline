@@ -23,7 +23,6 @@ export class ThemeToggle {
 
   toggle(): void {
     const saved = this.document.documentElement.getAttribute(THEME_ATTRIBUTE) as Theme | null;
-    const prefersDark = this.document.defaultView?.matchMedia('(prefers-color-scheme: dark)').matches ?? false;
-    saveTheme(this.document, effectiveTheme(saved, prefersDark) === 'dark' ? 'light' : 'dark');
+    saveTheme(this.document, effectiveTheme(saved) === 'dark' ? 'light' : 'dark');
   }
 }
