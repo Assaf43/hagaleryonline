@@ -1,0 +1,203 @@
+:host {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+svg {
+  inline-size: 18px;
+  block-size: 18px;
+}
+
+.drop-zone {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  text-align: center;
+  transition: border-color var(--duration-fast) var(--ease);
+
+  &.over {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+
+  > svg {
+    inline-size: 32px;
+    block-size: 32px;
+    color: var(--color-text-secondary);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+// The camera button only helps on phones and tablets.
+@media (pointer: fine) {
+  .camera {
+    display: none;
+  }
+}
+
+.hint,
+.muted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+  margin: 0;
+}
+
+.upload-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+
+  mat-form-field {
+    inline-size: 14rem;
+    max-inline-size: 100%;
+  }
+}
+
+.uploads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+
+  li {
+    display: grid;
+    grid-template-columns: minmax(0, 12rem) 1fr auto;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-small);
+  }
+
+  li:not(.failed) {
+    grid-template-columns: minmax(0, 12rem) 1fr;
+  }
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-error {
+  color: var(--color-danger);
+}
+
+.warning {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+  margin: 0;
+}
+
+.images {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+}
+
+.image-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  min-inline-size: 0;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--color-surface-alt);
+
+  img {
+    inline-size: 100%;
+    block-size: 100%;
+    object-fit: contain;
+    display: block;
+  }
+}
+
+.main-badge {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--font-caption);
+}
+
+.handle {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  display: grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: grab;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+
+  .alt {
+    grid-column: 1 / -1;
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+
+  .delete {
+    margin-inline-start: auto;
+    color: var(--color-danger);
+  }
+}
+
+.cdk-drag-preview {
+  box-shadow: var(--shadow-float);
+}
+
+.cdk-drag-placeholder {
+  opacity: 0.4;
+}
+
+.cdk-drag-animating,
+.images.cdk-drop-list-dragging .image-card:not(.cdk-drag-placeholder) {
+  transition: transform var(--duration-base) var(--ease);
+}

@@ -93,9 +93,20 @@
         </fieldset>
 
         <div class="grid-2">
-          <mat-slide-toggle name="active" [(ngModel)]="draft.active" (ngModelChange)="touch()">
-            מוצג באתר
-          </mat-slide-toggle>
+          <div class="active-toggle">
+            <mat-slide-toggle name="active" [(ngModel)]="draft.active" (ngModelChange)="touch()">
+              מוצג באתר
+            </mat-slide-toggle>
+            @if (draft.active && !images().length) {
+              <p class="warning">
+                @if (isNew()) {
+                  מוצר חדש נשמר מוסתר: אפשר להציג אותו באתר אחרי שמעלים לו תמונה.
+                } @else {
+                  צריך להעלות תמונה לפני שמציגים את המוצר באתר.
+                }
+              </p>
+            }
+          </div>
           <mat-form-field>
             <mat-label>סדר בתצוגה "מומלצים"</mat-label>
             <input
@@ -176,12 +187,22 @@
       </section>
 
       <!-- Images (Phase 2d) -->
-      <section class="panel images-placeholder" aria-labelledby="images-title">
-        <h2 id="images-title">תמונות</h2>
-        <p class="muted">
-          <svg lucideImage></svg>
-          העלאת תמונות תתווסף בשלב הבא (גרירה או צילום מהטלפון).
-        </p>
+      <section class="panel" aria-labelledby="images-title">
+        <h2 id="images-title">תמונות ({{ images().length }})</h2>
+        @if (product(); as p) {
+          <hga-product-images
+            [productId]="p.id"
+            [productActive]="p.active"
+            [colors]="colors()"
+            [canEdit]="canManageImages()"
+            [(images)]="images"
+          />
+        } @else {
+          <p class="muted">
+            <svg lucideImage></svg>
+            שמרו את המוצר, ואז אפשר להעלות תמונות (גרירה או צילום מהטלפון).
+          </p>
+        }
       </section>
 
       <!-- Variants -->

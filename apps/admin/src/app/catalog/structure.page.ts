@@ -63,7 +63,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
                   </span>
                   <span class="row-meta">
                     <a [routerLink]="['/catalog/products']" [queryParams]="{ categoryId: c.category.id }">
-                      {{ c.category.productCount }} מוצרים
+                      {{ productsText(c.category.productCount) }}
                     </a>
                     · מסננים: {{ attributeNames(c.category.attributeCodes) || (c.depth ? 'יורשת מהאב' : '—') }}
                   </span>
@@ -101,7 +101,7 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
                       <span class="badge">לא פעיל</span>
                     }
                   </span>
-                  <span class="row-meta">{{ r.productCount }} מוצרים</span>
+                  <span class="row-meta">{{ productsText(r.productCount) }}</span>
                   @if (canEdit()) {
                     <button matIconButton type="button" [attr.aria-label]="'עריכת ' + r.nameHe" (click)="editRoom(r)">
                       <svg lucidePencil></svg>
@@ -324,6 +324,13 @@ const DIALOG = { width: '520px', maxWidth: '95vw' };
       border: 1px solid var(--color-border-strong);
     }
 
+    // A comfortable tap target on tablets and phones (ADM-15) without changing the row height.
+    .row-meta a {
+      display: inline-block;
+      padding-block: var(--space-3);
+      margin-block: calc(-1 * var(--space-3));
+    }
+
     .count {
       font-size: var(--font-caption);
       color: var(--color-text-secondary);
@@ -341,6 +348,7 @@ export class StructurePage implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
   protected readonly data = signal<CatalogStructure | null>(null);
+  protected readonly productsText = (n: number) => (n === 1 ? 'מוצר אחד' : `${n} מוצרים`);
   protected readonly error = signal('');
   protected readonly canEdit = computed(() => this.auth.me()?.permissions.includes('catalog.structure') ?? false);
 

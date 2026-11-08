@@ -46,7 +46,7 @@ export interface AdminAttributeValue {
   labelHe: string;
   swatchHex: string | null;
   sortOrder: number;
-  /** Products and variants that use this value; a used value cannot be deleted. */
+  /** Products, variants and photos that use this value; a used value cannot be deleted. */
   usageCount: number;
 }
 
@@ -145,9 +145,52 @@ export interface AdminProductInput {
 
 export interface AdminProduct extends Omit<AdminProductInput, 'expectedUpdatedAt'> {
   id: number;
+  /** Managed with the image endpoints, not with the product save. */
+  images: AdminImage[];
   createdAt: string;
   updatedAt: string;
 }
+
+// ---------- Images (Phase 2d, ADM-04, decision 62) ----------
+
+export type ImageKindCode = 'cutout' | 'lifestyle';
+
+export const IMAGE_KIND_LABELS_HE: Record<ImageKindCode, string> = {
+  cutout: 'רקע לבן',
+  lifestyle: 'אווירה',
+};
+
+/** Photo uploads: JPG, PNG or WebP up to 15MB, at least 600px on the long side. */
+export const IMAGE_UPLOAD = {
+  maxBytes: 15 * 1024 * 1024,
+  types: ['image/jpeg', 'image/png', 'image/webp'],
+  minLongSide: 600,
+  maxPerProduct: 40,
+} as const;
+
+export interface AdminImage {
+  id: number;
+  /** Default size, for previews. */
+  url: string;
+  /** Smallest size, for thumbnails. */
+  thumbUrl: string;
+  /** A value code of the `color` attribute; null = every color. */
+  colorCode: string | null;
+  altHe: string;
+  kind: ImageKindCode;
+  width: number | null;
+  height: number | null;
+}
+
+/** PATCH /api/admin/catalog/products/:id/images/:imageId (also the optional fields of an upload). */
+export interface AdminImageInput {
+  colorCode: string | null;
+  altHe: string;
+  kind: ImageKindCode;
+}
+
+/** Why an upload was refused (`field: 'file'`, `value` is one of these). */
+export type ImageUploadProblem = 'type' | 'too_large' | 'too_small' | 'too_many' | 'unreadable';
 
 // ---------- Errors ----------
 
@@ -166,8 +209,8 @@ export type CatalogErrorCode =
   | 'incomplete'
   | 'not_found';
 
-/** Why a product cannot be shown yet: no active variant, or its category is hidden. */
-export type ActivationProblem = 'no_variants' | 'category_hidden';
+/** Why a product cannot be shown yet: no active variant, no photo, or its category is hidden. */
+export type ActivationProblem = 'no_variants' | 'no_images' | 'category_hidden';
 
 /** Hebrew names of the fulfillment modes, used by the admin and the Excel template. */
 export const FULFILLMENT_LABELS_HE: Record<FulfillmentMode, string> = {

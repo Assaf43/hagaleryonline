@@ -12,6 +12,8 @@ import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma } from '../gen
 import { AuditService } from '../audit/audit.service.js';
 import { CacheStore } from '../cache/cache-store.js';
 import { SearchIndexer } from '../catalog/search/search-indexer.js';
+import { imageFiles, toAdminImage } from '../media/image-urls.js';
+import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { changedFields } from './catalog-input.js';
 import { conflict, duplicate, incomplete, invalid, notFound } from './catalog-errors.js';
@@ -34,6 +36,7 @@ const productInclude = {
   rooms: { select: { roomId: true } },
   attributeValues: valueCodes,
   variants: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], include: { attributeValues: valueCodes } },
+  images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], include: { colorValue: { select: { code: true } } } },
 } satisfies Prisma.ProductInclude;
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 type VariantRow = ProductRow['variants'][number];
@@ -52,6 +55,7 @@ export class ProductsAdminService {
     private readonly audit: AuditService,
     private readonly cache: CacheStore,
     private readonly indexer: SearchIndexer,
+    private readonly storage: StorageProvider,
   ) {}
 
   async list(filter: {
@@ -111,7 +115,7 @@ export class ProductsAdminService {
   async get(id: number): Promise<AdminProduct> {
     const row = await this.prisma.product.findUnique({ where: { id }, include: productInclude });
     if (!row) throw notFound();
-    return toAdminProduct(row);
+    return toAdminProduct(row, this.storage);
   }
 
   create(input: AdminProductInput, meta: Meta): Promise<AdminProduct> {
@@ -144,6 +148,7 @@ export class ProductsAdminService {
       );
     });
     await this.cache.invalidate('catalog:');
+    await this.storage.remove(row.images.flatMap(imageFiles)).catch(() => undefined);
   }
 
   private async save(id: number | null, input: AdminProductInput, meta: Meta): Promise<AdminProduct> {
@@ -158,7 +163,7 @@ export class ProductsAdminService {
   async getInTx(tx: Prisma.TransactionClient, id: number): Promise<AdminProduct> {
     const row = await tx.product.findUnique({ where: { id }, include: productInclude });
     if (!row) throw notFound();
-    return toAdminProduct(row);
+    return toAdminProduct(row, this.storage);
   }
 
   /**
@@ -184,7 +189,8 @@ export class ProductsAdminService {
       if (v.id !== undefined && !existingVariants.has(v.id)) throw invalid(`variants.${i}.id`);
     });
     if (input.active) {
-      const problems = activationProblems(input, category.active);
+      const imageCount = id ? await tx.image.count({ where: { productId: id } }) : 0;
+      const problems = activationProblems(input, category.active, imageCount);
       if (problems.length) throw incomplete(problems);
     }
 
@@ -211,7 +217,7 @@ export class ProductsAdminService {
     });
 
     if (existing) {
-      const change = changedFields(productSummary(toAdminProduct(existing)), productSummary(input));
+      const change = changedFields(productSummary(toAdminProduct(existing, this.storage)), productSummary(input));
       if (change)
         await this.audit.record(
           {
@@ -331,9 +337,11 @@ export function uniqueToDuplicate(e: unknown): never {
 export function activationProblems(
   input: Pick<AdminProductInput, 'variants'>,
   categoryActive: boolean,
+  imageCount: number,
 ): ActivationProblem[] {
   const problems: ActivationProblem[] = [];
   if (!input.variants.some((v) => v.active)) problems.push('no_variants');
+  if (imageCount === 0) problems.push('no_images');
   if (!categoryActive) problems.push('category_hidden');
   return problems;
 }
@@ -417,7 +425,7 @@ function variantSummary(v: AdminVariant) {
   return { ...rest, options: Object.fromEntries(Object.entries(options).sort(([a], [b]) => a.localeCompare(b))) };
 }
 
-function toAdminProduct(p: ProductRow): AdminProduct {
+function toAdminProduct(p: ProductRow, storage: StorageProvider): AdminProduct {
   const attributes: Record<string, string[]> = {};
   for (const { attributeValue: av } of p.attributeValues) {
     (attributes[av.attribute.code] ??= []).push(av.code);
@@ -438,6 +446,7 @@ function toAdminProduct(p: ProductRow): AdminProduct {
     active: p.active,
     sortOrder: p.sortOrder,
     variants: p.variants.map(toAdminVariant),
+    images: p.images.map((i) => toAdminImage(storage, i)),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

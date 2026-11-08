@@ -2,10 +2,12 @@ import type {
   AdminAttributeInput,
   AdminAttributeValueInput,
   AdminCategoryInput,
+  AdminImageInput,
   AdminProductInput,
   AdminRoomInput,
   AdminVariant,
   FulfillmentMode,
+  ImageKindCode,
 } from '@hg/models';
 import { invalid } from './catalog-errors.js';
 import { sanitizeDescription } from '../catalog/description-html.js';
@@ -263,4 +265,46 @@ export function changedFields(
     }
   }
   return Object.keys(a).length ? { before: b, after: a } : null;
+}
+
+const IMAGE_KINDS: readonly ImageKindCode[] = ['cutout', 'lifestyle'];
+const VALUE_CODE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * A photo's details. On upload (multipart form fields) every field is optional and `altHe` may be
+ * empty — the product name and color fill it in; on edit all are required.
+ */
+export function parseImageInput(raw: unknown, partial: true): Partial<AdminImageInput>;
+export function parseImageInput(raw: unknown, partial?: false): AdminImageInput;
+export function parseImageInput(raw: unknown, partial = false): Partial<AdminImageInput> {
+  const body = obj(raw ?? {}, 'body');
+  const result: Partial<AdminImageInput> = {};
+  const color = body['colorCode'];
+  if (color === null || color === '') result.colorCode = null;
+  else if (typeof color === 'string' && color.length <= 60 && VALUE_CODE.test(color)) result.colorCode = color;
+  else if (color !== undefined || !partial) throw invalid('colorCode');
+
+  const kind = body['kind'];
+  if (IMAGE_KINDS.includes(kind as ImageKindCode)) result.kind = kind as ImageKindCode;
+  else if (kind !== undefined || !partial) throw invalid('kind');
+
+  if (partial) {
+    const alt = optionalText(body, 'altHe', 'altHe', 200);
+    if (alt) result.altHe = alt;
+  } else {
+    result.altHe = text(body, 'altHe', 'altHe', 200);
+  }
+  return result;
+}
+
+/** PUT …/images/order: every photo id of the product, in the new order. */
+export function parseImageOrder(raw: unknown): number[] {
+  const ids = obj(raw, 'body')['ids'];
+  if (
+    !Array.isArray(ids) ||
+    ids.length > 100 ||
+    ids.some((i) => typeof i !== 'number' || !Number.isInteger(i) || i < 1)
+  )
+    throw invalid('ids');
+  return ids as number[];
 }

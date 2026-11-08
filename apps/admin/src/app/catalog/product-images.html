@@ -1,0 +1,169 @@
+@if (canEdit()) {
+  <div
+    class="drop-zone"
+    [class.over]="dragOver()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="dragOver.set(false)"
+    (drop)="onDrop($event)"
+  >
+    <svg lucideImagePlus aria-hidden="true"></svg>
+    <p>גררו תמונות לכאן, או:</p>
+    <div class="pick">
+      <button matButton="tonal" type="button" (click)="files.click()">בחירת תמונות</button>
+      <button matButton="outlined" type="button" class="camera" (click)="camera.click()">
+        <svg lucideCamera></svg>
+        צילום
+      </button>
+    </div>
+    <input #files type="file" [accept]="accept" multiple hidden (change)="onPick(files)" />
+    <input #camera type="file" accept="image/*" capture="environment" hidden (change)="onPick(camera)" />
+    <p class="hint">JPG, PNG או WebP, עד 15MB. לפחות 600 פיקסלים בצד הארוך.</p>
+    <div class="upload-options">
+      <mat-form-field subscriptSizing="dynamic" floatLabel="always">
+        <mat-label>צבע לתמונות החדשות</mat-label>
+        <mat-select placeholder="כל הצבעים" [value]="uploadColor()" (selectionChange)="uploadColor.set($event.value)">
+          <mat-option [value]="null">כל הצבעים</mat-option>
+          @for (c of sortedColors(); track c.code) {
+            <mat-option [value]="c.code">{{ c.labelHe }}{{ c.used ? '' : ' (לא בשימוש במוצר)' }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>סוג</mat-label>
+        <mat-select [value]="uploadKind()" (selectionChange)="uploadKind.set($event.value)">
+          @for (k of kinds; track k[0]) {
+            <mat-option [value]="k[0]">{{ k[1] }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+  </div>
+}
+
+@if (uploads().length) {
+  <ul class="uploads" aria-live="polite">
+    @for (u of uploads(); track u.key) {
+      <li [class.failed]="u.error">
+        <bdi class="file-name">{{ u.name }}</bdi>
+        @if (u.error) {
+          <span class="upload-error">{{ u.error }}</span>
+          <button matButton type="button" (click)="dismiss(u.key)">הסרה</button>
+        } @else {
+          <mat-progress-bar
+            [mode]="u.percent < 100 ? 'determinate' : 'indeterminate'"
+            [value]="u.percent"
+            [attr.aria-label]="'מעלה ' + u.name"
+          ></mat-progress-bar>
+        }
+      </li>
+    }
+  </ul>
+}
+
+@if (!images().length) {
+  <p class="warning">אין תמונות עדיין. מוצר בלי תמונה לא יוצג באתר.</p>
+} @else {
+  @if (colorsWithoutPhotos().length) {
+    <p class="muted">
+      לצבעים האלה אין תמונות משלהם, ויוצגו בהם רק התמונות של "כל הצבעים":
+      {{
+        colorsWithoutPhotos()
+          .map((c) => c.labelHe)
+          .join(', ')
+      }}
+    </p>
+  }
+  <ol
+    class="images"
+    cdkDropList
+    cdkDropListOrientation="mixed"
+    [cdkDropListDisabled]="!canEdit() || busy()"
+    (cdkDropListDropped)="drop($event)"
+    aria-label="תמונות המוצר, לפי הסדר באתר"
+  >
+    @for (image of images(); track image.id; let i = $index; let last = $last) {
+      <li class="image-card" cdkDrag [cdkDragData]="image">
+        <div class="thumb">
+          <img [src]="image.thumbUrl" [alt]="image.altHe" loading="lazy" />
+          @if (i === 0) {
+            <span class="main-badge">תמונה ראשית</span>
+          }
+          @if (canEdit()) {
+            <span class="handle" cdkDragHandle aria-hidden="true"><svg lucideGripVertical></svg></span>
+          }
+        </div>
+        <div class="fields">
+          <mat-form-field subscriptSizing="dynamic" floatLabel="always">
+            <mat-label>צבע</mat-label>
+            <mat-select
+              placeholder="כל הצבעים"
+              [value]="image.colorCode"
+              [disabled]="!canEdit()"
+              (selectionChange)="update(image, { colorCode: $event.value })"
+            >
+              <mat-option [value]="null">כל הצבעים</mat-option>
+              @for (c of sortedColors(); track c.code) {
+                <mat-option [value]="c.code">{{ c.labelHe }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>סוג</mat-label>
+            <mat-select
+              [value]="image.kind"
+              [disabled]="!canEdit()"
+              (selectionChange)="update(image, { kind: $event.value })"
+            >
+              @for (k of kinds; track k[0]) {
+                <mat-option [value]="k[0]">{{ k[1] }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field subscriptSizing="dynamic" class="alt">
+            <mat-label>תיאור התמונה (לקוראי מסך)</mat-label>
+            <input
+              matInput
+              maxlength="200"
+              [value]="image.altHe"
+              [disabled]="!canEdit()"
+              (change)="update(image, { altHe: alt.value })"
+              #alt
+            />
+          </mat-form-field>
+        </div>
+        @if (canEdit()) {
+          <div class="actions">
+            <button
+              matIconButton
+              type="button"
+              [disabled]="i === 0 || busy()"
+              (click)="move(i, i - 1)"
+              [attr.aria-label]="'הזזת תמונה ' + (i + 1) + ' מקום אחד קדימה'"
+            >
+              <svg lucideChevronRight></svg>
+            </button>
+            <button
+              matIconButton
+              type="button"
+              [disabled]="last || busy()"
+              (click)="move(i, i + 1)"
+              [attr.aria-label]="'הזזת תמונה ' + (i + 1) + ' מקום אחד אחורה'"
+            >
+              <svg lucideChevronLeft></svg>
+            </button>
+            <button
+              matIconButton
+              type="button"
+              class="delete"
+              [disabled]="busy()"
+              (click)="remove(image)"
+              [attr.aria-label]="'מחיקת תמונה ' + (i + 1)"
+            >
+              <svg lucideTrash2></svg>
+            </button>
+          </div>
+        }
+      </li>
+    }
+  </ol>
+}

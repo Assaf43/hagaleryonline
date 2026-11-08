@@ -91,7 +91,7 @@ describe('Catalog admin (e2e)', () => {
     ...extra,
   });
   const forSave = (p: AdminProduct, changes: Partial<AdminProductInput> = {}): AdminProductInput => {
-    const { id: _id, createdAt: _c, updatedAt, ...rest } = p;
+    const { id: _id, images: _i, createdAt: _c, updatedAt, ...rest } = p;
     return { ...rest, expectedUpdatedAt: updatedAt, ...changes };
   };
   const findBySearch = async (q: string) =>
@@ -136,6 +136,10 @@ describe('Catalog admin (e2e)', () => {
 
   it('shows the product on the site as soon as it is activated, and finds it by name and SKU', async () => {
     const current = (await editor.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    // Not without a photo (decision 62); uploads have their own e2e file, a placeholder row is enough here.
+    const noPhoto = await editor.put(`/catalog/products/${productId}`, forSave(current, { active: true })).expect(400);
+    expect(noPhoto.body).toMatchObject({ code: 'incomplete', reasons: ['no_images'] });
+    await prisma.image.create({ data: { productId, url: '/images/placeholder/sofa.svg', altHe: 'ספה' } });
     await editor.put(`/catalog/products/${productId}`, forSave(current, { active: true })).expect(200);
     const page = (await storefront('/products/zzbreeze-three-seater-sofa').expect(200)).body;
     expect(page.descriptionHe).toBe('<p>ספה <strong>קלילה</strong> לסלון קטן</p>');
@@ -196,7 +200,7 @@ describe('Catalog admin (e2e)', () => {
       .expect(200);
   });
 
-  it('does not activate a product without an active variant', async () => {
+  it('does not activate a product without an active variant or a photo', async () => {
     const draft = newProduct({
       slug: 'zzempty-sofa',
       modelName: 'ZZEMPTY',
@@ -204,7 +208,7 @@ describe('Catalog admin (e2e)', () => {
       variants: [variant('ZZEMPTY-1', { active: false })],
     });
     const res = await editor.post('/catalog/products', draft).expect(400);
-    expect(res.body).toMatchObject({ code: 'incomplete', reasons: ['no_variants'] });
+    expect(res.body).toMatchObject({ code: 'incomplete', reasons: ['no_variants', 'no_images'] });
   });
 
   it('keeps structure and permanent deletion away from a content editor', async () => {

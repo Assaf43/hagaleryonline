@@ -131,10 +131,10 @@ describe('structure inputs', () => {
 });
 
 describe('activationProblems', () => {
-  it('needs an active variant and a visible category', () => {
+  it('needs an active variant, a photo and a visible category', () => {
     const variants = [{ ...variant(), active: false }] as AdminVariant[];
-    expect(activationProblems({ variants }, false)).toEqual(['no_variants', 'category_hidden']);
-    expect(activationProblems({ variants: [variant() as AdminVariant] }, true)).toEqual([]);
+    expect(activationProblems({ variants }, false, 0)).toEqual(['no_variants', 'no_images', 'category_hidden']);
+    expect(activationProblems({ variants: [variant() as AdminVariant] }, true, 1)).toEqual([]);
   });
 });
 

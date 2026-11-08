@@ -31,6 +31,7 @@ import {
 } from '@lucide/angular';
 import type {
   AdminAttribute,
+  AdminImage,
   AdminProduct,
   AdminProductInput,
   AdminVariant,
@@ -41,6 +42,7 @@ import { AuthService } from '../core/auth.service';
 import { CatalogApi } from '../core/catalog.api';
 import { errorMessage } from '../core/errors';
 import { FULFILLMENT_LABEL, categoryOptions, suggestSlug, toAgorot, toShekels } from './catalog-format';
+import { ProductImages, type ColorOption } from './product-images';
 import { RichTextEditor } from './rich-text-editor';
 import {
   VariantBulkDialog,
@@ -79,6 +81,7 @@ let nextKey = 1;
     MatSelectModule,
     MatSlideToggleModule,
     RichTextEditor,
+    ProductImages,
     LucideArrowRight,
     LucideChevronDown,
     LucideChevronUp,
@@ -105,6 +108,8 @@ export class ProductFormPage implements OnInit {
   protected readonly fulfillments = Object.entries(FULFILLMENT_LABEL) as [FulfillmentMode, string][];
   protected readonly structure = signal<CatalogStructure | null>(null);
   protected readonly product = signal<AdminProduct | null>(null);
+  /** Saved on their own by the photos panel (Phase 2d), not by the product's save button. */
+  protected readonly images = signal<AdminImage[]>([]);
   protected readonly loaded = signal(false);
   protected readonly busy = signal(false);
   protected readonly error = signal('');
@@ -132,6 +137,7 @@ export class ProductFormPage implements OnInit {
 
   protected readonly isNew = computed(() => this.id() === 'new');
   protected readonly canEdit = computed(() => this.auth.me()?.permissions.includes('catalog.edit') ?? false);
+  protected readonly canManageImages = computed(() => this.auth.me()?.permissions.includes('media.manage') ?? false);
   protected readonly isSuperAdmin = computed(() => this.auth.me()?.isSuperAdmin ?? false);
   protected readonly categories = computed(() => categoryOptions(this.structure()?.categories ?? []));
 
@@ -142,6 +148,19 @@ export class ProductFormPage implements OnInit {
     const category = all.find((c) => c.id === this.draft.categoryId);
     const parent = all.find((c) => c.id === category?.parentId);
     return [...new Set([...(parent?.attributeCodes ?? []), ...(category?.attributeCodes ?? [])])];
+  });
+
+  /** Colors for linking photos (decision 62): the product's own colors come first. */
+  protected readonly colors = computed<ColorOption[]>(() => {
+    this.version();
+    const used = new Set(this.rows.map((r) => r.options['color']).filter(Boolean));
+    const color = this.structure()?.attributes.find((a) => a.code === 'color');
+    return (color?.values ?? []).map((v) => ({
+      code: v.code,
+      labelHe: v.labelHe,
+      hex: v.swatchHex,
+      used: used.has(v.code),
+    }));
   });
 
   /** Product-level attributes to show: the category's, plus any the product already has. */
@@ -419,7 +438,8 @@ export class ProductFormPage implements OnInit {
 
   private fill(p: AdminProduct) {
     this.product.set(p);
-    const { id: _id, createdAt: _c, updatedAt: _u, variants, ...draft } = p;
+    const { id: _id, createdAt: _c, updatedAt: _u, variants, images, ...draft } = p;
+    this.images.set(images);
     this.draft = structuredClone(draft);
     this.rows = variants.map((v) => ({
       ...v,

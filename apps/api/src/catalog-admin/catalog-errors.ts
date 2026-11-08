@@ -8,7 +8,8 @@ export class CatalogError extends HttpException {
   }
 }
 
-export const invalid = (field: string) => new CatalogError(HttpStatus.BAD_REQUEST, 'invalid', { field });
+export const invalid = (field: string, value?: string) =>
+  new CatalogError(HttpStatus.BAD_REQUEST, 'invalid', { field, value });
 export const duplicate = (field: string, value?: string) =>
   new CatalogError(HttpStatus.CONFLICT, 'duplicate', { field, value });
 export const conflict = () => new CatalogError(HttpStatus.CONFLICT, 'conflict');
