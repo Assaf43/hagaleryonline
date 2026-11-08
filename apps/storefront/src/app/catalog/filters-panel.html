@@ -1,0 +1,102 @@
+@for (f of rangeFields(); track f.key; let first = $first) {
+  <details class="group" [open]="first || state().ranges[f.key].min !== null || state().ranges[f.key].max !== null">
+    <summary>
+      {{ f.label }}
+      <svg lucideChevronDown aria-hidden="true"></svg>
+    </summary>
+    <div class="content">
+      <div class="range">
+        <label>
+          <span>מ-</span>
+          <input
+            class="input num"
+            inputmode="numeric"
+            [attr.aria-label]="f.label + ' מינימום'"
+            [value]="state().ranges[f.key].min ?? ''"
+            [placeholder]="f.bounds?.min ?? ''"
+            (change)="rangeChanged(f.key, 'min', minInput)"
+            #minInput
+          />
+        </label>
+        <label>
+          <span>עד</span>
+          <input
+            class="input num"
+            inputmode="numeric"
+            [attr.aria-label]="f.label + ' מקסימום'"
+            [value]="state().ranges[f.key].max ?? ''"
+            [placeholder]="f.bounds?.max ?? ''"
+            (change)="rangeChanged(f.key, 'max', maxInput)"
+            #maxInput
+          />
+        </label>
+      </div>
+      @if (f.key === 'width') {
+        <p class="hint">
+          <svg lucideRuler aria-hidden="true"></svg>
+          מדדתם את הקיר? השאירו קצת מקום למעבר מכל צד.
+        </p>
+      }
+    </div>
+  </details>
+}
+
+@for (f of facets(); track f.code) {
+  <details class="group" open>
+    <summary>
+      {{ f.nameHe }}
+      <svg lucideChevronDown aria-hidden="true"></svg>
+    </summary>
+    <div class="content">
+      @if (f.code === 'color') {
+        <div class="swatch-list" role="group" [attr.aria-label]="f.nameHe">
+          @for (v of f.values; track v.code) {
+            <button
+              type="button"
+              class="swatch-btn"
+              [class.selected]="v.selected"
+              [attr.aria-pressed]="v.selected"
+              [attr.aria-label]="v.labelHe + ', ' + count(v.count)"
+              [attr.title]="v.labelHe"
+              (click)="toggle(f.code, v.code)"
+            >
+              <span class="swatch" [style.background]="v.hex"></span>
+            </button>
+          }
+        </div>
+      } @else {
+        @for (v of f.values; track v.code) {
+          <label class="check">
+            <input type="checkbox" [checked]="v.selected" (change)="toggle(f.code, v.code)" />
+            {{ v.labelHe }}
+            <span class="n num">{{ v.count }}</span>
+          </label>
+        }
+      }
+      @if (f.code === 'chaise-side') {
+        <p class="hint">
+          <svg lucideInfo aria-hidden="true"></svg>
+          כפי שרואים כשעומדים מול הספה
+        </p>
+      }
+    </div>
+  </details>
+}
+
+@if (delivery().length) {
+  <details class="group" open>
+    <summary>
+      זמן אספקה
+      <svg lucideChevronDown aria-hidden="true"></svg>
+    </summary>
+    <div class="content">
+      @for (d of delivery(); track d.mode) {
+        <label class="check">
+          <input type="checkbox" [checked]="d.selected" (change)="toggleDelivery(d.mode)" />
+          {{ d.label }}
+          <span class="n num">{{ d.count }}</span>
+        </label>
+      }
+    </div>
+  </details>
+}

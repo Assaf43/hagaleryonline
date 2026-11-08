@@ -13,10 +13,10 @@ describe('readThemeCookie', () => {
 });
 
 describe('effectiveTheme', () => {
-  it('prefers the saved choice over the device setting', () => {
-    expect(effectiveTheme('light', true)).toBe('light');
-    expect(effectiveTheme(null, true)).toBe('dark');
-    expect(effectiveTheme(null, false)).toBe('light');
+  it('is light unless dark was chosen (decision 63)', () => {
+    expect(effectiveTheme('dark')).toBe('dark');
+    expect(effectiveTheme('light')).toBe('light');
+    expect(effectiveTheme(null)).toBe('light');
   });
 });
 

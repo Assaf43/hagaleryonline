@@ -1,0 +1,346 @@
+:host {
+  display: contents;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: var(--space-3);
+  inset-block-start: -100px;
+  z-index: 50;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+
+  &:focus {
+    inset-block-start: var(--space-3);
+  }
+}
+
+.announce {
+  background: var(--color-text);
+  color: var(--color-bg);
+  text-align: center;
+  font-size: var(--font-small);
+  font-weight: 600;
+  padding-block: var(--space-2);
+  padding-inline: var(--gutter);
+}
+
+.header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 10;
+  background: var(--color-surface);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 64px;
+}
+
+.logo {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: var(--font-h2);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding-inline: var(--space-4);
+  block-size: 44px;
+  color: var(--color-text-muted);
+  transition: border-color var(--duration-fast) var(--ease);
+
+  input {
+    flex: 1;
+    min-inline-size: 0;
+    block-size: 100%;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    outline: none;
+  }
+
+  &:focus-within {
+    border-color: var(--color-text);
+  }
+
+  svg {
+    inline-size: 20px;
+    block-size: 20px;
+  }
+}
+
+.search-mobile {
+  padding-block-end: var(--space-3);
+}
+
+// Higher specificity than `.search`, which sets display: flex.
+.search.search-desktop {
+  display: none;
+}
+
+.nav-desktop {
+  display: none;
+}
+
+@media (width >= 1024px) {
+  .header-row {
+    block-size: 88px;
+    gap: var(--space-7);
+  }
+
+  .logo {
+    font-size: var(--font-h1);
+  }
+
+  .only-mobile,
+  .search-mobile {
+    display: none;
+  }
+
+  .search.search-desktop {
+    display: flex;
+    flex: 1;
+    max-inline-size: 680px;
+    block-size: 50px;
+  }
+
+  .header-actions {
+    margin-inline-start: auto;
+  }
+
+  .nav-desktop {
+    display: block;
+    position: relative;
+    border-block-start: 1px solid var(--color-border);
+  }
+}
+
+// ---------- Second row: rooms and furniture types ----------
+
+// Links that do not fit wrap onto a hidden second line, so none is cut in half. The mega-menu
+// is positioned on .nav-desktop, outside this clipping box.
+.nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-5);
+  block-size: 52px;
+  overflow: hidden;
+
+  > * {
+    block-size: 52px;
+  }
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  block-size: 100%;
+  white-space: nowrap;
+  font: inherit;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+  background: none;
+  border: none;
+  border-block-end: 2px solid transparent;
+  padding: 0;
+
+  &:hover,
+  &.active {
+    border-color: var(--color-text);
+  }
+}
+
+.has-mega {
+  block-size: 100%;
+}
+
+.mega {
+  display: none;
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: 100%;
+  background: var(--color-surface);
+  border-block: 1px solid var(--color-border);
+  box-shadow: var(--shadow-float);
+
+  &.open {
+    display: block;
+  }
+}
+
+.mega-inner {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-6);
+  padding-block: var(--space-5);
+}
+
+.mega-rooms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-inline-end: 1px solid var(--color-border);
+  padding-inline-end: var(--space-4);
+
+  a {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+  }
+
+  a.active {
+    background: var(--color-surface-alt);
+  }
+
+  svg {
+    inline-size: 16px;
+    block-size: 16px;
+  }
+}
+
+.mega-types {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-5);
+  }
+
+  ul a {
+    display: block;
+    padding-block: var(--space-1);
+    font-weight: 400;
+    text-decoration: none;
+  }
+
+  ul a:hover {
+    color: var(--color-accent);
+  }
+}
+
+.mega-all {
+  color: var(--color-text);
+  text-decoration: underline;
+  font-size: var(--font-small);
+}
+
+// ---------- Mobile drawer ----------
+
+.drawer {
+  inline-size: 100%;
+  max-inline-size: 420px;
+  block-size: 100%;
+  max-block-size: none;
+  margin: 0;
+  margin-inline-end: auto;
+  padding: 0;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+
+  &::backdrop {
+    background: var(--color-overlay);
+  }
+}
+
+.drawer-panel {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-block-end: 1px solid var(--color-border);
+}
+
+.drawer-body {
+  overflow-y: auto;
+  padding: 0 var(--space-4) var(--space-6);
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  li a {
+    display: block;
+    padding-block: var(--space-3);
+    border-block-end: 1px solid var(--color-border);
+    text-decoration: none;
+  }
+}
+
+.drawer-label {
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-block: var(--space-5) var(--space-1);
+}
+
+.drawer-room {
+  border-block-end: 1px solid var(--color-border);
+
+  summary {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-block-size: 48px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  &[open] summary svg {
+    transform: rotate(180deg);
+  }
+
+  li a {
+    padding-inline-start: var(--space-3);
+  }
+
+  li:last-child a {
+    border-block-end: none;
+  }
+}

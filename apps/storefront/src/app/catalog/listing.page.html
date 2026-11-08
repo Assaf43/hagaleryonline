@@ -1,0 +1,168 @@
+@if (notFound()) {
+  <section class="container empty-page">
+    <h1>הדף לא נמצא</h1>
+    <p class="muted">ייתכן שהקטגוריה הוסרה או שהקישור שגוי.</p>
+    <a routerLink="/" class="btn btn-primary">לדף הבית</a>
+  </section>
+} @else {
+  <div class="container">
+    @if (heading(); as h) {
+      <nav aria-label="פירורי לחם">
+        <ol class="crumbs">
+          @for (c of h.crumbs; track $index; let last = $last) {
+            <li>
+              @if (c.link) {
+                <a [routerLink]="c.link">{{ c.label }}</a>
+              } @else {
+                <span aria-current="page">{{ c.label }}</span>
+              }
+              @if (!last) {
+                <svg lucideChevronLeft aria-hidden="true"></svg>
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+      <div class="page-title">
+        <h1>{{ h.title }}</h1>
+        @if (response()) {
+          <span class="muted small">{{ count(total()) }}</span>
+        }
+      </div>
+      @if (h.links.length) {
+        <nav class="types" [attr.aria-label]="kind === 'room' ? 'סוגי רהיטים' : 'סוגים'">
+          <ul>
+            @for (l of h.links; track l.slug) {
+              <li>
+                <a [routerLink]="l.link" class="type" [attr.aria-current]="l.current ? 'page' : null">
+                  <span class="type-media">
+                    @if (linkImages()[l.slug]; as img) {
+                      <hg-responsive-image [image]="img" sizes="120px" />
+                    }
+                  </span>
+                  <span class="type-label">{{ l.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </nav>
+      }
+    }
+
+    <div class="layout">
+      @if (filtersOpen()) {
+        <div class="filters-backdrop" (click)="closeFilters()" aria-hidden="true"></div>
+      }
+      <aside
+        #filtersBox
+        id="filters"
+        class="filters"
+        [class.open]="filtersOpen()"
+        [attr.role]="filtersOpen() ? 'dialog' : null"
+        [attr.aria-modal]="filtersOpen() ? 'true' : null"
+        aria-labelledby="filters-title"
+        (keydown.escape)="closeFilters()"
+      >
+        <div class="filters-head">
+          <h2 id="filters-title">סינון</h2>
+          <button type="button" class="icon-btn drawer-close" aria-label="סגירת הסינון" (click)="closeFilters()">
+            <svg lucideX></svg>
+          </button>
+        </div>
+        <hg-filters-panel class="filters-body" [state]="state()" [response]="response()" (changed)="apply($event)" />
+        <div class="filters-foot">
+          <button type="button" class="btn btn-secondary" (click)="clearAll()" [disabled]="!filters()">ניקוי</button>
+          <button type="button" class="btn btn-primary" (click)="closeFilters()">הצגת {{ count(total()) }}</button>
+        </div>
+      </aside>
+
+      <section class="results" aria-labelledby="results-count">
+        <div class="toolbar">
+          <button
+            #filterButton
+            type="button"
+            class="btn btn-secondary btn-filter"
+            aria-controls="filters"
+            [attr.aria-expanded]="filtersOpen()"
+            (click)="openFilters()"
+          >
+            <svg lucideSlidersHorizontal aria-hidden="true"></svg>
+            סינון{{ filters() ? ' (' + filters() + ')' : '' }}
+          </button>
+          <p id="results-count" class="visually-hidden" aria-live="polite">
+            {{ loading() ? 'טוען…' : 'נמצאו ' + count(total()) }}
+          </p>
+          <label class="sort">
+            <span class="muted">מיון</span>
+            <select [value]="state().sort" (change)="sortChanged($any($event.target).value)">
+              @for (s of sorts; track s[0]) {
+                <option [value]="s[0]" [selected]="s[0] === state().sort">{{ s[1] }}</option>
+              }
+            </select>
+          </label>
+        </div>
+
+        @if (chips().length) {
+          <div class="active-filters">
+            @for (c of chips(); track c.key) {
+              <button
+                type="button"
+                class="chip"
+                (click)="apply(c.without)"
+                [attr.aria-label]="'הסרת הסינון ' + c.label"
+              >
+                {{ c.label }}
+                <svg lucideX aria-hidden="true"></svg>
+              </button>
+            }
+            <button type="button" class="clear" (click)="clearAll()">ניקוי הכל</button>
+          </div>
+        }
+
+        @if (error()) {
+          <div class="message" role="alert">
+            <p>לא הצלחנו לטעון את המוצרים. בדקו את החיבור ונסו שוב.</p>
+            <button type="button" class="btn btn-secondary" (click)="retry()">ניסיון נוסף</button>
+          </div>
+        } @else if (response() && !items().length) {
+          <div class="message">
+            <h2>לא נמצאו מוצרים</h2>
+            @if (filters()) {
+              <p class="muted">נסו להסיר חלק מהסינונים.</p>
+              <button type="button" class="btn btn-secondary" (click)="clearAll()">ניקוי כל הסינונים</button>
+            } @else if (kind === 'search') {
+              <p class="muted">נסו מילה אחרת, שם דגם או מק״ט.</p>
+            }
+          </div>
+        } @else {
+          <ul class="product-grid" [attr.aria-busy]="loading()">
+            @for (p of items(); track p.slug; let i = $index) {
+              <li><hg-product-card [product]="p" [priority]="i < 4" /></li>
+            }
+          </ul>
+          @if (response()) {
+            <div class="more">
+              <p class="small muted">
+                מוצגים <span class="num">{{ items().length }}</span> מתוך <span class="num">{{ total() }}</span>
+              </p>
+              <div class="progress" aria-hidden="true">
+                <span [style.inline-size.%]="(100 * items().length) / (total() || 1)"></span>
+              </div>
+              @if (hasMore()) {
+                <a
+                  class="btn btn-secondary"
+                  [routerLink]="[]"
+                  [queryParams]="urlFor(nextPage())"
+                  (click)="loadMore($event)"
+                  [attr.aria-disabled]="loading()"
+                >
+                  {{ loading() ? 'טוען…' : 'טעינת מוצרים נוספים' }}
+                </a>
+              }
+            </div>
+          }
+        }
+      </section>
+    </div>
+  </div>
+}
