@@ -1,0 +1,88 @@
+// Primitive layer: raw palette, type sizes, spacing, radius, motion. Named by what the value is,
+// never by where it is used. Components never read these; the semantic layer (_tokens.scss) does.
+
+@mixin primitives {
+  // Neutral gray (pure)
+  --gray-0: #ffffff;
+  --gray-50: #f2f2f2;
+  --gray-200: #d6d6d6;
+  --gray-300: #b5b5b5;
+  --gray-400: #9c9c9c;
+  --gray-500: #6b6b6b;
+  --gray-600: #5c5c5c;
+  --gray-700: #474747;
+  --gray-750: #333333;
+  --gray-800: #2f2f2f;
+  --gray-850: #2a2a2a;
+  --gray-875: #242424;
+  --gray-900: #1a1a1a;
+  --gray-925: #121212;
+  --gray-950: #111111;
+
+  // Warm gray (the light theme's slightly tinted surfaces and borders)
+  --warm-50: #f4f4f2;
+  --warm-75: #f0f0ee;
+  --warm-100: #e6e6e3;
+  --warm-200: #c9c9c5;
+
+  // Hues: 50 = light soft, 300 = dark strong, 600/700 = light strong, 950 = dark soft
+  --red-50: #fde8e8;
+  --red-300: #ff7a7a;
+  --red-600: #c4161c;
+  --red-950: #3d1a1a;
+  --green-50: #e6f2e7;
+  --green-300: #8cc383;
+  --green-700: #2e6b34;
+  --green-950: #1f2f1d;
+  --amber-50: #f8ecd4;
+  --amber-300: #e6b35c;
+  --amber-700: #8a5a00;
+  --amber-950: #3a2c12;
+  --blue-50: #e3eef5;
+  --blue-300: #8fbbd6;
+  --blue-700: #245a7a;
+  --blue-950: #1c2c37;
+
+  // Alpha black (overlay and shadow)
+  --black-a10: rgb(0 0 0 / 10%);
+  --black-a45: rgb(0 0 0 / 45%);
+  --black-a50: rgb(0 0 0 / 50%);
+  --black-a65: rgb(0 0 0 / 65%);
+
+  // Type sizes
+  --text-12: 12px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-18: 18px;
+  --text-20: 20px;
+  --text-22: 22px;
+  --text-24: 24px;
+  --text-26: 26px;
+  --text-28: 28px;
+  --text-34: 34px;
+  --text-36: 36px;
+  --text-48: 48px;
+
+  // Spacing
+  --size-4: 4px;
+  --size-8: 8px;
+  --size-12: 12px;
+  --size-16: 16px;
+  --size-24: 24px;
+  --size-32: 32px;
+  --size-48: 48px;
+  --size-64: 64px;
+  --size-96: 96px;
+
+  // Radius
+  --round-6: 6px;
+  --round-10: 10px;
+  --round-16: 16px;
+  --round-999: 999px;
+
+  // Motion
+  --ms-120: 120ms;
+  --ms-200: 200ms;
+  --ms-320: 320ms;
+  --curve-standard: cubic-bezier(0.2, 0, 0, 1);
+}

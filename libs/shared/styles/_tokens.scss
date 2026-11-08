@@ -4,102 +4,107 @@
 //   - no [data-theme] on <html>   -> light, whatever the device setting
 //   - [data-theme="dark"]          -> the user chose dark (saved in a cookie; SSR sets it, so no flash)
 
+@use 'primitives';
+
 @mixin light {
   // Clean, neutral and photo-first (decision 63): white page, black text and actions,
   // light-gray photo backgrounds, red only for sale prices.
-  --color-bg: #ffffff;
-  --color-surface: #ffffff;
-  --color-surface-alt: #f4f4f2;
-  --color-border: #e6e6e3;
-  --color-border-strong: #c9c9c5;
-  --color-text: #111111;
-  --color-text-secondary: #5c5c5c;
-  --color-text-muted: #6b6b6b;
-  --color-overlay: rgb(0 0 0 / 45%);
-  --color-accent: #111111;
-  --color-accent-hover: #333333;
-  --color-on-accent: #ffffff;
-  --color-accent-soft: #f0f0ee;
-  --color-on-accent-soft: #111111;
-  --color-sale: #c4161c;
-  --color-sale-soft: #fde8e8;
-  --color-success: #2e6b34;
-  --color-success-soft: #e6f2e7;
-  --color-warning: #8a5a00;
-  --color-warning-soft: #f8ecd4;
-  --color-danger: #c4161c;
-  --color-danger-soft: #fde8e8;
-  --color-info: #245a7a;
-  --color-info-soft: #e3eef5;
-  --shadow-float: 0 8px 24px rgb(0 0 0 / 10%);
+  --color-bg: var(--gray-0);
+  --color-surface: var(--gray-0);
+  --color-surface-alt: var(--warm-50);
+  --color-border: var(--warm-100);
+  --color-border-strong: var(--warm-200);
+  --color-text: var(--gray-950);
+  --color-text-secondary: var(--gray-600);
+  --color-text-muted: var(--gray-500);
+  --color-overlay: var(--black-a45);
+  --color-accent: var(--gray-950);
+  --color-accent-hover: var(--gray-750);
+  --color-on-accent: var(--gray-0);
+  --color-accent-soft: var(--warm-75);
+  --color-on-accent-soft: var(--gray-950);
+  --color-sale: var(--red-600);
+  --color-sale-soft: var(--red-50);
+  --color-success: var(--green-700);
+  --color-success-soft: var(--green-50);
+  --color-warning: var(--amber-700);
+  --color-warning-soft: var(--amber-50);
+  --color-danger: var(--red-600);
+  --color-danger-soft: var(--red-50);
+  --color-info: var(--blue-700);
+  --color-info-soft: var(--blue-50);
+  --shadow-float: 0 8px 24px var(--black-a10);
+  --color-focus-ring: var(--gray-950);
   color-scheme: light;
 }
 
 @mixin dark {
-  --color-bg: #121212;
-  --color-surface: #1a1a1a;
-  --color-surface-alt: #242424;
-  --color-border: #2f2f2f;
-  --color-border-strong: #474747;
-  --color-text: #f2f2f2;
-  --color-text-secondary: #b5b5b5;
-  --color-text-muted: #9c9c9c;
-  --color-overlay: rgb(0 0 0 / 65%);
-  --color-accent: #f2f2f2;
-  --color-accent-hover: #d6d6d6;
-  --color-on-accent: #111111;
-  --color-accent-soft: #2a2a2a;
-  --color-on-accent-soft: #f2f2f2;
-  --color-sale: #ff7a7a;
-  --color-sale-soft: #3d1a1a;
-  --color-success: #8cc383;
-  --color-success-soft: #1f2f1d;
-  --color-warning: #e6b35c;
-  --color-warning-soft: #3a2c12;
-  --color-danger: #ff7a7a;
-  --color-danger-soft: #3d1a1a;
-  --color-info: #8fbbd6;
-  --color-info-soft: #1c2c37;
-  --shadow-float: 0 8px 24px rgb(0 0 0 / 50%);
+  --color-bg: var(--gray-925);
+  --color-surface: var(--gray-900);
+  --color-surface-alt: var(--gray-875);
+  --color-border: var(--gray-800);
+  --color-border-strong: var(--gray-700);
+  --color-text: var(--gray-50);
+  --color-text-secondary: var(--gray-300);
+  --color-text-muted: var(--gray-400);
+  --color-overlay: var(--black-a65);
+  --color-accent: var(--gray-50);
+  --color-accent-hover: var(--gray-200);
+  --color-on-accent: var(--gray-950);
+  --color-accent-soft: var(--gray-850);
+  --color-on-accent-soft: var(--gray-50);
+  --color-sale: var(--red-300);
+  --color-sale-soft: var(--red-950);
+  --color-success: var(--green-300);
+  --color-success-soft: var(--green-950);
+  --color-warning: var(--amber-300);
+  --color-warning-soft: var(--amber-950);
+  --color-danger: var(--red-300);
+  --color-danger-soft: var(--red-950);
+  --color-info: var(--blue-300);
+  --color-info-soft: var(--blue-950);
+  --shadow-float: 0 8px 24px var(--black-a50);
+  --color-focus-ring: var(--gray-50);
   color-scheme: dark;
 }
 
 :root {
+  @include primitives.primitives;
   @include light;
 
   // One sans-serif family for headings and text (decision 63).
   --font-sans: 'Assistant', sans-serif;
   --font-heading: var(--font-sans);
-  --font-display: 34px;
-  --font-h1: 26px;
-  --font-h2: 22px;
-  --font-h3: 18px;
-  --font-body: 16px;
-  --font-small: 14px;
-  --font-caption: 12px;
-  --font-price: 20px;
+  --font-display: var(--text-34);
+  --font-h1: var(--text-26);
+  --font-h2: var(--text-22);
+  --font-h3: var(--text-18);
+  --font-body: var(--text-16);
+  --font-small: var(--text-14);
+  --font-caption: var(--text-12);
+  --font-price: var(--text-20);
 
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;
-  --space-9: 96px;
-  --gutter: 16px;
+  --space-1: var(--size-4);
+  --space-2: var(--size-8);
+  --space-3: var(--size-12);
+  --space-4: var(--size-16);
+  --space-5: var(--size-24);
+  --space-6: var(--size-32);
+  --space-7: var(--size-48);
+  --space-8: var(--size-64);
+  --space-9: var(--size-96);
+  --gutter: var(--size-16);
   --content-max: 1440px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-pill: 999px;
+  --radius-sm: var(--round-6);
+  --radius-md: var(--round-10);
+  --radius-lg: var(--round-16);
+  --radius-pill: var(--round-999);
 
-  --duration-fast: 120ms;
-  --duration-base: 200ms;
-  --duration-slow: 320ms;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: var(--ms-120);
+  --duration-base: var(--ms-200);
+  --duration-slow: var(--ms-320);
+  --ease: var(--curve-standard);
 }
 
 :root[data-theme='dark'] {
@@ -108,17 +113,17 @@
 
 @media (width >= 768px) {
   :root {
-    --gutter: 24px;
+    --gutter: var(--size-24);
   }
 }
 
 @media (width >= 1024px) {
   :root {
-    --gutter: 32px;
-    --font-display: 48px;
-    --font-h1: 36px;
-    --font-h2: 28px;
-    --font-h3: 20px;
-    --font-price: 24px;
+    --gutter: var(--size-32);
+    --font-display: var(--text-48);
+    --font-h1: var(--text-36);
+    --font-h2: var(--text-28);
+    --font-h3: var(--text-20);
+    --font-price: var(--text-24);
   }
 }
