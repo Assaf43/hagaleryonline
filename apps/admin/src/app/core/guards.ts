@@ -5,28 +5,34 @@ import { catchError, throwError } from 'rxjs';
 import type { Permission } from '@hg/models';
 import { AuthService } from './auth.service';
 
+// inject() works only before the first `await`, so every guard takes what it needs up front.
+
 /** Signed-in screens: otherwise to the login page. */
 export const signedIn: CanMatchFn = async () => {
   const auth = inject(AuthService);
-  return (await auth.load()) ? true : inject(Router).parseUrl('/login');
+  const router = inject(Router);
+  return (await auth.load()) ? true : router.parseUrl('/login');
 };
 
 /** Login screens: a signed-in user goes straight in. */
 export const signedOut: CanMatchFn = async () => {
   const auth = inject(AuthService);
-  return (await auth.load()) ? inject(Router).parseUrl('/') : true;
+  const router = inject(Router);
+  return (await auth.load()) ? router.parseUrl('/') : true;
 };
 
 export const superAdminOnly: CanMatchFn = async () => {
   const auth = inject(AuthService);
-  return (await auth.load())?.isSuperAdmin ? true : inject(Router).parseUrl('/');
+  const router = inject(Router);
+  return (await auth.load())?.isSuperAdmin ? true : router.parseUrl('/');
 };
 
 export const hasPermission =
   (permission: Permission): CanMatchFn =>
   async () => {
     const auth = inject(AuthService);
-    return (await auth.load())?.permissions.includes(permission) ? true : inject(Router).parseUrl('/');
+    const router = inject(Router);
+    return (await auth.load())?.permissions.includes(permission) ? true : router.parseUrl('/');
   };
 
 /** A session that expired mid-work sends the user back to the login page. */
