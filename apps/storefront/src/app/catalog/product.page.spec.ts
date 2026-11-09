@@ -73,6 +73,82 @@ const beige280 = variant('B280', { color: 'beige', size: '280' }, 350000);
 const green240 = variant('G240', { color: 'green', size: '240' }, 320000);
 const three = () => product([beige240, beige280, green240]);
 
+/**
+ * Shaped like the real `GET /api/products/alba-corner-sofa` response (Phase 3b seed): color, fabric,
+ * the size axis the API derives from the variant widths, and chaise side (fewer colors to keep it short).
+ */
+function alba(): ProductDetail {
+  const sizes = [
+    { width: 260, weightKg: 72, chaiseDepthCm: 165, price: { woven: 459000, boucle: 505000 } },
+    { width: 300, weightKg: 78, chaiseDepthCm: 165, price: { woven: 499000, boucle: 549000 } },
+    { width: 340, weightKg: 86, chaiseDepthCm: 175, price: { woven: 559000, boucle: 615000 } },
+  ];
+  const colors = { beige: 'BG', gray: 'GR' } as const;
+  const fabrics = { woven: 'WV', boucle: 'BC' } as const;
+  const sides = { right: 'R', left: 'L' } as const;
+  const variants: VariantDetail[] = [];
+  for (const s of sizes)
+    for (const [color, c] of Object.entries(colors))
+      for (const [fabric, f] of Object.entries(fabrics))
+        for (const [side, d] of Object.entries(sides))
+          variants.push({
+            sku: `ALBA-${s.width}-${c}-${f}-${d}`,
+            price: s.price[fabric as keyof typeof fabrics],
+            compareAtPrice: null,
+            inStock: true,
+            fulfillment: 'in_stock',
+            leadTimeDays: 14,
+            productionDays: null,
+            expectedAt: null,
+            dimensions: {
+              widthCm: s.width,
+              depthCm: 95,
+              heightCm: 82,
+              weightKg: s.weightKg,
+              seatHeightCm: 44,
+              seatDepthCm: 58,
+              chaiseWidthCm: 95,
+              chaiseDepthCm: s.chaiseDepthCm,
+            },
+            options: { color, fabric, 'chaise-side': side, size: String(s.width) },
+            images: [],
+          });
+  return {
+    ...product(variants, false, 'alba-corner-sofa', 'ספה פינתית אלבה'),
+    optionAxes: [
+      {
+        code: 'color',
+        nameHe: 'צבע',
+        values: [
+          { code: 'beige', labelHe: 'בז׳', hex: '#D8CBB5' },
+          { code: 'gray', labelHe: 'אפור', hex: '#9A958D' },
+        ],
+      },
+      {
+        code: 'fabric',
+        nameHe: 'סוג בד',
+        values: [
+          { code: 'woven', labelHe: 'אריג', hex: null },
+          { code: 'boucle', labelHe: 'בוקלה', hex: null },
+        ],
+      },
+      {
+        code: 'size',
+        nameHe: 'מידה',
+        values: sizes.map((s) => ({ code: String(s.width), labelHe: `${s.width} ס״מ`, hex: null })),
+      },
+      {
+        code: 'chaise-side',
+        nameHe: 'צד הפינה או השזלונג',
+        values: [
+          { code: 'right', labelHe: 'ימין', hex: null },
+          { code: 'left', labelHe: 'שמאל', hex: null },
+        ],
+      },
+    ],
+  };
+}
+
 describe('ProductPage', () => {
   let http: HttpTestingController;
   let router: Router;
@@ -236,5 +312,40 @@ describe('ProductPage', () => {
     h.detectChanges();
     expect(main()).toBe('/media/b.webp');
     expect(thumbs()[1].getAttribute('aria-current')).toBe('true');
+  });
+
+  const dimension = (h: RouterTestingHarness, label: string) =>
+    Array.from(el(h).querySelectorAll('hg-product-details tr'))
+      .find((tr) => tr.querySelector('th')?.textContent?.trim() === label)
+      ?.querySelector('td')
+      ?.textContent?.trim();
+
+  it('size is a choice: picking one updates the price and the dimensions table (PRD-04)', async () => {
+    const h = await load(await RouterTestingHarness.create(), '/product/alba-corner-sofa', alba(), 'alba-corner-sofa');
+    expect(radio(h, '260 ס״מ').getAttribute('aria-checked')).toBe('true');
+    expect(el(h).querySelector('.price-now')?.textContent).toContain('4,590 ₪');
+    expect(dimension(h, 'רוחב')).toBe('260 ס״מ');
+
+    radio(h, '340 ס״מ').click();
+    h.detectChanges();
+    const page = h.routeDebugElement!.componentInstance as ProductPage;
+    expect(page.variant()?.sku).toBe('ALBA-340-BG-WV-R');
+    expect(el(h).querySelector('.price-now')?.textContent).toContain('5,590 ₪');
+    expect(dimension(h, 'רוחב')).toBe('340 ס״מ');
+    expect(dimension(h, 'עומק שזלונג')).toBe('175 ס״מ');
+    expect(page.notice()).toBeNull();
+  });
+
+  it('?size=300 in the URL renders the 300 cm variant (PRD-04)', async () => {
+    const shared = await load(
+      await RouterTestingHarness.create(),
+      '/product/alba-corner-sofa?size=300',
+      alba(),
+      'alba-corner-sofa',
+    );
+    expect((shared.routeDebugElement!.componentInstance as ProductPage).variant()?.sku).toBe('ALBA-300-BG-WV-R');
+    expect(radio(shared, '300 ס״מ').getAttribute('aria-checked')).toBe('true');
+    expect(el(shared).querySelector('.price-now')?.textContent).toContain('4,990 ₪');
+    expect(dimension(shared, 'רוחב')).toBe('300 ס״מ');
   });
 });

@@ -66,14 +66,47 @@ describe('Catalog API (e2e)', () => {
     const product = (await get('/api/products/alba-corner-sofa').expect(200)).body as ProductDetail;
     expect(product.modelName).toBe('ALBA');
     expect(product.breadcrumbs.map((b) => b.slug)).toEqual(['sofas', 'corner-sofas']);
-    expect(product.optionAxes.map((a) => a.code)).toEqual(['color', 'fabric', 'chaise-side']);
+    expect(product.optionAxes.map((a) => a.code)).toEqual(['color', 'fabric', 'size', 'chaise-side']);
     expect(product.variants).toHaveLength(3 * 4 * 2 * 2);
     const variant = product.variants.find((v) => v.sku === 'ALBA-300-BG-WV-R')!;
-    expect(variant.options).toEqual({ color: 'beige', fabric: 'woven', 'chaise-side': 'right' });
+    expect(variant.options).toEqual({ color: 'beige', fabric: 'woven', size: '300', 'chaise-side': 'right' });
     expect(variant.dimensions).toMatchObject({ widthCm: 300, depthCm: 95, seatDepthCm: 58, chaiseDepthCm: 165 });
     expect(product.specs.find((s) => s.code === 'style')?.valuesHe).toEqual(
       expect.arrayContaining(['מודרני', 'נורדי']),
     );
+  });
+
+  it('GET /api/products/:slug derives a size axis from the variant dimensions (PRD-04)', async () => {
+    const product = (await get('/api/products/alba-corner-sofa').expect(200)).body as ProductDetail;
+    const size = product.optionAxes.find((a) => a.code === 'size')!;
+    expect(size.nameHe).toBe('מידה');
+    expect(size.values).toEqual([
+      { code: '260', labelHe: '260 ס״מ', hex: null },
+      { code: '300', labelHe: '300 ס״מ', hex: null },
+      { code: '340', labelHe: '340 ס״מ', hex: null },
+    ]);
+    for (const v of product.variants) expect(String(v.dimensions.widthCm)).toBe(v.options['size']);
+  });
+
+  it('every variant of every product has a unique option set', async () => {
+    const { items } = await list('pageSize=60');
+    expect(items.length).toBeGreaterThan(20);
+    for (const { slug } of items) {
+      const product = (await get(`/api/products/${slug}`).expect(200)).body as ProductDetail;
+      const axes = product.optionAxes.map((a) => a.code);
+      const keys = product.variants.map((v) => {
+        expect(Object.keys(v.options).sort()).toEqual([...axes].sort());
+        return axes.map((code) => v.options[code]).join('|');
+      });
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+  });
+
+  it('has no size axis when every variant has the same size', async () => {
+    const product = (await get('/api/products/nora-three-seater-sofa').expect(200)).body as ProductDetail;
+    expect(new Set(product.variants.map((v) => v.dimensions.widthCm)).size).toBe(1);
+    expect(product.optionAxes.map((a) => a.code)).not.toContain('size');
+    expect(product.variants.every((v) => !('size' in v.options))).toBe(true);
   });
 
   it('returns 404 for an unknown product', async () => {

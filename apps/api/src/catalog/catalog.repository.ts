@@ -5,6 +5,7 @@ import { toImageRef as imageRef } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CatalogSnapshot, SnapshotAttribute, SnapshotCategory, SnapshotProduct } from './catalog-snapshot.js';
+import { insertSizeAxis, SIZE_AXIS, sizeAxis } from './size-axis.js';
 
 const FULFILLMENT: Record<DbFulfillment, FulfillmentMode> = {
   IN_STOCK: 'in_stock',
@@ -179,6 +180,23 @@ export class CatalogRepository {
       }
     }
 
+    const attributeAxes: OptionAxis[] = [...axes.values()]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(({ code, nameHe, values, valueOrder }) => ({
+        code,
+        nameHe,
+        values: [...values].sort((a, b) => valueOrder.get(a.code)! - valueOrder.get(b.code)!),
+      }));
+    const size = axes.has(SIZE_AXIS)
+      ? null
+      : sizeAxis(p.variants.map((v) => ({ widthCm: v.widthCm.toNumber(), depthCm: v.depthCm.toNumber() })));
+    const optionAxes = size
+      ? insertSizeAxis(attributeAxes, size.axis, {
+          fabricOrder: snapshot.attributes.get('fabric')?.sortOrder,
+          axisOrder: (code) => axes.get(code)!.sortOrder,
+        })
+      : attributeAxes;
+
     return {
       slug: p.slug,
       modelName: p.modelName,
@@ -198,14 +216,8 @@ export class CatalogRepository {
       requiresAssembly: p.requiresAssembly,
       // Photos for every color here; each variant gets the photos of its color (decision 62).
       images: p.images.filter((i) => i.colorValueId === null).map((i) => imageRef(this.storage, i)),
-      optionAxes: [...axes.values()]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(({ code, nameHe, values, valueOrder }) => ({
-          code,
-          nameHe,
-          values: [...values].sort((a, b) => valueOrder.get(a.code)! - valueOrder.get(b.code)!),
-        })),
-      variants: p.variants.map((v) => ({
+      optionAxes,
+      variants: p.variants.map((v, index) => ({
         sku: v.sku,
         price: v.price,
         compareAtPrice: v.compareAtPrice,
@@ -216,7 +228,10 @@ export class CatalogRepository {
         productionDays: v.productionDays,
         expectedAt: v.expectedAt ? v.expectedAt.toISOString().slice(0, 10) : null,
         dimensions: toDimensions(v),
-        options: Object.fromEntries(v.attributeValues.map(({ attributeValue: av }) => [av.attribute.code, av.code])),
+        options: {
+          ...Object.fromEntries(v.attributeValues.map(({ attributeValue: av }) => [av.attribute.code, av.code])),
+          ...(size ? { [SIZE_AXIS]: size.codes[index]! } : {}),
+        },
         images: p.images
           .filter(
             (i) => i.colorValueId !== null && v.attributeValues.some((a) => a.attributeValueId === i.colorValueId),
