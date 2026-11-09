@@ -2,10 +2,19 @@ import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import type { ProductDetail, ProductListResponse, RoomMenuItem, SearchSuggestions } from '@hg/models';
+import type {
+  ProductCard,
+  ProductDetail,
+  ProductListResponse,
+  RelatedProducts,
+  RoomMenuItem,
+  SearchSuggestions,
+} from '@hg/models';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './../src/app.module.js';
+import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
+import { PrismaService } from './../src/prisma/prisma.service.js';
 
 // Runs against the e2e test database, migrated and seeded by test/e2e-global-setup.ts (needs `npm run db:up`).
 describe('Catalog API (e2e)', () => {
@@ -111,6 +120,103 @@ describe('Catalog API (e2e)', () => {
 
   it('returns 404 for an unknown product', async () => {
     await get('/api/products/no-such-sofa').expect(404);
+  });
+
+  describe('related products (PRD-12) and cards by id (CMP-01)', () => {
+    let prisma: PrismaService;
+    let hiddenId: number;
+    const idOf = async (slug: string) => (await prisma.product.findUniqueOrThrow({ where: { slug } })).id;
+    const related = async (slug: string) =>
+      (await get(`/api/products/${slug}/related`).expect(200)).body as RelatedProducts;
+
+    beforeAll(async () => {
+      prisma = app.get(PrismaService);
+      await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
+      const sofas = await prisma.category.findUniqueOrThrow({ where: { slug: 'corner-sofas' } });
+      const hidden = await prisma.product.create({
+        data: {
+          slug: 'zz-hidden-sofa',
+          modelName: 'ZZHIDDEN',
+          nameHe: 'ספה מוסתרת',
+          categoryId: sofas.id,
+          active: false,
+          variants: {
+            create: { sku: 'ZZHIDDEN-1', price: 400_000, leadTimeDays: 14, widthCm: 280, depthCm: 95, heightCm: 85 },
+          },
+        },
+      });
+      hiddenId = hidden.id;
+    });
+
+    afterAll(async () => {
+      await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
+      await prisma.productRelation.deleteMany({ where: { productId: await idOf('alba-corner-sofa') } });
+      await app.get(CacheStore).invalidate('catalog:');
+    });
+
+    it('GET /api/products/:slug/related returns both rows, at most 8 cards, never the product itself', async () => {
+      const { goesWith, similar } = await related('alba-corner-sofa');
+      for (const row of [goesWith, similar]) {
+        expect(row.length).toBeGreaterThan(0);
+        expect(row.length).toBeLessThanOrEqual(8);
+        expect(row.map((c) => c.modelName)).not.toContain('ALBA');
+        expect(new Set(row.map((c) => c.id)).size).toBe(row.length);
+      }
+      // Similar: the other corner sofa first (same leaf), topped up with other sofas.
+      expect(similar[0].modelName).toBe('TAVOR');
+      // Goes with: no sofas, one per furniture type in menu order — armchairs come first.
+      const sofaSlugs = (await list('category=sofas&pageSize=60')).items.map((i) => i.slug);
+      expect(goesWith.some((c) => sofaSlugs.includes(c.slug))).toBe(false);
+      expect(goesWith[0].slug).toMatch(/armchair/);
+    });
+
+    it('puts visible manual picks first and skips hidden ones (decision 67)', async () => {
+      const alba = await idOf('alba-corner-sofa');
+      const luna = await idOf('luna-armchair');
+      const gal = await idOf('gal-side-table');
+      await prisma.productRelation.createMany({
+        data: [
+          { productId: alba, relatedId: hiddenId, kind: 'goes_with', position: 0 },
+          { productId: alba, relatedId: gal, kind: 'goes_with', position: 1 },
+          { productId: alba, relatedId: luna, kind: 'goes_with', position: 2 },
+        ],
+      });
+      await app.get(CacheStore).invalidate('catalog:');
+
+      const { goesWith } = await related('alba-corner-sofa');
+      expect(goesWith.slice(0, 2).map((c) => c.slug)).toEqual(['gal-side-table', 'luna-armchair']);
+      expect(goesWith.map((c) => c.id)).not.toContain(hiddenId);
+      expect(goesWith.filter((c) => c.slug === 'luna-armchair')).toHaveLength(1);
+    });
+
+    it('returns 404 for an unknown or hidden product', async () => {
+      await get('/api/products/no-such-sofa/related').expect(404);
+      await get('/api/products/zz-hidden-sofa/related').expect(404);
+    });
+
+    it('GET /api/products/cards returns cards in the requested order, first occurrence only', async () => {
+      const a = await idOf('alba-corner-sofa');
+      const b = await idOf('luna-armchair');
+      const cards = (await get(`/api/products/cards?ids=${b},${a},x,${a}`).expect(200)).body as ProductCard[];
+      expect(cards.map((c) => [c.id, c.slug])).toEqual([
+        [b, 'luna-armchair'],
+        [a, 'alba-corner-sofa'],
+      ]);
+      expect(cards[1]).toMatchObject({ modelName: 'ALBA', priceFrom: expect.any(Number) });
+    });
+
+    it('GET /api/products/cards leaves out hidden products and takes no ids as empty', async () => {
+      const a = await idOf('alba-corner-sofa');
+      const cards = (await get(`/api/products/cards?ids=${hiddenId},${a}`).expect(200)).body as ProductCard[];
+      expect(cards.map((c) => c.id)).toEqual([a]);
+      expect((await get('/api/products/cards').expect(200)).body).toEqual([]);
+      expect((await get('/api/products/cards?ids=').expect(200)).body).toEqual([]);
+    });
+
+    it('GET /api/products/cards rejects more than 100 ids', async () => {
+      const ids = Array.from({ length: 101 }, (_, i) => i + 1).join(',');
+      await get(`/api/products/cards?ids=${ids}`).expect(400);
+    });
   });
 
   describe('search (decision 47)', () => {

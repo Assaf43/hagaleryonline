@@ -1,16 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import type {
   CategoryNode,
+  ProductCard,
   ProductDetail,
   ProductListQuery,
   ProductListResponse,
+  RelatedProducts,
   RoomMenuItem,
   SearchSuggestions,
 } from '@hg/models';
 import { CacheStore } from '../cache/cache-store.js';
-import type { CatalogSnapshot, SnapshotCategory } from './catalog-snapshot.js';
+import type { CatalogSnapshot, SnapshotCategory, SnapshotProduct } from './catalog-snapshot.js';
 import { CatalogRepository } from './catalog.repository.js';
-import { queryProducts } from './product-query.js';
+import { queryProducts, toCard } from './product-query.js';
+import { relatedProducts } from './related.js';
 import { SearchProvider } from './search/search-provider.js';
 import { normalizeSearchText, tokenizeQuery } from './search/search-text.js';
 
@@ -75,6 +78,29 @@ export class CatalogService {
 
   async product(slug: string): Promise<ProductDetail | null> {
     return this.repository.findProductDetail(slug, await this.snapshot());
+  }
+
+  /** "Goes with" and "similar" rows of a product page (PRD-12); null when the product is not shown. */
+  async related(slug: string): Promise<RelatedProducts | null> {
+    const snapshot = await this.snapshot();
+    const product = snapshot.products.find((p) => p.slug === slug);
+    if (!product) return null;
+    const { goesWith, similar } = relatedProducts(snapshot, product);
+    const now = new Date();
+    const card = (p: SnapshotProduct) => toCard(snapshot, p, p.variants, now, undefined);
+    return { goesWith: goesWith.map(card), similar: similar.map(card) };
+  }
+
+  /** Cards of the given products in the given order (favorites, CMP-01); products not shown are left out. */
+  async cards(ids: number[]): Promise<ProductCard[]> {
+    if (ids.length === 0) return [];
+    const snapshot = await this.snapshot();
+    const byId = new Map(snapshot.products.map((p) => [p.id, p]));
+    const now = new Date();
+    return ids
+      .map((id) => byId.get(id))
+      .filter((p) => p !== undefined)
+      .map((p) => toCard(snapshot, p, p.variants, now, undefined));
   }
 
   /** Autocomplete (SRC-01): best products and matching category names. */

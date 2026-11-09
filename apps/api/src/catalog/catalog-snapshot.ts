@@ -61,6 +61,15 @@ export interface SnapshotProduct {
   sortOrder: number;
   popularity: number;
   createdAt: Date;
+  updatedAt: Date;
+  /** Fill the related rows with automatic results after the manual picks (decision 67). */
+  goesWithAutofill: boolean;
+  similarAutofill: boolean;
+  /**
+   * This product's manual related picks, ids in `position` order. They may name products that are
+   * not in the snapshot (hidden): skip those when showing the row.
+   */
+  picks: { goesWith: number[]; similar: number[] };
   /** Product-level attribute code → value codes. */
   attributes: Map<string, Set<string>>;
   /** Active variants only; products without any are left out of the snapshot. */

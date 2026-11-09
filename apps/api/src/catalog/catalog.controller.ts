@@ -1,7 +1,15 @@
 import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
-import type { CategoryNode, ProductDetail, ProductListResponse, RoomMenuItem, SearchSuggestions } from '@hg/models';
+import type {
+  CategoryNode,
+  ProductCard,
+  ProductDetail,
+  ProductListResponse,
+  RelatedProducts,
+  RoomMenuItem,
+  SearchSuggestions,
+} from '@hg/models';
 import { CatalogService } from './catalog.service.js';
-import { parseProductListQuery } from './product-list-query.js';
+import { parseCardIds, parseProductListQuery } from './product-list-query.js';
 
 @Controller()
 export class CatalogController {
@@ -20,6 +28,19 @@ export class CatalogController {
   @Get('products')
   products(@Query() raw: Record<string, unknown>): Promise<ProductListResponse> {
     return this.catalog.products(parseProductListQuery(raw));
+  }
+
+  /** Declared before `products/:slug` so "cards" is not taken for a slug. */
+  @Get('products/cards')
+  cards(@Query('ids') ids: unknown): Promise<ProductCard[]> {
+    return this.catalog.cards(parseCardIds(ids));
+  }
+
+  @Get('products/:slug/related')
+  async related(@Param('slug') slug: string): Promise<RelatedProducts> {
+    const related = await this.catalog.related(slug);
+    if (!related) throw new NotFoundException('product not found');
+    return related;
   }
 
   @Get('products/:slug')

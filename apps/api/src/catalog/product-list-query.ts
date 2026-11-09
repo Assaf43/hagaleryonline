@@ -64,6 +64,27 @@ export function parseProductListQuery(raw: Record<string, unknown>): ProductList
   return query;
 }
 
+/** Most ids GET /api/products/cards takes (the favorites list holds up to 100). */
+export const MAX_CARD_IDS = 100;
+const POSITIVE_INTEGER = /^[1-9]\d*$/;
+
+/**
+ * Parses `ids` of GET /api/products/cards?ids=3,1,2: positive integers in order, first occurrence
+ * only; anything else is skipped. More than MAX_CARD_IDS ids is a 400.
+ */
+export function parseCardIds(value: unknown): number[] {
+  const raw = text({ ids: value }, 'ids');
+  if (raw === undefined) return [];
+  const ids = new Set<number>();
+  for (const part of raw.split(',')) {
+    const item = part.trim();
+    const id = Number(item);
+    if (POSITIVE_INTEGER.test(item) && Number.isSafeInteger(id)) ids.add(id);
+  }
+  if (ids.size > MAX_CARD_IDS) throw new BadRequestException(`at most ${MAX_CARD_IDS} ids`);
+  return [...ids];
+}
+
 function text(raw: Record<string, unknown>, key: string): string | undefined {
   const value = raw[key];
   if (value === undefined) return undefined;
