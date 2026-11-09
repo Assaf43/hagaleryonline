@@ -119,10 +119,12 @@ button {
 
 // Full screen.
 .viewer {
-  inline-size: 100vw;
-  max-inline-size: 100vw;
-  block-size: 100dvh;
-  max-block-size: 100dvh;
+  position: fixed;
+  inset: 0;
+  inline-size: 100%;
+  max-inline-size: none;
+  block-size: 100%;
+  max-block-size: none;
   margin: 0;
   padding: 0;
   border: none;

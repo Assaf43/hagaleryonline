@@ -69,7 +69,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
           </nav>
 
           <div class="layout">
-            <hg-product-gallery [images]="galleryImages(p, v)" [label]="p.nameHe" />
+            <hg-product-gallery [images]="gallery()" [label]="p.nameHe" />
 
             <div class="details">
               <h1 class="title">
@@ -183,7 +183,12 @@ export class ProductPage {
     const v = this.variant();
     return p && v ? optionStates(p.variants, p.optionAxes, v) : {};
   });
-  protected readonly galleryImages = galleryImages;
+  /** One array per variant, so the gallery keeps its place while the page re-renders. */
+  protected readonly gallery = computed(() => {
+    const p = this.product();
+    const v = this.variant();
+    return p && v ? galleryImages(p, v) : [];
+  });
 
   constructor() {
     // Back/forward or a pasted link while the page is open: follow the URL. Our own picks write the
@@ -260,7 +265,7 @@ export class ProductPage {
           .trim()
           .slice(0, 160) || p.nameHe,
       path: `/product/${p.slug}`, // canonical without the variant params
-      image: galleryImages(p, v)[0]?.url,
+      image: this.gallery()[0]?.url,
     });
   }
 }

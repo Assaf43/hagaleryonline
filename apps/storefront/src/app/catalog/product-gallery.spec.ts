@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ImageRef } from '@hg/models';
 import { ProductGallery } from './product-gallery';
 
@@ -101,5 +101,38 @@ describe('ProductGallery', () => {
     await setup([]);
     expect(el().querySelector('.placeholder')).not.toBeNull();
     expect(el().querySelector('img')).toBeNull();
+  });
+
+  it('a new array with the same photos keeps the chosen one', async () => {
+    await setup(imgs('a', 'b', 'c'));
+    thumbs()[2].click();
+    await update();
+    fixture.componentRef.setInput('images', imgs('a', 'b', 'c'));
+    await update();
+    expect(mainSrc()).toBe('/media/c.webp');
+  });
+
+  it('scrolls the swipe track to the current photo, negative in RTL', async () => {
+    document.documentElement.dir = 'rtl';
+    await setup(imgs('a', 'b', 'c'));
+    const track = el().querySelector<HTMLElement>('.track')!;
+    Object.defineProperty(track, 'clientWidth', { value: 300, configurable: true });
+    const scrollTo = vi.fn();
+    track.scrollTo = scrollTo as unknown as typeof track.scrollTo;
+    thumbs()[2].click();
+    await update();
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: -600, behavior: 'instant' });
+    track.scrollLeft = -600; // where the swipe left it
+    fixture.componentRef.setInput('images', imgs('x', 'y'));
+    await update();
+    expect(scrollTo.mock.lastCall![0].left + 0).toBe(0);
+  });
+
+  it('moves focus to the close button when full screen opens', async () => {
+    await setup(imgs('a', 'b'));
+    el().querySelector<HTMLButtonElement>('.main')!.click();
+    await update();
+    await update();
+    expect(document.activeElement).toBe(el().querySelector('dialog .close'));
   });
 });

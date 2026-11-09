@@ -223,4 +223,18 @@ describe('ProductPage', () => {
     expect(info.path).toBe('/product/alba');
     expect(info.image).toBe('/media/p.webp');
   });
+
+  it('keeps the chosen photo while the page re-renders, and next really changes it', async () => {
+    const photos = ['a', 'b', 'c'].map((n) => ({ url: `/media/${n}.webp`, altHe: n }));
+    const p = product([{ ...variant('P', {}, 100000), images: photos }], false);
+    const h = await open('/product/alba', p);
+    const thumbs = () => Array.from(el(h).querySelectorAll<HTMLButtonElement>('.thumb'));
+    const main = () => el(h).querySelector('.main img')?.getAttribute('src');
+    expect(main()).toBe('/media/a.webp');
+    thumbs()[1].click();
+    h.detectChanges();
+    h.detectChanges();
+    expect(main()).toBe('/media/b.webp');
+    expect(thumbs()[1].getAttribute('aria-current')).toBe('true');
+  });
 });

@@ -2,6 +2,10 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  Injector,
+  PLATFORM_ID,
+  afterNextRender,
+  effect,
   computed,
   inject,
   input,
@@ -9,7 +13,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { LucideChevronLeft, LucideChevronRight, LucideX } from '@lucide/angular';
 import type { ImageRef } from '@hg/models';
 import { ResponsiveImage } from './responsive-image';
@@ -34,6 +38,8 @@ export class ProductGallery {
   readonly label = input.required<string>();
 
   private readonly doc = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
+  private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** Photos with an alt text always set. */
@@ -41,18 +47,39 @@ export class ProductGallery {
     this.images().map((img) => (img.altHe ? img : { ...img, altHe: this.label() })),
   );
   /** The current photo; goes back to the first when the photos change (e.g. another color). */
-  protected readonly index = linkedSignal<ImageRef[], number>({ source: this.images, computation: () => 0 });
+  protected readonly index = linkedSignal<string, number>({
+    source: computed(() =>
+      this.images()
+        .map((i) => i.url)
+        .join('|'),
+    ),
+    computation: () => 0,
+  });
   protected readonly current = computed(() => this.shown()[this.index()] ?? null);
   protected readonly counter = computed(() => `${this.index() + 1} / ${this.images().length}`);
   protected readonly fullscreen = signal(false);
   protected readonly zoomed = signal(false);
   protected readonly origin = signal('50% 50%');
 
+  private readonly closeBtn = viewChild<ElementRef<HTMLElement>>('closeBtn');
   private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('dialog');
   private readonly track = viewChild<ElementRef<HTMLElement>>('track');
   private opener: HTMLElement | null = null;
   private startX: number | null = null;
   private moved = false;
+
+  constructor() {
+    // Keep the mobile swipe track on the current photo when the index changes without a swipe
+    // (full-screen navigation, another color). Instant, so it never fights the swipe's own scroll.
+    effect(() => {
+      const i = this.index();
+      const el = this.track()?.nativeElement;
+      if (!this.browser || !el || !el.clientWidth) return;
+      const left = (this.isRtl() ? -1 : 1) * i * el.clientWidth;
+      if (Math.abs(el.scrollLeft - left) < 1) return;
+      el.scrollTo({ left, behavior: 'instant' });
+    });
+  }
 
   protected select(i: number): void {
     this.index.set(i);
@@ -76,6 +103,7 @@ export class ProductGallery {
     if (!dialog || dialog.open) return;
     if (typeof dialog.showModal === 'function') dialog.showModal();
     else dialog.setAttribute('open', '');
+    afterNextRender(() => this.closeBtn()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected close(): void {
