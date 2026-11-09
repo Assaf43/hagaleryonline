@@ -54,6 +54,7 @@ function compare(a: VariantDetail, b: VariantDetail, axes: readonly OptionAxis[]
   return a.price - b.price;
 }
 
+/** Precondition: `candidates` is non-empty (a product always has at least one variant). */
 function best(candidates: readonly VariantDetail[], axes: readonly OptionAxis[], wanted: Selection): VariantDetail {
   // Stable sort keeps API order as the last tie-breaker.
   return [...candidates].sort((a, b) => compare(a, b, axes, wanted))[0];
@@ -83,8 +84,9 @@ export function pickOption(
 ): Resolved {
   const wanted: Selection = { ...selectionToParams(current, axes), [axis]: value };
   const candidates = variants.filter((v) => v.options[axis] === value);
+  // Defensive: unreachable from a UI built from `axes`; then the picked axis itself may change and is reported.
   const variant = best(candidates.length ? candidates : variants, axes, wanted);
-  return { variant, adjusted: differing(variant, wanted, axes, axis) };
+  return { variant, adjusted: differing(variant, wanted, axes) };
 }
 
 export function optionStates(

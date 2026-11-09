@@ -160,4 +160,27 @@ describe('variant selection', () => {
       'הצירוף שבחרתם לא זמין, ולכן עדכנו: צבע — ירוק, בד — פשתן',
     );
   });
+
+  describe('ranking steps', () => {
+    const wanted = { color: 'beige', size: '280', fabric: 'velvet' };
+    const earlierAxis = variant('A', { color: 'beige', size: '240', fabric: 'velvet' }, 'made_to_order', 9000);
+    const laterAxis = variant('B', { color: 'green', size: '280', fabric: 'velvet' }, 'in_stock', 1000);
+
+    it('axis order beats availability and price (resolveSelection)', () => {
+      expect(resolveSelection([laterAxis, earlierAxis], axes, wanted).variant.sku).toBe('A');
+    });
+
+    it('axis order beats availability and price (pickOption)', () => {
+      const current = variant('C', { color: 'beige', size: '280', fabric: 'linen' }, 'in_stock', 1);
+      const r = pickOption([laterAxis, earlierAxis], axes, current, 'fabric', 'velvet');
+      expect(r.variant.sku).toBe('A');
+      expect(r.adjusted).toEqual(['size']);
+    });
+
+    it('match count beats axis order', () => {
+      const oneEarly = variant('A', { color: 'beige', size: '240', fabric: 'linen' }, 'in_stock', 100);
+      const twoLate = variant('B', { color: 'green', size: '280', fabric: 'velvet' }, 'out_of_stock', 9000);
+      expect(resolveSelection([oneEarly, twoLate], axes, wanted).variant.sku).toBe('B');
+    });
+  });
 });
