@@ -45,6 +45,16 @@ const shekels = (agorot: number): string => (agorot / 100).toFixed(2);
 /** Schema.org Product with Offer / AggregateOffer (NFR-05). Prices are shekels, including VAT. */
 export function productJsonLd(p: ProductDetail, url: string, origin: string): object {
   const prices = p.variants.map((v) => v.price);
+  const description = plainText(p.descriptionHe, 500);
+  const base = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: `${p.modelName} ${p.nameHe}`,
+    ...(description ? { description } : {}),
+    image: p.images.slice(0, 5).map((i) => new URL(largestUrl(i), origin).href),
+    brand: { '@type': 'Brand', name: BRAND.name },
+  };
+  if (!prices.length) return base;
   const low = Math.min(...prices);
   const high = Math.max(...prices);
   const best = p.variants.reduce<FulfillmentMode>(
@@ -64,16 +74,7 @@ export function productJsonLd(p: ProductDetail, url: string, origin: string): ob
           priceCurrency: 'ILS',
           availability,
         };
-  const description = plainText(p.descriptionHe, 500);
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: `${p.modelName} ${p.nameHe}`,
-    ...(description ? { description } : {}),
-    image: p.images.slice(0, 5).map((i) => new URL(largestUrl(i), origin).href),
-    brand: { '@type': 'Brand', name: BRAND.name },
-    offers,
-  };
+  return { ...base, offers };
 }
 
 export function breadcrumbJsonLd(items: { name: string; url: string }[]): object {
@@ -82,6 +83,20 @@ export function breadcrumbJsonLd(items: { name: string; url: string }[]): object
     '@type': 'BreadcrumbList',
     itemListElement: items.map((it, i) => ({ '@type': 'ListItem', position: i + 1, name: it.name, item: it.url })),
   };
+}
+
+/** Router link segments (`['/category', 'sofas']`) as one root-relative path with single slashes. */
+export function linkPath(link: string[]): string {
+  return '/' + link.map((seg) => seg.replace(/^\/+|\/+$/g, '')).filter(Boolean).join('/');
+}
+
+/** Visible crumbs as absolute breadcrumb items; the crumb without a link is the current page. */
+export function crumbItems(
+  crumbs: { label: string; link: string[] | null }[],
+  currentPath: string,
+  origin: string,
+): { name: string; url: string }[] {
+  return crumbs.map((c) => ({ name: c.label, url: `${origin}${c.link ? linkPath(c.link) : currentPath}` }));
 }
 
 export function homeJsonLd(origin: string): object[] {

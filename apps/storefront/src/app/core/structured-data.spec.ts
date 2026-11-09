@@ -1,5 +1,5 @@
 import type { FulfillmentMode, ProductDetail, VariantDetail } from '@hg/models';
-import { breadcrumbJsonLd, homeJsonLd, productJsonLd, serializeJsonLd } from './structured-data';
+import { breadcrumbJsonLd, crumbItems, homeJsonLd, productJsonLd, serializeJsonLd } from './structured-data';
 
 const variant = (price: number, fulfillment: FulfillmentMode = 'in_stock'): VariantDetail =>
   ({ sku: `S${price}${fulfillment}`, price, compareAtPrice: null, inStock: true, fulfillment }) as VariantDetail;
@@ -109,5 +109,27 @@ describe('structured data', () => {
     expect(d.map((x: object) => (x as { '@type': string })['@type'])).toEqual(['WebSite', 'Organization']);
     expect(d[0]).toMatchObject({ name: 'NESTO', url: O });
     expect(d[1]).toMatchObject({ name: 'NESTO', url: O });
+  });
+
+  it('category and room crumbs get single-slash absolute URLs', () => {
+    const home = { label: 'דף הבית', link: ['/'] };
+    expect(
+      crumbItems(
+        [home, { label: 'ספות', link: ['/category', 'sofas'] }, { label: 'פינתיות', link: null }],
+        '/category/corner',
+        O,
+      ),
+    ).toEqual([
+      { name: 'דף הבית', url: `${O}/` },
+      { name: 'ספות', url: `${O}/category/sofas` },
+      { name: 'פינתיות', url: `${O}/category/corner` },
+    ]);
+    expect(crumbItems([home, { label: 'סלון', link: null }], '/room/living', O)[1].url).toBe(`${O}/room/living`);
+  });
+
+  it('omits offers when there are no variants', () => {
+    const d = make(product([]));
+    expect(d['offers']).toBeUndefined();
+    expect(JSON.stringify(d)).not.toContain('Infinity');
   });
 });

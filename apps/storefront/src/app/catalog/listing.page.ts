@@ -18,7 +18,7 @@ import { BRAND } from '@hg/models';
 import type { ImageRef, ProductCard as Card, ProductListResponse, ProductSort } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { SITE_ORIGIN } from '../core/server-tokens';
-import { breadcrumbJsonLd } from '../core/structured-data';
+import { breadcrumbJsonLd, crumbItems } from '../core/structured-data';
 import { productCount } from '../core/format';
 import { MenuData } from '../layout/menu-data';
 import { CatalogApi } from '../core/catalog.api';
@@ -245,12 +245,7 @@ export class ListingPage {
     const jsonLd =
       this.kind === 'search'
         ? undefined
-        : breadcrumbJsonLd(
-            heading.crumbs.map((c) => ({
-              name: c.label,
-              url: `${this.origin}${c.link ? '/' + c.link.filter((seg) => seg !== '/').join('/') : path}`,
-            })),
-          );
+        : breadcrumbJsonLd(crumbItems(heading.crumbs, path, this.origin));
     this.meta.set({
       title: heading.title,
       description: heading.description,
