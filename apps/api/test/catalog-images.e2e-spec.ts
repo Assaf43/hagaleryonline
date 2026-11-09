@@ -17,7 +17,7 @@ import {
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
-import { acceptAndSignIn, ORIGIN, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { acceptAndSignIn, ORIGIN, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 /** Product photos end to end (Phase 2d, ADM-04, decision 62). Files go to a temp MEDIA_DIR. */
 describe('Catalog images (e2e)', () => {
@@ -50,7 +50,7 @@ describe('Catalog images (e2e)', () => {
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>());
     await app.init();
     prisma = app.get(PrismaService);
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+    await resetAdminData(prisma);
     ({ owner, other: editor } = await signInOwnerAnd(app, 'content_editor'));
 
     const category = (await prisma.category.findUnique({ where: { slug: 'three-seater-sofas' } }))!;
@@ -95,8 +95,7 @@ describe('Catalog images (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+    await resetAdminData(prisma);
     await app.close();
   });
 

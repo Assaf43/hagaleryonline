@@ -17,6 +17,7 @@ import { AppModule } from './../src/app.module.js';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { resetAdminData } from './admin-session.js';
 
 const ORIGIN = 'http://localhost:4300';
 const SUPER = { email: 'catalog-owner@example.test', password: 'olive sofa sunset window' };
@@ -106,7 +107,7 @@ describe('Catalog admin (e2e)', () => {
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>());
     await app.init();
     prisma = app.get(PrismaService);
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+    await resetAdminData(prisma);
 
     owner = await signIn(SUPER, await app.get(AdminUsersService).createSuperAdmin(SUPER.email, 'בעלת העסק'));
     const created = await owner
@@ -117,12 +118,11 @@ describe('Catalog admin (e2e)', () => {
   });
 
   afterAll(async () => {
-    // Leave the seed catalog as the other e2e files expect it.
-    await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
+    // Leave the seed catalog as the other e2e files expect it (products first: they use the zz- values).
+    await resetAdminData(prisma);
     await prisma.category.deleteMany({ where: { slug: { startsWith: 'zz-' } } });
     await prisma.attributeValue.deleteMany({ where: { code: { startsWith: 'zz-' } } });
     await prisma.searchSynonym.deleteMany({ where: { terms: { has: 'zzpillowy' } } });
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
     await app.close();
   });
 

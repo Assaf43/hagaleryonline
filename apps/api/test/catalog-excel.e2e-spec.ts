@@ -6,7 +6,7 @@ import type { AuditPage, ImportReport } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
-import { ORIGIN, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { ORIGIN, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 /** Excel template, export and import end to end (Phase 2c, ADM-09). Cleans up after itself. */
 describe('Catalog Excel (e2e)', () => {
@@ -82,15 +82,14 @@ describe('Catalog Excel (e2e)', () => {
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>());
     await app.init();
     prisma = app.get(PrismaService);
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+    await resetAdminData(prisma);
     ({ owner, other: editor } = await signInOwnerAnd(app, 'content_editor'));
     albaPrice = (await prisma.variant.findUnique({ where: { sku: ALBA_SKU } }))!.price;
   });
 
   afterAll(async () => {
-    await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
     await prisma.variant.update({ where: { sku: ALBA_SKU }, data: { price: albaPrice } });
-    await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+    await resetAdminData(prisma);
     await app.close();
   });
 
