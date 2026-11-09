@@ -37,12 +37,14 @@ import type {
   AdminVariant,
   CatalogStructure,
   FulfillmentMode,
+  RelatedPick,
 } from '@hg/models';
 import { AuthService } from '../core/auth.service';
 import { CatalogApi } from '../core/catalog.api';
 import { errorMessage } from '../core/errors';
 import { FULFILLMENT_LABEL, categoryOptions, suggestSlug, toAgorot, toShekels } from './catalog-format';
 import { ProductImages, type ColorOption } from './product-images';
+import { ProductRelations } from './product-relations';
 import { RichTextEditor } from './rich-text-editor';
 import {
   VariantBulkDialog,
@@ -82,6 +84,7 @@ let nextKey = 1;
     MatSlideToggleModule,
     RichTextEditor,
     ProductImages,
+    ProductRelations,
     LucideArrowRight,
     LucideChevronDown,
     LucideChevronUp,
@@ -128,6 +131,11 @@ export class ProductFormPage implements OnInit {
   ] as const;
 
   protected draft: Draft = emptyDraft();
+  /** Related products (spec §4.4), saved with the product. Signals so the picker can bind two-way. */
+  protected readonly goesWith = signal<RelatedPick[]>([]);
+  protected readonly similar = signal<RelatedPick[]>([]);
+  protected readonly goesWithAutofill = signal(false);
+  protected readonly similarAutofill = signal(false);
   protected rows: VariantRow[] = [];
   protected readonly selected = signal(new Set<number>());
   protected readonly expanded = signal(new Set<number>());
@@ -426,6 +434,12 @@ export class ProductFormPage implements OnInit {
   private payload(): AdminProductInput {
     return {
       ...this.draft,
+      relations: {
+        goesWith: this.goesWith().map((p) => p.id),
+        similar: this.similar().map((p) => p.id),
+      },
+      goesWithAutofill: this.goesWithAutofill(),
+      similarAutofill: this.similarAutofill(),
       variants: this.rows.map(({ key: _key, price, compareAtPrice, ...v }) => ({
         ...v,
         price: toAgorot(price) ?? 0,
@@ -438,19 +452,22 @@ export class ProductFormPage implements OnInit {
 
   private fill(p: AdminProduct) {
     this.product.set(p);
-    // Related picks are not edited here yet; leaving them out of the save keeps them unchanged.
     const {
       id: _id,
       createdAt: _c,
       updatedAt: _u,
       variants,
       images,
-      relations: _r,
-      goesWithAutofill: _g,
-      similarAutofill: _s,
+      relations,
+      goesWithAutofill,
+      similarAutofill,
       ...draft
     } = p;
     this.images.set(images);
+    this.goesWith.set(relations.goesWith);
+    this.similar.set(relations.similar);
+    this.goesWithAutofill.set(goesWithAutofill);
+    this.similarAutofill.set(similarAutofill);
     this.draft = structuredClone(draft);
     this.rows = variants.map((v) => ({
       ...v,

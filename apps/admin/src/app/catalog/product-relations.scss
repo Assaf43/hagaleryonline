@@ -1,0 +1,130 @@
+:host {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+h3 {
+  margin: 0;
+  font-size: var(--font-body);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.muted,
+.name {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+  margin: 0;
+}
+
+.problem {
+  color: var(--color-danger);
+  margin: 0;
+}
+
+.results,
+.picked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.result,
+.pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  min-inline-size: 0;
+}
+
+.result {
+  inline-size: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--color-surface-alt);
+  }
+}
+
+img,
+.no-photo {
+  flex: none;
+  inline-size: 3rem;
+  block-size: 3rem;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--color-surface-alt);
+}
+
+.text {
+  display: grid;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.model {
+  font-weight: 600;
+}
+
+.price {
+  font-size: var(--font-small);
+  white-space: nowrap;
+}
+
+.badge {
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  border-radius: var(--radius-pill);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: var(--font-caption);
+}
+
+.handle {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-secondary);
+  cursor: grab;
+}
+
+.actions {
+  display: flex;
+  flex: none;
+
+  .delete {
+    color: var(--color-danger);
+  }
+}
+
+.cdk-drag-preview {
+  box-shadow: var(--shadow-float);
+}
+
+.cdk-drag-placeholder {
+  opacity: 0.4;
+}
+
+.cdk-drag-animating,
+.picked.cdk-drop-list-dragging .pick:not(.cdk-drag-placeholder) {
+  transition: transform var(--duration-base) var(--ease);
+}

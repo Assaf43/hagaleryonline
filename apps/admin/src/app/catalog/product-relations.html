@@ -1,0 +1,109 @@
+<div class="head">
+  <h3>{{ title() }}</h3>
+  <mat-checkbox [checked]="autofill()" [disabled]="disabled()" (change)="autofill.set($event.checked)">
+    {{ autofillLabel() }}
+  </mat-checkbox>
+</div>
+
+<mat-form-field subscriptSizing="dynamic">
+  <mat-label>חיפוש מוצר להוספה</mat-label>
+  <input
+    matInput
+    type="search"
+    autocomplete="off"
+    [disabled]="disabled()"
+    [value]="query()"
+    (input)="onInput($any($event.target).value)"
+    (keydown.enter)="addFirst($event)"
+  />
+  <mat-hint>לפחות שני תווים: שם דגם או שם המוצר</mat-hint>
+</mat-form-field>
+
+@if (error()) {
+  <p class="problem" role="alert">{{ error() }}</p>
+}
+
+@if (results().length) {
+  <ul class="results" aria-label="תוצאות חיפוש">
+    @for (r of results(); track r.id) {
+      <li>
+        <button type="button" class="result" [disabled]="disabled()" (click)="add(r)">
+          @if (r.thumbnailUrl) {
+            <img [src]="r.thumbnailUrl" alt="" loading="lazy" />
+          } @else {
+            <span class="no-photo" aria-hidden="true"></span>
+          }
+          <span class="text">
+            <bdi dir="ltr" class="model">{{ r.modelName }}</bdi>
+            <span class="name">{{ r.nameHe }}</span>
+          </span>
+          <span class="price">{{ format(r.priceFrom) }}</span>
+        </button>
+      </li>
+    }
+  </ul>
+} @else if (searched() && !error()) {
+  <p class="muted">לא נמצאו מוצרים להוספה.</p>
+}
+
+@if (picks().length) {
+  <ol
+    class="picked"
+    cdkDropList
+    [cdkDropListDisabled]="disabled()"
+    (cdkDropListDropped)="drop($event)"
+    [attr.aria-label]="title()"
+  >
+    @for (p of picks(); track p.id; let i = $index; let last = $last) {
+      <li class="pick" cdkDrag>
+        @if (!disabled()) {
+          <span class="handle" cdkDragHandle aria-hidden="true"><svg lucideGripVertical></svg></span>
+        }
+        @if (p.thumbnailUrl) {
+          <img [src]="p.thumbnailUrl" alt="" loading="lazy" />
+        } @else {
+          <span class="no-photo" aria-hidden="true"></span>
+        }
+        <span class="text">
+          <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
+          <span class="name">{{ p.nameHe }}</span>
+        </span>
+        @if (!p.active) {
+          <span class="badge">מוסתר</span>
+        }
+        <span class="actions">
+          <button
+            matIconButton
+            type="button"
+            [disabled]="disabled() || i === 0"
+            (click)="move(i, i - 1)"
+            [attr.aria-label]="'הזזה למעלה: ' + p.modelName"
+          >
+            <svg lucideChevronUp></svg>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            [disabled]="disabled() || last"
+            (click)="move(i, i + 1)"
+            [attr.aria-label]="'הזזה למטה: ' + p.modelName"
+          >
+            <svg lucideChevronDown></svg>
+          </button>
+          <button
+            matIconButton
+            type="button"
+            class="delete"
+            [disabled]="disabled()"
+            (click)="remove(i)"
+            [attr.aria-label]="'הסרה: ' + p.modelName"
+          >
+            <svg lucideTrash2></svg>
+          </button>
+        </span>
+      </li>
+    }
+  </ol>
+} @else {
+  <p class="muted">עוד לא נבחרו מוצרים.</p>
+}
