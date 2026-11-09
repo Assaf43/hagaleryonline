@@ -1,0 +1,58 @@
+:host {
+  display: block;
+}
+
+.guide {
+  padding-block: var(--space-6) var(--space-7);
+  max-inline-size: 48rem;
+}
+
+.lead {
+  font-size: var(--font-h3);
+  margin-block: var(--space-3) var(--space-6);
+}
+
+.steps {
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  display: grid;
+  gap: var(--space-5);
+}
+
+.step {
+  display: grid;
+  gap: var(--space-4);
+  align-items: center;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+@media (width >= 768px) {
+  .step {
+    grid-template-columns: 10rem 1fr;
+  }
+}
+
+.art {
+  color: var(--color-text-secondary);
+  display: grid;
+  place-items: center;
+
+  svg {
+    inline-size: 8rem;
+    block-size: auto;
+  }
+}
+
+h2 {
+  font-size: var(--font-h3);
+  margin-block-end: var(--space-2);
+}
+
+.num {
+  font-size: var(--font-small);
+  margin-block-end: var(--space-1);
+  color: var(--color-text-secondary);
+}

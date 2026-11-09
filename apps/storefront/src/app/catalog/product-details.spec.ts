@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 import type { ProductDetail, VariantDetail } from '@hg/models';
 import { ProductDetails, warrantyText } from './product-details';
@@ -35,6 +36,7 @@ describe('ProductDetails', () => {
   const el = () => fixture.nativeElement as HTMLElement;
 
   async function setup(p: ProductDetail, v: VariantDetail) {
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
     fixture = TestBed.createComponent(ProductDetails);
     fixture.componentRef.setInput('product', p);
     fixture.componentRef.setInput('variant', v);
@@ -115,5 +117,25 @@ describe('ProductDetails', () => {
     await setup(product(), variant(280));
     const ps = Array.from(sections()[3].querySelectorAll('p')).map((p) => p.textContent);
     expect(ps).toEqual([...SHIPPING_INFO.paragraphsHe]);
+  });
+});
+
+describe('ProductDetails sizing link', () => {
+  it('links to /sizing-guide', async () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const fixture = TestBed.createComponent(ProductDetails);
+    fixture.componentRef.setInput('product', {
+      descriptionHe: '',
+      specs: [],
+      countryOfOrigin: null,
+      warrantyMonths: null,
+      careHe: null,
+      requiresAssembly: false,
+    } as unknown as ProductDetail);
+    fixture.componentRef.setInput('variant', variant(200));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const a = (fixture.nativeElement as HTMLElement).querySelector('a[href="/sizing-guide"]');
+    expect(a?.textContent?.trim()).toBe('איך למדוד?');
   });
 });

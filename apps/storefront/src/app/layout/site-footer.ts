@@ -44,6 +44,7 @@ import { MenuData } from './menu-data';
             </nav>
           }
         </div>
+        <p class="guide-link"><a routerLink="/sizing-guide">מדריך מידות</a></p>
         <p class="bottom">© {{ year }} {{ brand }}</p>
       </div>
     </footer>

@@ -1,0 +1,82 @@
+<section class="container guide">
+  <h1>{{ guide.titleHe }}</h1>
+  <p class="lead muted">{{ guide.introHe }}</p>
+
+  <ol class="steps">
+    @for (s of steps; track s.title; let i = $index) {
+      <li class="step">
+        <div class="art">
+          @switch (i) {
+            @case (0) {
+              <svg
+                viewBox="0 0 120 90"
+                stroke="currentColor"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="30" y="8" width="60" height="74" rx="4" />
+                <path d="M42 28h36M42 46h36M42 64h36" />
+                <path d="M36 28h.01M36 46h.01M36 64h.01" />
+              </svg>
+            }
+            @case (1) {
+              <svg
+                viewBox="0 0 120 90"
+                stroke="currentColor"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="12" y="30" width="96" height="30" rx="6" />
+                <path d="M28 30v12M44 30v8M60 30v12M76 30v8M92 30v12" />
+                <circle cx="24" cy="45" r="0" />
+              </svg>
+            }
+            @case (2) {
+              <svg
+                viewBox="0 0 120 90"
+                stroke="currentColor"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M10 82h100M10 82l14-40h72l14 40" />
+                <rect x="38" y="50" width="44" height="22" stroke-dasharray="6 4" />
+              </svg>
+            }
+            @default {
+              <svg
+                viewBox="0 0 120 90"
+                stroke="currentColor"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="38" y="28" width="44" height="34" stroke-dasharray="6 4" />
+                <path
+                  d="M60 6v14M55 12l5-6 5 6M60 84V70M55 78l5 6 5-6M14 45h14M20 40l-6 5 6 5M106 45H92M100 40l6 5-6 5"
+                />
+              </svg>
+            }
+          }
+        </div>
+        <div>
+          <p class="num" aria-hidden="true">{{ i + 1 }}</p>
+          <h2>{{ s.title }}</h2>
+          <p>{{ s.body }}</p>
+        </div>
+      </li>
+    }
+  </ol>
+
+  <a routerLink="/" class="btn btn-primary">לדף הבית</a>
+</section>
