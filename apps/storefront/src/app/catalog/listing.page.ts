@@ -160,7 +160,11 @@ export class ListingPage {
       this.response.set(results[results.length - 1]);
       this.setMeta(heading);
     } catch {
-      if (request === this.request) this.error.set(true);
+      if (request === this.request) {
+        this.error.set(true);
+        // A failed first load is a server error for search engines; a failed "load more" keeps the page as is.
+        if (!append) this.meta.serverError();
+      }
     } finally {
       if (request === this.request) this.loading.set(false);
     }

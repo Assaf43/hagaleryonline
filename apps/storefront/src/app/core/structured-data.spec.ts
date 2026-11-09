@@ -33,6 +33,7 @@ describe('structured data', () => {
     expect(d['@type']).toBe('Product');
     expect(d['name']).toBe('ALBA ספה');
     expect(d['brand']).toEqual({ '@type': 'Brand', name: 'NESTO' });
+    expect(d['url']).toBe(`${O}/product/alba`);
     expect(d['offers']).toMatchObject({
       '@type': 'Offer',
       price: '1299.00',

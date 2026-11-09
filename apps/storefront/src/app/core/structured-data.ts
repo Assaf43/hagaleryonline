@@ -50,6 +50,7 @@ export function productJsonLd(p: ProductDetail, url: string, origin: string): ob
     '@context': 'https://schema.org',
     '@type': 'Product',
     name: `${p.modelName} ${p.nameHe}`,
+    url,
     ...(description ? { description } : {}),
     image: p.images.slice(0, 5).map((i) => new URL(largestUrl(i), origin).href),
     brand: { '@type': 'Brand', name: BRAND.name },
