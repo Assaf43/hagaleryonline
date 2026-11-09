@@ -181,6 +181,26 @@ describe('Catalog images (e2e)', () => {
     expect((await listImage())?.url).toBe(beigePhoto.url);
   });
 
+  it('lists the product with the photo of the filtered color', async () => {
+    const cardImage = async (query: string) => {
+      const res = await site(`/api/products?category=three-seater-sofas&q=zzphoto${query}`).expect(200);
+      return (res.body as ProductListResponse).items[0].image?.url;
+    };
+    const before = await cardImage('');
+    expect(before).toBe(beigePhoto.url);
+
+    const grayPhoto = (await upload(editor, await jpeg(900, 900), { colorCode: 'gray' }).expect(201))
+      .body as AdminImage;
+    try {
+      expect(await cardImage('&attr.color=gray')).toBe(grayPhoto.url);
+      expect(await cardImage('&attr.color=beige')).toBe(beigePhoto.url);
+      expect(await cardImage('&attr.color=gray,beige')).toBe(grayPhoto.url);
+      expect(await cardImage('')).toBe(before);
+    } finally {
+      await editor.delete(`${base()}/images/${grayPhoto.id}`);
+    }
+  });
+
   it('reorders, edits and deletes photos, and logs each change on the product', async () => {
     const order = await editor.put(`${base()}/images/order`, { ids: [generalPhoto.id, beigePhoto.id] }).expect(200);
     expect((order.body as AdminImage[]).map((i) => i.id)).toEqual([generalPhoto.id, beigePhoto.id]);

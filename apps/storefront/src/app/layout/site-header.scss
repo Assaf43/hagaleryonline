@@ -56,45 +56,12 @@
   margin-inline-start: auto;
 }
 
-.search {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: var(--color-surface);
-  border: var(--border-width-input) solid var(--color-border-strong);
-  border-radius: var(--radius-md);
-  padding-inline: var(--space-4);
-  block-size: 44px;
-  color: var(--color-text-muted);
-  transition: border-color var(--duration-fast) var(--ease);
-
-  input {
-    flex: 1;
-    min-inline-size: 0;
-    block-size: 100%;
-    border: none;
-    background: transparent;
-    color: var(--color-text);
-    font: inherit;
-    outline: none;
-  }
-
-  &:focus-within {
-    border-color: var(--color-text);
-  }
-
-  svg {
-    inline-size: var(--icon-size-ui);
-    block-size: var(--icon-size-ui);
-  }
-}
-
 .search-mobile {
   padding-block-end: var(--space-3);
 }
 
-// Higher specificity than `.search`, which sets display: flex.
-.search.search-desktop {
+// The search box itself lives in search-box.scss.
+.search-desktop {
   display: none;
 }
 
@@ -117,11 +84,11 @@
     display: none;
   }
 
-  .search.search-desktop {
-    display: flex;
+  .search-desktop {
+    display: block;
     flex: 1;
     max-inline-size: 680px;
-    block-size: 50px;
+    --search-height: 50px;
   }
 
   .header-actions {

@@ -8,10 +8,7 @@
     </button>
     <a routerLink="/" class="logo">הגלריה לכולם</a>
 
-    <form class="search search-desktop" role="search" (submit)="search($event, desktopQ)">
-      <svg lucideSearch aria-hidden="true"></svg>
-      <input #desktopQ type="search" name="q" maxlength="100" placeholder="חיפוש" aria-label="חיפוש" />
-    </form>
+    <hg-search-box class="search-desktop" idPrefix="search-desktop" />
 
     <div class="header-actions">
       <hg-theme-toggle />
@@ -19,10 +16,7 @@
   </div>
 
   <div class="container search-mobile">
-    <form class="search" role="search" (submit)="search($event, mobileQ)">
-      <svg lucideSearch aria-hidden="true"></svg>
-      <input #mobileQ type="search" name="q" maxlength="100" placeholder="חיפוש" aria-label="חיפוש" />
-    </form>
+    <hg-search-box idPrefix="search-mobile" />
   </div>
 
   <nav class="nav-desktop" aria-label="ניווט ראשי">

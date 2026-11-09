@@ -11,9 +11,10 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { filter } from 'rxjs';
-import { LucideChevronDown, LucideChevronLeft, LucideMenu, LucideSearch, LucideX } from '@lucide/angular';
+import { LucideChevronDown, LucideChevronLeft, LucideMenu, LucideX } from '@lucide/angular';
 import { ThemeToggle } from '@hg/ui';
 import { MenuData } from './menu-data';
+import { SearchBox } from './search-box';
 
 /**
  * Sticky header (NAV-01, NAV-02): logo, "by room" menu, furniture types, search and theme switch.
@@ -26,10 +27,10 @@ import { MenuData } from './menu-data';
     RouterLink,
     RouterLinkActive,
     ThemeToggle,
+    SearchBox,
     LucideChevronDown,
     LucideChevronLeft,
     LucideMenu,
-    LucideSearch,
     LucideX,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -82,13 +83,5 @@ export class SiteHeader {
   /** Clicking the dark backdrop of the drawer closes it. */
   protected drawerClick(event: MouseEvent) {
     if (event.target === this.drawer().nativeElement) this.closeDrawer();
-  }
-
-  protected search(event: Event, input: HTMLInputElement) {
-    event.preventDefault();
-    const q = input.value.trim();
-    if (!q) return;
-    input.blur();
-    void this.router.navigate(['/search'], { queryParams: { q } });
   }
 }

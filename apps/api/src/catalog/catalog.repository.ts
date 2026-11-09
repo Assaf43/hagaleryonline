@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Dimensions, FulfillmentMode, OptionAxis, ProductDetail } from '@hg/models';
+import type { Dimensions, FulfillmentMode, ImageRef, OptionAxis, ProductDetail } from '@hg/models';
 import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma } from '../generated/prisma/client.js';
 import { toImageRef as imageRef } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
@@ -15,6 +15,19 @@ const FULFILLMENT: Record<DbFulfillment, FulfillmentMode> = {
 
 /** The admin orders the photos; the first one is the product's main photo (decision 62). */
 const imageOrder: Prisma.ImageOrderByWithRelationInput[] = [{ sortOrder: 'asc' }, { id: 'asc' }];
+
+/** Color value code → first photo (in image order) linked to that color. */
+function firstImagePerColor(
+  storage: StorageProvider,
+  images: Array<Parameters<typeof imageRef>[1] & { colorValue: { code: string } | null }>,
+): Map<string, ImageRef> {
+  const result = new Map<string, ImageRef>();
+  for (const image of images) {
+    const code = image.colorValue?.code;
+    if (code && !result.has(code)) result.set(code, imageRef(storage, image));
+  }
+  return result;
+}
 
 @Injectable()
 export class CatalogRepository {
@@ -42,7 +55,7 @@ export class CatalogRepository {
             orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
             include: { attributeValues: { include: { attributeValue: { include: { attribute: true } } } } },
           },
-          images: { orderBy: imageOrder, take: 1 },
+          images: { orderBy: imageOrder, include: { colorValue: { select: { code: true } } } },
         },
       }),
     ]);
@@ -100,6 +113,7 @@ export class CatalogRepository {
             options: new Map(v.attributeValues.map(({ attributeValue: av }) => [av.attribute.code, av.code])),
           })),
           image: p.images[0] ? imageRef(this.storage, p.images[0]) : null,
+          colorImages: firstImagePerColor(this.storage, p.images),
         };
       });
 

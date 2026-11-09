@@ -1,0 +1,216 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  PLATFORM_ID,
+  afterRenderEffect,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Router, RouterLink } from '@angular/router';
+import { LucideSearch } from '@lucide/angular';
+import { Subject, catchError, debounceTime, filter, map, of, switchMap } from 'rxjs';
+import type { SearchSuggestions } from '@hg/models';
+import { CatalogApi } from '../core/catalog.api';
+import { formatPrice } from '../core/format';
+import { ResponsiveImage } from '../catalog/responsive-image';
+
+const MIN_CHARS = 2;
+const DEBOUNCE_MS = 200;
+const MAX_PRODUCTS = 6;
+const MAX_CATEGORIES = 4;
+
+interface Option {
+  id: string;
+  url: string;
+}
+
+/**
+ * Header search with autocomplete (SRC-01, BRAND §9.4). A plain GET form to /search, so it works
+ * without JavaScript; with JavaScript it suggests products and categories after 200 ms and two
+ * characters (combobox + listbox pattern). The dropdown is never rendered on the server.
+ */
+@Component({
+  selector: 'hg-search-box',
+  imports: [RouterLink, LucideSearch, ResponsiveImage],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  templateUrl: './search-box.html',
+  styleUrl: './search-box.scss',
+  host: { '(document:click)': 'documentClick($event)', '(focusout)': 'focusOut($event)' },
+})
+export class SearchBox {
+  /** Makes the input, listbox and option ids unique per instance. */
+  readonly idPrefix = input.required<string>();
+
+  private readonly api = inject(CatalogApi);
+  private readonly router = inject(Router);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly typed$ = new Subject<string>();
+  /** Set by Enter/Escape/navigation: drops pending (debounced or in-flight) results. */
+  private dismissed = false;
+
+  protected readonly text = signal('');
+  protected readonly results = signal<SearchSuggestions | null>(null);
+  protected readonly open = signal(false);
+  protected readonly activeIndex = signal(-1);
+  /** The query the shown results belong to. */
+  protected readonly query = signal('');
+
+  protected readonly products = computed(() => this.results()?.products.slice(0, MAX_PRODUCTS) ?? []);
+  protected readonly categories = computed(() => this.results()?.categories.slice(0, MAX_CATEGORIES) ?? []);
+  protected readonly count = computed(() => this.products().length + this.categories().length);
+
+  protected readonly inputId = computed(() => `${this.idPrefix()}-input`);
+  protected readonly listId = computed(() => `${this.idPrefix()}-list`);
+  protected optionId(i: number) {
+    return `${this.idPrefix()}-opt-${i}`;
+  }
+
+  /** Every selectable row in order: products, categories, then "all results". */
+  protected readonly options = computed<Option[]>(() => {
+    const urls = [
+      ...this.products().map((p) => `/product/${p.slug}`),
+      ...this.categories().map((c) => `/category/${c.slug}`),
+      `/search?q=${encodeURIComponent(this.text().trim())}`,
+    ];
+    return urls.map((url, i) => ({ id: this.optionId(i), url }));
+  });
+  protected readonly activeId = computed(() => this.options()[this.activeIndex()]?.id ?? null);
+
+  constructor() {
+    // Keep the keyboard-active row visible inside the scrolling panel (browser only).
+    afterRenderEffect(() => {
+      if (this.activeIndex() < 0) return;
+      const row = this.host.nativeElement.querySelector<HTMLElement>('[role="option"].active');
+      row?.scrollIntoView?.({ block: 'nearest' });
+    });
+
+    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+      this.typed$
+        .pipe(
+          map((v) => v.trim()),
+          debounceTime(DEBOUNCE_MS),
+          filter(() => !this.dismissed),
+          // Skip only when the panel is already open for this exact query (so Escape or an error can be retried).
+          filter((q) => !(this.open() && this.query() === q)),
+          switchMap((q) =>
+            q.length < MIN_CHARS
+              ? of({ q, data: null })
+              : this.api.suggest(q).pipe(
+                  map((data) => ({ q, data })),
+                  catchError(() => of({ q, data: null })),
+                ),
+          ),
+          takeUntilDestroyed(inject(DestroyRef)),
+        )
+        .subscribe(({ q, data }) => {
+          if (this.dismissed) return;
+          this.query.set(q);
+          this.results.set(data);
+          this.activeIndex.set(-1);
+          this.open.set(data !== null);
+        });
+    }
+  }
+
+  protected typing(event: Event) {
+    const value = (event.target as HTMLInputElement).value;
+    this.text.set(value);
+    this.dismissed = false;
+    this.activeIndex.set(-1);
+    if (value.trim().length < MIN_CHARS) this.close(false);
+    this.typed$.next(value);
+  }
+
+  protected keydown(event: KeyboardEvent) {
+    const n = this.options().length;
+    switch (event.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        if (!this.open()) return;
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        const cur = this.activeIndex();
+        this.activeIndex.set(cur < 0 ? (step > 0 ? 0 : n - 1) : (cur + step + n) % n);
+        return;
+      }
+      case 'Escape':
+        if (this.open()) this.close(true);
+        return;
+      case 'Enter': {
+        event.preventDefault();
+        // Suggestions that belong to older text are stale: Enter then searches what is typed now.
+        const stale = this.text().trim() !== this.query();
+        const active = this.open() && !stale ? this.options()[this.activeIndex()] : undefined;
+        if (active) {
+          this.go(() => this.router.navigateByUrl(active.url));
+        } else {
+          this.submit();
+        }
+        return;
+      }
+    }
+  }
+
+  /** A submit that did not come from the Enter key (e.g. a phone's "search" key). */
+  protected formSubmit(event: Event) {
+    event.preventDefault();
+    this.submit();
+  }
+
+  private submit() {
+    const q = this.text().trim();
+    if (!q) return;
+    this.go(() => this.router.navigate(['/search'], { queryParams: { q } }));
+  }
+
+  /** Leaving for a result: closes the panel, drops pending requests and clears focus (phone keyboard). */
+  private go(navigate: () => Promise<boolean>) {
+    this.close(true);
+    this.host.nativeElement.querySelector('input')?.blur();
+    void navigate();
+  }
+
+  /** `dismiss` also drops requests that are still pending. */
+  private close(dismiss: boolean) {
+    if (dismiss) this.dismissed = true;
+    this.open.set(false);
+    this.activeIndex.set(-1);
+  }
+
+  protected focusIn() {
+    if (this.results() && !this.dismissed && this.text().trim() === this.query()) this.open.set(true);
+  }
+
+  protected focusOut(event: FocusEvent) {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !this.host.nativeElement.contains(next)) this.close(false);
+  }
+
+  protected documentClick(event: Event) {
+    if (this.open() && !this.host.nativeElement.contains(event.target as Node)) this.close(false);
+  }
+
+  protected price(agorot: number) {
+    return formatPrice(agorot);
+  }
+
+  /** Keeps focus in the input while an option is pressed, so Safari/iOS does not close the panel before the click. */
+  protected panelMouseDown(event: MouseEvent) {
+    event.preventDefault();
+  }
+
+  /** The link navigates itself; we only close and clear focus. */
+  protected linkClick() {
+    this.go(() => Promise.resolve(true));
+  }
+
+  protected hover(i: number) {
+    this.activeIndex.set(i);
+  }
+}
