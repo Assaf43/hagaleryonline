@@ -213,6 +213,33 @@ describe('SearchBox', () => {
     expect(requests().length).toBe(1);
   });
 
+  it('a newer value cancels the in-flight request and its result is not shown', async () => {
+    await open();
+    type('ספהx');
+    vi.advanceTimersByTime(200);
+    const [stale] = requests();
+    type('ספה');
+    vi.advanceTimersByTime(200);
+    expect(stale.cancelled).toBe(true);
+    settle();
+    expect(options().length).toBe(11);
+    expect(el.textContent).not.toContain('ספהx');
+  });
+
+  it('mouseenter does not scroll, ArrowDown does', async () => {
+    const spy = vi.fn();
+    Element.prototype.scrollIntoView = spy;
+    await open();
+    options()[2].dispatchEvent(new MouseEvent('mouseenter'));
+    settle();
+    await fixture.whenStable();
+    expect(spy).not.toHaveBeenCalled();
+    key('ArrowDown');
+    settle();
+    await fixture.whenStable();
+    expect(spy).toHaveBeenCalledWith({ block: 'nearest' });
+  });
+
   it('hovering an option makes it active', async () => {
     await open();
     options()[2].dispatchEvent(new MouseEvent('mouseenter'));

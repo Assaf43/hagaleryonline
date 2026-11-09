@@ -46,6 +46,12 @@ export class PageMeta {
     this.set({ title: 'הדף לא נמצא', description: 'הדף שחיפשתם לא קיים.', path: '/', noindex: true });
   }
 
+  /** Server render of a page whose data failed to load answers 503, so search engines retry later. */
+  serverError(): void {
+    if (this.response) this.response.status = 503;
+    this.set({ title: 'שגיאה בטעינת הדף', description: 'לא הצלחנו לטעון את הדף.', path: '/', noindex: true });
+  }
+
   private canonical(url: string): void {
     let link = this.document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
     if (!link) {

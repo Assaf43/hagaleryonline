@@ -1,0 +1,81 @@
+@if (current(); as cur) {
+  <div class="gallery">
+    <!-- Mobile: swipe track (scroll-snap); the counter shows the place. -->
+    <div class="track-wrap">
+      <div #track class="track" (scroll)="trackScrolled()" [attr.aria-label]="label()" role="group">
+        @for (img of shown(); track img.url; let i = $index) {
+          <button type="button" class="slide" (click)="open($event, i)" [attr.aria-label]="'הגדלת תמונה ' + (i + 1)">
+            <hg-responsive-image [image]="img" sizes="(width >= 1024px) 50vw, 100vw" [priority]="i === 0" />
+          </button>
+        }
+      </div>
+      @if (shown().length > 1) {
+        <span class="counter num" aria-hidden="true">{{ counter() }}</span>
+      }
+    </div>
+
+    <!-- Desktop: main photo and thumbnails. -->
+    <div class="desktop">
+      <button type="button" class="main" (click)="open($event, index())" aria-label="הגדלת תמונה">
+        <hg-responsive-image [image]="cur" sizes="(width >= 1024px) 50vw, 100vw" [priority]="true" />
+      </button>
+      @if (shown().length > 1) {
+        <ul class="thumbs">
+          @for (img of shown(); track img.url; let i = $index) {
+            <li>
+              <button
+                type="button"
+                class="thumb"
+                [attr.aria-current]="i === index() ? 'true' : null"
+                [attr.aria-label]="'תמונה ' + (i + 1) + ' מתוך ' + shown().length"
+                (click)="select(i)"
+              >
+                <hg-responsive-image [image]="img" sizes="88px" />
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  </div>
+} @else {
+  <div class="gallery">
+    <div class="placeholder" aria-hidden="true"></div>
+  </div>
+}
+
+<dialog
+  #dialog
+  class="viewer"
+  [attr.aria-label]="label()"
+  (keydown)="key($event)"
+  (close)="closed()"
+  (click)="backdropClick($event)"
+>
+  @if (fullscreen() && current(); as cur) {
+    <button #closeBtn type="button" class="icon-btn close" (click)="close()" aria-label="סגירה">
+      <svg lucideX aria-hidden="true"></svg>
+    </button>
+    <div
+      class="stage"
+      [class.zoomed]="zoomed()"
+      (pointerdown)="pointerDown($event)"
+      (pointermove)="pointerMove($event)"
+      (pointerup)="pointerUp($event)"
+      (click)="toggleZoom($event)"
+    >
+      <div class="zoom" [style.transform-origin]="origin()">
+        <hg-responsive-image [image]="cur" sizes="100vw" />
+      </div>
+    </div>
+    @if (shown().length > 1) {
+      <button type="button" class="icon-btn nav prev" (click)="step(-1)" aria-label="התמונה הקודמת">
+        <svg lucideChevronLeft class="flip-rtl" aria-hidden="true"></svg>
+      </button>
+      <button type="button" class="icon-btn nav next" (click)="step(1)" aria-label="התמונה הבאה">
+        <svg lucideChevronRight class="flip-rtl" aria-hidden="true"></svg>
+      </button>
+      <span class="counter num" aria-live="polite">{{ counter() }}</span>
+    }
+  }
+</dialog>

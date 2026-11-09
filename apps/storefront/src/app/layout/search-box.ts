@@ -14,7 +14,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { LucideSearch } from '@lucide/angular';
-import { Subject, catchError, debounceTime, filter, map, of, switchMap } from 'rxjs';
+import { EMPTY, Subject, catchError, debounceTime, filter, map, of, switchMap } from 'rxjs';
 import type { SearchSuggestions } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { formatPrice } from '../core/format';
@@ -53,6 +53,8 @@ export class SearchBox {
   private readonly typed$ = new Subject<string>();
   /** Set by Enter/Escape/navigation: drops pending (debounced or in-flight) results. */
   private dismissed = false;
+  /** True after an arrow-key move: only keyboard moves scroll the panel (hover must not chain-scroll). */
+  private scrollPending = false;
 
   protected readonly text = signal('');
   protected readonly results = signal<SearchSuggestions | null>(null);
@@ -85,7 +87,8 @@ export class SearchBox {
   constructor() {
     // Keep the keyboard-active row visible inside the scrolling panel (browser only).
     afterRenderEffect(() => {
-      if (this.activeIndex() < 0) return;
+      if (this.activeIndex() < 0 || !this.scrollPending) return;
+      this.scrollPending = false;
       const row = this.host.nativeElement.querySelector<HTMLElement>('[role="option"].active');
       row?.scrollIntoView?.({ block: 'nearest' });
     });
@@ -96,20 +99,20 @@ export class SearchBox {
           map((v) => v.trim()),
           debounceTime(DEBOUNCE_MS),
           filter(() => !this.dismissed),
-          // Skip only when the panel is already open for this exact query (so Escape or an error can be retried).
-          filter((q) => !(this.open() && this.query() === q)),
-          switchMap((q) =>
-            q.length < MIN_CHARS
-              ? of({ q, data: null })
-              : this.api.suggest(q).pipe(
-                  map((data) => ({ q, data })),
-                  catchError(() => of({ q, data: null })),
-                ),
-          ),
+          // A newer value always switches (cancels the request in flight). EMPTY means the panel already
+          // shows this exact query, so nothing is fetched (Escape or an error can still be retried).
+          switchMap((q) => {
+            if (this.open() && this.query() === q) return EMPTY;
+            if (q.length < MIN_CHARS) return of({ q, data: null });
+            return this.api.suggest(q).pipe(
+              map((data) => ({ q, data })),
+              catchError(() => of({ q, data: null })),
+            );
+          }),
           takeUntilDestroyed(inject(DestroyRef)),
         )
         .subscribe(({ q, data }) => {
-          if (this.dismissed) return;
+          if (this.dismissed || q !== this.text().trim()) return;
           this.query.set(q);
           this.results.set(data);
           this.activeIndex.set(-1);
@@ -134,6 +137,7 @@ export class SearchBox {
       case 'ArrowUp': {
         if (!this.open()) return;
         event.preventDefault();
+        this.scrollPending = true;
         const step = event.key === 'ArrowDown' ? 1 : -1;
         const cur = this.activeIndex();
         this.activeIndex.set(cur < 0 ? (step > 0 ? 0 : n - 1) : (cur + step + n) % n);
