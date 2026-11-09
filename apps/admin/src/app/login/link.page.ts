@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, input, signal } from '@angular/core';
+import { BRAND } from '@hg/models';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,7 +16,7 @@ import { UsersApi } from '../core/users.api';
   template: `
     <main class="auth-page">
       <section class="auth-card">
-        <p class="auth-brand">הגלריה לכולם</p>
+        <p class="auth-brand">{{ brand }}</p>
         @if (done()) {
           <h1>הסיסמה נשמרה</h1>
           <p class="auth-text">עכשיו אפשר להיכנס. בכניסה הראשונה תגדירו אימות דו-שלבי בטלפון.</p>
@@ -52,6 +53,7 @@ import { UsersApi } from '../core/users.api';
   `,
 })
 export class LinkPage implements OnInit {
+  protected readonly brand = BRAND.name;
   private readonly api = inject(UsersApi);
   /** From the route (/invite/:token or /reset-password/:token). */
   readonly token = input.required<string>();

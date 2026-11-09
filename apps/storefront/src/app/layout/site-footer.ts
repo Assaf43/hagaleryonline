@@ -1,3 +1,4 @@
+import { BRAND } from '@hg/models';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MenuData } from './menu-data';
@@ -15,7 +16,7 @@ import { MenuData } from './menu-data';
       <div class="container">
         <div class="cols">
           <div>
-            <p class="logo">הגלריה לכולם</p>
+            <p class="logo">{{ brand }}</p>
             <p class="small muted">רהיטים לבית, עם מידות מלאות לכל דגם ומשלוח עד הבית.</p>
           </div>
           @if (menu.rooms().length) {
@@ -43,7 +44,7 @@ import { MenuData } from './menu-data';
             </nav>
           }
         </div>
-        <p class="bottom">© {{ year }} הגלריה לכולם</p>
+        <p class="bottom">© {{ year }} {{ brand }}</p>
       </div>
     </footer>
   `,
@@ -114,6 +115,7 @@ import { MenuData } from './menu-data';
   `,
 })
 export class SiteFooter {
+  protected readonly brand = BRAND.name;
   protected readonly menu = inject(MenuData);
   protected readonly year = new Date().getFullYear();
 }

@@ -1,3 +1,4 @@
+import { BRAND } from '@hg/models';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -38,6 +39,7 @@ import { SearchBox } from './search-box';
   styleUrl: './site-header.scss',
 })
 export class SiteHeader {
+  protected readonly brand = BRAND.name;
   protected readonly menu = inject(MenuData);
   private readonly router = inject(Router);
   private readonly drawer = viewChild.required<ElementRef<HTMLDialogElement>>('drawer');

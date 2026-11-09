@@ -14,6 +14,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { combineLatest } from 'rxjs';
 import { LucideChevronLeft, LucideSlidersHorizontal, LucideX } from '@lucide/angular';
+import { BRAND } from '@hg/models';
 import type { ImageRef, ProductCard as Card, ProductListResponse, ProductSort } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { productCount } from '../core/format';
@@ -183,7 +184,7 @@ export class ListingPage {
       const q = this.query();
       return {
         title: q ? `תוצאות חיפוש: ${q}` : 'חיפוש',
-        description: `תוצאות חיפוש באתר הגלריה לכולם${q ? ` עבור "${q}"` : ''}.`,
+        description: `תוצאות חיפוש ב-${BRAND.name}${q ? ` עבור "${q}"` : ''}.`,
         crumbs: [home, { label: 'חיפוש', link: null }],
         links: [],
       };
@@ -222,7 +223,7 @@ export class ListingPage {
       : [];
     return {
       title: node.nameHe,
-      description: `${node.nameHe} בהגלריה לכולם: מידות מלאות לכל דגם, סינון לפי רוחב ועומק, ומשלוח עד הבית.`,
+      description: `${node.nameHe} ב-${BRAND.name}: מידות מלאות לכל דגם, סינון לפי רוחב ועומק, ומשלוח עד הבית.`,
       crumbs: [
         home,
         ...path.map((c, i) => ({ label: c.nameHe, link: i < path.length - 1 ? ['/category', c.slug] : null })),

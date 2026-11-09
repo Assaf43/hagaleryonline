@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { BRAND } from '@hg/models';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,7 +16,7 @@ import { errorMessage } from '../core/errors';
   template: `
     <main class="auth-page">
       <form class="auth-card" (ngSubmit)="submit()">
-        <p class="auth-brand">הגלריה לכולם</p>
+        <p class="auth-brand">{{ brand }}</p>
         <h1>אימות דו-שלבי</h1>
         @if (useRecovery()) {
           <p class="auth-text">הקלידו אחד מקודי השחזור ששמרתם. כל קוד עובד פעם אחת בלבד.</p>
@@ -51,6 +52,7 @@ import { errorMessage } from '../core/errors';
   `,
 })
 export class Verify2faPage {
+  protected readonly brand = BRAND.name;
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   protected value = '';

@@ -1,8 +1,9 @@
 import { DOCUMENT, Injectable, RESPONSE_INIT, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
+import { BRAND } from '@hg/models';
 import { SITE_ORIGIN } from './server-tokens';
 
-export const SITE_NAME = 'הגלריה לכולם';
+export const SITE_NAME: string = BRAND.name;
 
 export interface PageInfo {
   title: string;

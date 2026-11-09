@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { BRAND } from '@hg/models';
 import type { CategoryNode, RoomMenuItem } from '@hg/models';
 import { App } from './app';
 
@@ -26,7 +27,7 @@ describe('App', () => {
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.logo')?.textContent).toContain('הגלריה לכולם');
+    expect(el.querySelector('.logo')?.textContent).toContain(BRAND.name);
     expect(el.querySelector('hg-theme-toggle button')).toBeTruthy();
     expect(el.querySelector('a[href="/room/living-room"]')?.textContent).toContain('סלון');
     expect(el.querySelector('.nav-desktop a[href="/category/sofas"]')?.textContent).toContain('ספות');

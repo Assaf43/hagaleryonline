@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import {
+  BRAND,
   FULFILLMENT_LABELS_HE,
   type AdminProduct,
   type AdminProductInput,
@@ -198,7 +199,7 @@ export class ExcelService {
     example?: Record<string, CellValue>,
   ): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'הגלריה לכולם';
+    wb.creator = BRAND.name;
     const sheet = wb.addWorksheet(PRODUCTS_SHEET, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
     const required = new Set([MODEL_COLUMN, SKU_COLUMN]);
     sheet.columns = columns.map((c) => ({
