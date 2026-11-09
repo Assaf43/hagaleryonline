@@ -12,6 +12,7 @@ import { THEME_ATTRIBUTE, readThemeCookie } from '@hg/theme';
 import { appConfig } from './app.config';
 import { API_ORIGIN, SEO_INDEXING, SEO_INDEXING_STATE, SITE_ORIGIN } from './core/server-tokens';
 import { serverRoutes } from './app.routes.server';
+import { readServerEnv } from '../server-env';
 
 /** Renders the saved light/dark choice into <html> so the first paint is already correct (GEN-05). */
 function applySavedTheme(): void {
@@ -30,13 +31,10 @@ const serverConfig: ApplicationConfig = {
     provideAppInitializer(applySavedTheme),
     provideAppInitializer(transferSeoIndexing),
     // The server render calls the API directly (API_URL), not through the browser-facing address.
-    { provide: API_ORIGIN, useFactory: () => (process.env['API_URL'] || 'http://localhost:3000').replace(/\/$/, '') },
-    {
-      provide: SITE_ORIGIN,
-      useFactory: () => (process.env['SITE_URL'] || 'https://hagaleryonline.co.il').replace(/\/$/, ''),
-    },
+    { provide: API_ORIGIN, useFactory: () => readServerEnv().apiUrl },
+    { provide: SITE_ORIGIN, useFactory: () => readServerEnv().siteUrl },
     // NFR-06: indexing stays off (every page noindex) unless SEO_INDEXING=true — production only.
-    { provide: SEO_INDEXING, useFactory: () => process.env['SEO_INDEXING'] === 'true' },
+    { provide: SEO_INDEXING, useFactory: () => readServerEnv().indexing },
   ],
 };
 

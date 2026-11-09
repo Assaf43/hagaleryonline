@@ -7,6 +7,7 @@ import {
 import express from 'express';
 import { join } from 'node:path';
 import { registerSeoRoutes } from './seo-routes';
+import { readServerEnv } from './server-env';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
@@ -17,11 +18,7 @@ const angularApp = new AngularNodeAppEngine();
  * sitemap.xml and robots.txt (NFR-06), before the static files and the Angular handler.
  * Same defaults as the server render (app.config.server.ts).
  */
-registerSeoRoutes(app, {
-  apiUrl: (process.env['API_URL'] || 'http://localhost:3000').replace(/\/$/, ''),
-  siteUrl: (process.env['SITE_URL'] || 'https://hagaleryonline.co.il').replace(/\/$/, ''),
-  indexing: process.env['SEO_INDEXING'] === 'true',
-});
+registerSeoRoutes(app, readServerEnv());
 
 /**
  * Serve static files from /browser
