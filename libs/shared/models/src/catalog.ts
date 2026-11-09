@@ -190,3 +190,15 @@ export interface SearchSuggestions {
   products: { slug: string; modelName: string; nameHe: string; priceFrom: number; image: ImageRef | null }[];
   categories: { slug: string; nameHe: string }[];
 }
+
+// ---------- SEO ----------
+
+/** GET /api/seo/sitemap (NFR-06): what the storefront's sitemap.xml lists — shown items only. */
+export interface SitemapData {
+  /** `updatedAt` is an ISO date-time. */
+  products: { slug: string; updatedAt: string }[];
+  /** Categories with at least one shown product, counting their sub-categories. */
+  categories: { slug: string }[];
+  /** Rooms with at least one shown product. */
+  rooms: { slug: string }[];
+}

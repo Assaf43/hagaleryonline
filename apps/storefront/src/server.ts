@@ -6,6 +6,7 @@ import {
 } from '@angular/ssr/node';
 import express from 'express';
 import { join } from 'node:path';
+import { registerSeoRoutes } from './seo-routes';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
@@ -13,16 +14,14 @@ const app = express();
 const angularApp = new AngularNodeAppEngine();
 
 /**
- * Example Express Rest API endpoints can be defined here.
- * Uncomment and define endpoints as necessary.
- *
- * Example:
- * ```ts
- * app.get('/api/{*splat}', (req, res) => {
- *   // Handle API request
- * });
- * ```
+ * sitemap.xml and robots.txt (NFR-06), before the static files and the Angular handler.
+ * Same defaults as the server render (app.config.server.ts).
  */
+registerSeoRoutes(app, {
+  apiUrl: (process.env['API_URL'] || 'http://localhost:3000').replace(/\/$/, ''),
+  siteUrl: (process.env['SITE_URL'] || 'https://hagaleryonline.co.il').replace(/\/$/, ''),
+  indexing: process.env['SEO_INDEXING'] === 'true',
+});
 
 /**
  * Serve static files from /browser

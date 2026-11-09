@@ -1,7 +1,7 @@
 import { DOCUMENT, Injectable, RESPONSE_INIT, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { BRAND } from '@hg/models';
-import { SITE_ORIGIN } from './server-tokens';
+import { SEO_INDEXING, SITE_ORIGIN } from './server-tokens';
 import { serializeJsonLd } from './structured-data';
 
 export const SITE_NAME: string = BRAND.name;
@@ -26,13 +26,18 @@ export class PageMeta {
   private readonly document = inject(DOCUMENT);
   private readonly origin = inject(SITE_ORIGIN);
   private readonly response = inject(RESPONSE_INIT, { optional: true });
+  /** Off (the default outside production): every page is noindex (NFR-06). */
+  private readonly indexing = inject(SEO_INDEXING);
 
   set(page: PageInfo): void {
     const title = page.title === SITE_NAME ? SITE_NAME : `${page.title} | ${SITE_NAME}`;
     const url = `${this.origin}${page.path}`;
     this.title.setTitle(title);
     this.meta.updateTag({ name: 'description', content: page.description });
-    this.meta.updateTag({ name: 'robots', content: page.noindex ? 'noindex, follow' : 'index, follow' });
+    this.meta.updateTag({
+      name: 'robots',
+      content: page.noindex || !this.indexing ? 'noindex, follow' : 'index, follow',
+    });
     this.meta.updateTag({ property: 'og:title', content: title });
     this.meta.updateTag({ property: 'og:description', content: page.description });
     this.meta.updateTag({ property: 'og:url', content: url });

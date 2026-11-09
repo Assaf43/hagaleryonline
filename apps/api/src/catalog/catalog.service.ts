@@ -8,6 +8,7 @@ import type {
   RelatedProducts,
   RoomMenuItem,
   SearchSuggestions,
+  SitemapData,
 } from '@hg/models';
 import { CacheStore } from '../cache/cache-store.js';
 import type { CatalogSnapshot, SnapshotCategory, SnapshotProduct } from './catalog-snapshot.js';
@@ -101,6 +102,26 @@ export class CatalogService {
       .map((id) => byId.get(id))
       .filter((p) => p !== undefined)
       .map((p) => toCard(snapshot, p, p.variants, now, undefined));
+  }
+
+  /** What sitemap.xml lists (NFR-06): shown products, and categories/rooms that have one (like the menu). */
+  async sitemap(): Promise<SitemapData> {
+    const snapshot = await this.snapshot();
+    const withProducts = categoriesWithProducts(snapshot);
+    const roomsWithProducts = new Set(snapshot.products.flatMap((p) => [...p.roomSlugs]));
+    return {
+      products: [...snapshot.products]
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+        .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt.toISOString() })),
+      categories: [...snapshot.categoriesById.values()]
+        .filter((c) => withProducts.has(c.id))
+        .sort(bySortOrder)
+        .map((c) => ({ slug: c.slug })),
+      rooms: [...snapshot.rooms.values()]
+        .filter((r) => roomsWithProducts.has(r.slug))
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+        .map((r) => ({ slug: r.slug })),
+    };
   }
 
   /** Autocomplete (SRC-01): best products and matching category names. */

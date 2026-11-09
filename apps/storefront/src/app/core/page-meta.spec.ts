@@ -2,11 +2,17 @@ import { RESPONSE_INIT } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Meta } from '@angular/platform-browser';
 import { PageMeta } from './page-meta';
+import { SEO_INDEXING } from './server-tokens';
 
 describe('PageMeta', () => {
-  const setup = () => {
+  const setup = (indexing = true) => {
     const response: { status?: number } = {};
-    TestBed.configureTestingModule({ providers: [{ provide: RESPONSE_INIT, useValue: response }] });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: RESPONSE_INIT, useValue: response },
+        { provide: SEO_INDEXING, useValue: indexing },
+      ],
+    });
     return { meta: TestBed.inject(PageMeta), response, tags: TestBed.inject(Meta) };
   };
 
@@ -42,5 +48,25 @@ describe('PageMeta', () => {
     meta.serverError();
     expect(response.status).toBe(503);
     expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
+  });
+
+  it('indexes normal pages and keeps noindex pages out when indexing is on', () => {
+    const { meta, tags } = setup(true);
+    meta.set({ title: 't', description: 'd', path: '/x' });
+    expect(tags.getTag('name="robots"')?.content).toBe('index, follow');
+    meta.set({ title: 't', description: 'd', path: '/x', noindex: true });
+    expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
+  });
+
+  it('PageMeta forces noindex when indexing is off', () => {
+    const { meta, tags } = setup(false);
+    meta.set({ title: 't', description: 'd', path: '/x' });
+    expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
+  });
+
+  it('indexing is off by default', () => {
+    TestBed.configureTestingModule({});
+    TestBed.inject(PageMeta).set({ title: 't', description: 'd', path: '/x' });
+    expect(TestBed.inject(Meta).getTag('name="robots"')?.content).toBe('noindex, follow');
   });
 });
