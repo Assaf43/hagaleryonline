@@ -128,6 +128,22 @@ describe('ProductGallery', () => {
     expect(scrollTo.mock.lastCall![0].left + 0).toBe(0);
   });
 
+  it('does not cut a swipe short, but programmatic changes still scroll the track', async () => {
+    await setup(imgs('a', 'b', 'c'));
+    const track = el().querySelector<HTMLElement>('.track')!;
+    Object.defineProperty(track, 'clientWidth', { value: 300, configurable: true });
+    const scrollTo = vi.fn();
+    track.scrollTo = scrollTo as unknown as typeof track.scrollTo;
+    track.scrollLeft = 180; // 0.6 of a photo: past halfway mid-gesture
+    track.dispatchEvent(new Event('scroll'));
+    await update();
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(thumbs()[1].getAttribute('aria-current')).toBe('true');
+    thumbs()[0].click();
+    await update();
+    expect(scrollTo).toHaveBeenCalledWith({ left: 0, behavior: 'instant' });
+  });
+
   it('moves focus to the close button when full screen opens', async () => {
     await setup(imgs('a', 'b'));
     el().querySelector<HTMLButtonElement>('.main')!.click();

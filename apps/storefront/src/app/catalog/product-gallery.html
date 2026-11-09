@@ -5,7 +5,7 @@
       <div #track class="track" (scroll)="trackScrolled()" [attr.aria-label]="label()" role="group">
         @for (img of shown(); track img.url; let i = $index) {
           <button type="button" class="slide" (click)="open($event, i)" [attr.aria-label]="'הגדלת תמונה ' + (i + 1)">
-            <hg-responsive-image [image]="img" sizes="100vw" />
+            <hg-responsive-image [image]="img" sizes="(width >= 1024px) 50vw, 100vw" [priority]="i === 0" />
           </button>
         }
       </div>

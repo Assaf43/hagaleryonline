@@ -224,7 +224,7 @@ describe('ProductPage', () => {
     expect(info.image).toBe('/media/p.webp');
   });
 
-  it('keeps the chosen photo while the page re-renders, and next really changes it', async () => {
+  it('clicking a thumbnail changes the shown photo and it stays after re-rendering', async () => {
     const photos = ['a', 'b', 'c'].map((n) => ({ url: `/media/${n}.webp`, altHe: n }));
     const p = product([{ ...variant('P', {}, 100000), images: photos }], false);
     const h = await open('/product/alba', p);

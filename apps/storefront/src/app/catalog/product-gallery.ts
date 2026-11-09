@@ -67,12 +67,15 @@ export class ProductGallery {
   private opener: HTMLElement | null = null;
   private startX: number | null = null;
   private moved = false;
+  /** The index the swipe track last reported, so the sync effect leaves the user's own scroll alone. */
+  private scrollIndex = -1;
 
   constructor() {
     // Keep the mobile swipe track on the current photo when the index changes without a swipe
     // (full-screen navigation, another color). Instant, so it never fights the swipe's own scroll.
     effect(() => {
       const i = this.index();
+      if (i === this.scrollIndex) return; // the swipe itself moved here; do not cut its momentum
       const el = this.track()?.nativeElement;
       if (!this.browser || !el || !el.clientWidth) return;
       const left = (this.isRtl() ? -1 : 1) * i * el.clientWidth;
@@ -82,6 +85,7 @@ export class ProductGallery {
   }
 
   protected select(i: number): void {
+    this.scrollIndex = -1;
     this.index.set(i);
     this.zoomed.set(false);
   }
@@ -92,7 +96,8 @@ export class ProductGallery {
     if (!el || !el.clientWidth) return;
     const i = Math.round(Math.abs(el.scrollLeft) / el.clientWidth);
     const max = this.images().length - 1;
-    this.index.set(Math.min(Math.max(i, 0), max));
+    this.scrollIndex = Math.min(Math.max(i, 0), max);
+    this.index.set(this.scrollIndex);
   }
 
   protected open(event: Event, i: number): void {
