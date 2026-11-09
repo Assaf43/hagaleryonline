@@ -1,0 +1,71 @@
+:host {
+  display: block;
+}
+
+.row {
+  margin-block-start: var(--space-7);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-h2);
+  font-weight: 800;
+}
+
+// Buttons only where there is a pointer-sized screen; touch users swipe.
+.nav {
+  display: none;
+  gap: var(--space-2);
+
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+@media (width >= 1024px) {
+  .nav {
+    display: flex;
+  }
+}
+
+.track {
+  display: flex;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    scroll-behavior: smooth;
+  }
+}
+
+.slide {
+  flex: none;
+  inline-size: 60%;
+  scroll-snap-align: start;
+
+  @media (width >= 768px) {
+    inline-size: calc((100% - 2 * var(--space-3)) / 3);
+  }
+
+  @media (width >= 1280px) {
+    inline-size: calc((100% - 3 * var(--space-3)) / 4);
+  }
+}

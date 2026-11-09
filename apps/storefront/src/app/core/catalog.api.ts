@@ -6,6 +6,7 @@ import type {
   ProductCard,
   ProductDetail,
   ProductListResponse,
+  RelatedProducts,
   RoomMenuItem,
   SearchSuggestions,
 } from '@hg/models';
@@ -35,6 +36,11 @@ export class CatalogApi {
 
   product(slug: string) {
     return firstValueFrom(this.http.get<ProductDetail>(`/api/products/${encodeURIComponent(slug)}`));
+  }
+
+  /** "Goes with" and "similar" rows of a product (PRD-12); 404 for an unknown or hidden slug. */
+  related(slug: string): Observable<RelatedProducts> {
+    return this.http.get<RelatedProducts>(`/api/products/${encodeURIComponent(slug)}/related`);
   }
 
   /** Cards of the given products (favorites, CMP-01): visible products only, in the requested order, max 100 ids. */

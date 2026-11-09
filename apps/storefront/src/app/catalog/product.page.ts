@@ -14,7 +14,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router, RouterLink, type ParamMap } from '@angular/router';
 import { LucideChevronLeft } from '@lucide/angular';
-import type { ProductDetail, VariantDetail } from '@hg/models';
+import { firstValueFrom } from 'rxjs';
+import type { ProductDetail, RelatedProducts, VariantDetail } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { PageMeta } from '../core/page-meta';
 import { DeliveryLine } from './delivery-line';
@@ -23,6 +24,7 @@ import { galleryImages } from './gallery-images';
 import { PriceBlock } from './price-block';
 import { ProductDetails } from './product-details';
 import { ProductGallery } from './product-gallery';
+import { ProductRow } from './product-row';
 import { VariantPicker } from './variant-picker';
 import {
   adjustmentNotice,
@@ -32,6 +34,8 @@ import {
   resolveSelection,
   selectionToParams,
 } from './variant-selection';
+
+const NO_RELATED: RelatedProducts = { goesWith: [], similar: [] };
 
 function toRecord(map: ParamMap): Record<string, string | undefined> {
   return Object.fromEntries(map.keys.map((k) => [k, map.get(k) ?? undefined]));
@@ -51,6 +55,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
     PriceBlock,
     DeliveryLine,
     ProductDetails,
+    ProductRow,
     FavoriteButton,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -115,6 +120,9 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
               <hg-product-details [product]="p" [variant]="v" />
             </div>
           </div>
+
+          <hg-product-row title="הולך מושלם עם" [products]="related().goesWith" />
+          <hg-product-row title="מוצרים דומים" [products]="related().similar" />
         }
       }
     </div>
@@ -202,6 +210,8 @@ export class ProductPage {
   readonly variant = signal<VariantDetail | null>(null);
   /** Shown when the picked combination was not available and the choice moved. */
   readonly notice = signal<string | null>(null);
+  /** Related rows (PRD-12); empty when the request fails, the product view never depends on it. */
+  protected readonly related = signal<RelatedProducts>(NO_RELATED);
   protected readonly notFound = signal(false);
   /** The API failed with something other than 404 (PRD error state): a message and a retry button. */
   protected readonly loadFailed = signal(false);
@@ -247,9 +257,12 @@ export class ProductPage {
     this.product.set(null);
     this.variant.set(null);
     this.notice.set(null);
+    this.related.set(NO_RELATED);
     this.notFound.set(false);
     this.loadFailed.set(false);
     void this.tasks.run(async () => {
+      // Started together with the product, so the server render waits for both; a failure just means no rows.
+      const related = firstValueFrom(this.api.related(slug)).catch(() => NO_RELATED);
       try {
         const p = await this.api.product(slug);
         if (this.slug() !== slug) return; // the user already moved on to another product
@@ -259,6 +272,8 @@ export class ProductPage {
         this.product.set(p);
         this.variant.set(resolveSelection(p.variants, p.optionAxes, wanted).variant);
         this.updateMeta();
+        const rows = await related;
+        if (this.slug() === slug) this.related.set(rows);
       } catch (e) {
         if (this.slug() !== slug) return;
         if (e instanceof HttpErrorResponse && e.status === 404) this.missing();

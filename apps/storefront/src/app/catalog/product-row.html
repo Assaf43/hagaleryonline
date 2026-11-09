@@ -1,0 +1,22 @@
+@if (products().length) {
+  <section class="row" [attr.aria-label]="title()">
+    <div class="head">
+      <h2 class="title">{{ title() }}</h2>
+      <div class="nav">
+        <button type="button" class="icon-btn" [disabled]="atStart()" (click)="scroll(-1)" aria-label="הקודם">
+          <svg lucideChevronLeft class="flip-rtl" aria-hidden="true"></svg>
+        </button>
+        <button type="button" class="icon-btn" [disabled]="atEnd()" (click)="scroll(1)" aria-label="הבא">
+          <svg lucideChevronRight class="flip-rtl" aria-hidden="true"></svg>
+        </button>
+      </div>
+    </div>
+    <ul #track class="track" (scroll)="measure()">
+      @for (p of products(); track p.id) {
+        <li class="slide">
+          <hg-product-card [product]="p" sizes="(width >= 1280px) 20vw, (width >= 768px) 30vw, 60vw" />
+        </li>
+      }
+    </ul>
+  </section>
+}
