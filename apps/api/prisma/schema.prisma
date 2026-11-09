@@ -183,6 +183,7 @@ model Variant {
 
   product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
   attributeValues VariantAttributeValue[]
+  cartItems       CartItem[]
 
   @@index([productId])
   @@map("variants")
@@ -418,4 +419,37 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_log")
+}
+
+/// Server-side cart (decision 68), identified by the httpOnly `hg_cart` cookie. Only the token's SHA-256 is stored.
+/// Carts unused for 30 days are deleted (on access and by the daily cleanup in the cart module).
+model Cart {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  /// Entered coupon code (Phase 4d).
+  couponCode String?  @map("coupon_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  items CartItem[]
+
+  @@index([updatedAt])
+  @@map("carts")
+}
+
+/// One line per variant. Prices are always recomputed by the server; unitPriceAtAdd only detects a change.
+model CartItem {
+  cartId         String   @map("cart_id") @db.Uuid
+  variantId      Int      @map("variant_id")
+  quantity       Int
+  addedAt        DateTime @default(now()) @map("added_at")
+  /// Agorot, the variant price when the line was added.
+  unitPriceAtAdd Int      @map("unit_price_at_add")
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant Variant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@id([cartId, variantId])
+  @@index([variantId])
+  @@map("cart_items")
 }

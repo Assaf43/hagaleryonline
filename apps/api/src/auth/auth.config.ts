@@ -19,6 +19,8 @@ export const RESET_TTL_MS = 24 * 60 * 60_000;
 @Injectable()
 export class AuthConfig {
   readonly adminUrl: string;
+  /** Where the storefront runs; its origin may send public writes (cart). */
+  readonly storefrontUrl: string;
   readonly cookieSecure: boolean;
   readonly secretBox: SecretBox;
   /** Password and code attempts per IP per 15 minutes (NFR-12). */
@@ -26,6 +28,7 @@ export class AuthConfig {
 
   constructor(config: ConfigService) {
     this.adminUrl = config.get<string>('ADMIN_URL', 'http://localhost:4300').replace(/\/$/, '');
+    this.storefrontUrl = config.get<string>('STOREFRONT_URL', 'http://localhost:4200').replace(/\/$/, '');
     this.cookieSecure = config.get<string>('COOKIE_SECURE', 'false') === 'true';
     this.secretBox = new SecretBox(config.getOrThrow<string>('TOTP_ENCRYPTION_KEY'));
     this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', '30'));
@@ -34,5 +37,14 @@ export class AuthConfig {
   /** Origins allowed to send state-changing admin requests (CSRF defence). */
   get allowedOrigins(): string[] {
     return [new URL(this.adminUrl).origin];
+  }
+
+  /**
+   * Origins allowed to send a state-changing request to `path`: the admin app for the admin API,
+   * the storefront for public writes (cart, checkout). Neither app may write to the other's endpoints.
+   */
+  allowedOriginsFor(path: string): string[] {
+    const isAdmin = path === ADMIN_API_PATH || path.startsWith(`${ADMIN_API_PATH}/`);
+    return isAdmin ? this.allowedOrigins : [new URL(this.storefrontUrl).origin];
   }
 }

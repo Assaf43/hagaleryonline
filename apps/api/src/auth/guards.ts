@@ -38,7 +38,8 @@ export const ClientMeta = createParamDecorator((_: unknown, ctx: ExecutionContex
 
 /**
  * CSRF defence for cookie-authenticated requests: anything that changes state must come from the
- * admin app's own origin. Together with SameSite=Strict cookies.
+ * app that owns the endpoint — the admin app for `/api/admin`, the storefront for public writes
+ * such as the cart. Together with SameSite cookies.
  */
 @Injectable()
 export class SameOriginGuard implements CanActivate {
@@ -48,7 +49,7 @@ export class SameOriginGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<Request>();
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
     const origin = req.get('origin') ?? originOf(req.get('referer'));
-    if (!origin || !this.config.allowedOrigins.includes(origin)) throw forbidden();
+    if (!origin || !this.config.allowedOriginsFor(req.path).includes(origin)) throw forbidden();
     return true;
   }
 }
