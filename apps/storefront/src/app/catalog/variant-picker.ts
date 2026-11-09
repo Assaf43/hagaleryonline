@@ -22,7 +22,7 @@ import type { OptionState } from './variant-selection';
           <p class="hint">למסתכלים מול הספה</p>
         }
         <div class="options" role="radiogroup" [attr.aria-labelledby]="'axis-' + axis.code">
-          @for (value of axis.values; track value.code) {
+          @for (value of axis.values; track value.code; let first = $first) {
             @let isSelected = value.code === selected;
             @let unavailable = states()[axis.code]?.[value.code] === 'unavailable';
             <button
@@ -36,7 +36,7 @@ import type { OptionState } from './variant-selection';
               [attr.aria-checked]="isSelected"
               [attr.aria-label]="isColor ? value.labelHe + (unavailable ? ' (לא זמין)' : '') : null"
               [attr.title]="isColor ? value.labelHe : null"
-              [tabindex]="isSelected ? 0 : -1"
+              [tabindex]="isSelected || (first && !hasSelection(axis, selected)) ? 0 : -1"
               (click)="picked.emit({ axis: axis.code, value: value.code })"
               (keydown)="onKey($event, axis, value.code)"
             >
@@ -119,8 +119,8 @@ import type { OptionState } from './variant-selection';
       align-items: center;
       justify-content: center;
       gap: var(--space-2);
-      min-block-size: 44px;
-      min-inline-size: 44px;
+      min-block-size: var(--icon-button-size);
+      min-inline-size: var(--icon-button-size);
       padding-inline: var(--space-4);
       font: inherit;
       color: var(--color-text);
@@ -155,8 +155,23 @@ import type { OptionState } from './variant-selection';
       block-size: 32px;
     }
 
-    .option.color.unavailable .swatch {
-      opacity: 0.45;
+    .option.color .swatch {
+      position: relative;
+    }
+
+    /* Struck through: a diagonal line over the color, still selectable. */
+    .option.color.unavailable .swatch::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(
+        135deg,
+        transparent calc(50% - 1px),
+        var(--color-text) calc(50% - 1px),
+        var(--color-text) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      );
     }
 
     .option.side {
@@ -209,6 +224,10 @@ export class VariantPicker {
 
   protected hasHex(axis: OptionAxis): boolean {
     return axis.values.some((v) => v.hex);
+  }
+
+  protected hasSelection(axis: OptionAxis, selected: string | undefined): boolean {
+    return axis.values.some((v) => v.code === selected);
   }
 
   protected labelOf(axis: OptionAxis, code: string | undefined): string {

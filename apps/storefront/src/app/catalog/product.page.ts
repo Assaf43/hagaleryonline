@@ -4,9 +4,11 @@ import {
   DestroyRef,
   PendingTasks,
   computed,
+  effect,
   inject,
   input,
   signal,
+  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -140,6 +142,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
     .title {
       display: grid;
+      justify-items: start;
       gap: var(--space-1);
       margin: 0;
     }
@@ -148,7 +151,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
       font-size: var(--font-h2);
       font-weight: 800;
       text-transform: uppercase;
-      text-align: start;
+      justify-self: start;
     }
 
     .name {
@@ -204,7 +207,8 @@ export class ProductPage {
     // chosen variant to the URL, so they resolve to the variant already shown and change nothing.
     this.route.queryParamMap.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe((map) => {
       const p = this.product();
-      if (!p) return;
+      // Ignore emissions while a different product is being loaded (the component is reused).
+      if (!p || p.slug !== this.slug()) return;
       const { variant } = resolveSelection(p.variants, p.optionAxes, paramsToSelection(toRecord(map), p.optionAxes));
       if (variant.sku !== this.variant()?.sku) {
         this.variant.set(variant);
@@ -212,12 +216,22 @@ export class ProductPage {
         this.updateMeta();
       }
     });
+    // The router reuses this component from one product to another, so the load follows `slug`.
+    effect(() => {
+      const slug = this.slug();
+      untracked(() => this.load(slug));
+    });
   }
 
-  ngOnInit() {
+  private load(slug: string): void {
+    this.product.set(null);
+    this.variant.set(null);
+    this.notice.set(null);
+    this.notFound.set(false);
     void this.tasks.run(async () => {
       try {
-        const p = await this.api.product(this.slug());
+        const p = await this.api.product(slug);
+        if (this.slug() !== slug) return; // the user already moved on to another product
         // A product without variants cannot be shown or bought: same as not found.
         if (!p.variants.length) return this.missing();
         const wanted = paramsToSelection(toRecord(this.route.snapshot.queryParamMap), p.optionAxes);
@@ -225,7 +239,7 @@ export class ProductPage {
         this.variant.set(resolveSelection(p.variants, p.optionAxes, wanted).variant);
         this.updateMeta();
       } catch (e) {
-        if (e instanceof HttpErrorResponse && e.status === 404) this.missing();
+        if (this.slug() === slug && e instanceof HttpErrorResponse && e.status === 404) this.missing();
       }
     });
   }

@@ -30,11 +30,11 @@ function variant(
   };
 }
 
-function product(variants: VariantDetail[], withAxes = true): ProductDetail {
+function product(variants: VariantDetail[], withAxes = true, slug = 'alba', nameHe = 'ספה אלבה'): ProductDetail {
   return {
-    slug: 'alba',
-    modelName: 'ALBA',
-    nameHe: 'ספה אלבה',
+    slug,
+    modelName: slug.toUpperCase(),
+    nameHe,
     descriptionHe: '<p>ספה נוחה</p>',
     breadcrumbs: [{ slug: 'sofas', nameHe: 'ספות' }],
     rooms: [],
@@ -89,15 +89,17 @@ describe('ProductPage', () => {
     router = TestBed.inject(Router);
   });
 
-  async function open(url: string, body: ProductDetail | 404) {
-    const harness = await RouterTestingHarness.create();
+  async function load(harness: RouterTestingHarness, url: string, body: ProductDetail | 404, slug = 'alba') {
     await harness.navigateByUrl(url);
-    const req = http.expectOne('/api/products/alba');
+    const req = http.expectOne(`/api/products/${slug}`);
     if (body === 404) req.flush({}, { status: 404, statusText: 'Not Found' });
     else req.flush(body);
     await harness.fixture.whenStable();
     harness.detectChanges();
     return harness;
+  }
+  async function open(url: string, body: ProductDetail | 404) {
+    return load(await RouterTestingHarness.create(), url, body);
   }
   const el = (h: RouterTestingHarness) => h.routeNativeElement as HTMLElement;
   const text = (h: RouterTestingHarness) => el(h).textContent ?? '';
@@ -182,5 +184,43 @@ describe('ProductPage', () => {
     const spy = vi.spyOn(TestBed.inject(PageMeta), 'notFound');
     await open('/product/alba', product([]));
     expect(spy).toHaveBeenCalled();
+  });
+
+  it('loads the new product when the slug changes (component reuse)', async () => {
+    const h = await open('/product/alba?color=green', three());
+    expect(el(h).querySelector('h1')?.textContent).toContain('ספה אלבה');
+    await load(h, '/product/other', product([variant('O', {}, 55500)], false, 'other', 'ספה אחרת'), 'other');
+    expect(el(h).querySelector('h1')?.textContent).toContain('ספה אחרת');
+    expect(el(h).querySelector('h1')?.textContent).not.toContain('ספה אלבה');
+    expect(text(h)).toContain('555 ₪');
+    expect(el(h).querySelector('[role="radiogroup"]')).toBeNull();
+  });
+
+  it('follows an external query-param change to the same product and clears the notice', async () => {
+    const h = await open('/product/alba?color=beige&size=280', three());
+    radio(h, 'ירוק').click();
+    h.detectChanges();
+    await h.fixture.whenStable();
+    const page = h.routeDebugElement!.componentInstance as ProductPage;
+    expect(page.notice()).toBeTruthy();
+    await router.navigateByUrl('/product/alba?color=beige&size=240');
+    await h.fixture.whenStable();
+    h.detectChanges();
+    expect(page.variant()?.sku).toBe('B240');
+    expect(page.notice()).toBeNull();
+    expect(text(h)).toContain('3,000 ₪');
+  });
+
+  it('sets the canonical path without params and the variant photo as image', async () => {
+    const withPhoto = {
+      ...variant('P', {}, 100000),
+      images: [{ url: '/media/p.webp', altHe: 'תמונה' }],
+    };
+    const spy = vi.spyOn(TestBed.inject(PageMeta), 'set');
+    await open('/product/alba?color=x', product([withPhoto], false));
+    expect(spy).toHaveBeenCalled();
+    const info = spy.mock.calls.at(-1)![0];
+    expect(info.path).toBe('/product/alba');
+    expect(info.image).toBe('/media/p.webp');
   });
 });
