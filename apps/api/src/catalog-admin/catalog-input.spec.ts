@@ -82,6 +82,34 @@ describe('parseProductInput', () => {
       compareAtPrice: 599_000,
     });
   });
+
+  it('takes related picks and auto-fill flags only when sent (decision 67)', () => {
+    const none = parseProductInput(product());
+    expect('relations' in none || 'goesWithAutofill' in none || 'similarAutofill' in none).toBe(false);
+
+    const p = parseProductInput(
+      product({ relations: { goesWith: [7, 3], similar: [] }, goesWithAutofill: false, similarAutofill: true }),
+    );
+    expect(p).toMatchObject({
+      relations: { goesWith: [7, 3], similar: [] },
+      goesWithAutofill: false,
+      similarAutofill: true,
+    });
+  });
+
+  it('refuses malformed, duplicate or too many picks, and non-boolean flags', () => {
+    const relations = (r: unknown) => fieldOf(() => parseProductInput(product({ relations: r })));
+    expect(relations({ goesWith: [1, 1], similar: [] })).toBe('relations.goesWith');
+    expect(relations({ goesWith: [], similar: [0] })).toBe('relations.similar');
+    expect(relations({ goesWith: ['2'], similar: [] })).toBe('relations.goesWith');
+    expect(relations({ goesWith: [] })).toBe('relations.similar');
+    expect(relations({ goesWith: Array.from({ length: 51 }, (_, i) => i + 1), similar: [] })).toBe(
+      'relations.goesWith',
+    );
+    expect(relations({ goesWith: Array.from({ length: 50 }, (_, i) => i + 1), similar: [] })).toBeNull();
+    expect(relations([])).toBe('relations');
+    expect(fieldOf(() => parseProductInput(product({ similarAutofill: 'yes' })))).toBe('similarAutofill');
+  });
 });
 
 describe('sanitizeDescription', () => {

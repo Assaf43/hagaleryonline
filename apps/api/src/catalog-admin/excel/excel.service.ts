@@ -602,9 +602,12 @@ function newVariant(sku: string): AdminVariant {
   };
 }
 
-/** The product as the form would send it, starting from the saved version. */
+/**
+ * The product as the form would send it, starting from the saved version — without the related
+ * picks and auto-fill flags: the file has none, so they stay as they are.
+ */
 function formOf(p: AdminProduct): AdminProductInput {
-  const { id: _id, createdAt: _c, updatedAt, ...rest } = p;
+  const { id: _id, createdAt: _c, updatedAt, relations: _r, goesWithAutofill: _g, similarAutofill: _s, ...rest } = p;
   return { ...rest, expectedUpdatedAt: updatedAt };
 }
 

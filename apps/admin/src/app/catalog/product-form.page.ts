@@ -438,7 +438,18 @@ export class ProductFormPage implements OnInit {
 
   private fill(p: AdminProduct) {
     this.product.set(p);
-    const { id: _id, createdAt: _c, updatedAt: _u, variants, images, ...draft } = p;
+    // Related picks are not edited here yet; leaving them out of the save keeps them unchanged.
+    const {
+      id: _id,
+      createdAt: _c,
+      updatedAt: _u,
+      variants,
+      images,
+      relations: _r,
+      goesWithAutofill: _g,
+      similarAutofill: _s,
+      ...draft
+    } = p;
     this.images.set(images);
     this.draft = structuredClone(draft);
     this.rows = variants.map((v) => ({

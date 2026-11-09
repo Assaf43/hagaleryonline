@@ -27,6 +27,7 @@ const FULFILLMENT: readonly FulfillmentMode[] = ['in_stock', 'pre_order', 'made_
 const MAX_PRICE = 100_000_000;
 const MAX_CM = 10_000;
 const MAX_VARIANTS = 500;
+const MAX_RELATIONS = 50;
 
 type Body = Record<string, unknown>;
 
@@ -167,6 +168,9 @@ export function parseProductInput(raw: unknown): AdminProductInput {
   const description = body['descriptionHe'];
   if (typeof description !== 'string' || description.length > 20_000) throw invalid('descriptionHe');
   const expectedUpdatedAt = optionalText(body, 'expectedUpdatedAt', 'expectedUpdatedAt', 40);
+  const relations = parseRelations(body['relations']);
+  const optionalFlag = (key: 'goesWithAutofill' | 'similarAutofill') =>
+    body[key] === undefined ? {} : { [key]: flag(body, key) };
 
   return {
     slug: slug(body),
@@ -183,8 +187,33 @@ export function parseProductInput(raw: unknown): AdminProductInput {
     active: flag(body, 'active'),
     sortOrder: int(body, 'sortOrder', 'sortOrder', 0, 1_000_000),
     variants,
+    ...(relations ? { relations } : {}),
+    ...optionalFlag('goesWithAutofill'),
+    ...optionalFlag('similarAutofill'),
     ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
   };
+}
+
+/**
+ * Manual related-product picks (decision 67): product ids in display order. Absent = unchanged.
+ * Duplicates are refused rather than merged, so the admin never silently loses a row.
+ */
+function parseRelations(raw: unknown): AdminProductInput['relations'] {
+  if (raw === undefined) return undefined;
+  const body = obj(raw, 'relations');
+  const list = (key: 'goesWith' | 'similar') => {
+    const field = `relations.${key}`;
+    const value = body[key];
+    if (
+      !Array.isArray(value) ||
+      value.length > MAX_RELATIONS ||
+      value.some((v) => !Number.isInteger(v) || (v as number) < 1) ||
+      new Set(value).size !== value.length
+    )
+      throw invalid(field);
+    return value as number[];
+  };
+  return { goesWith: list('goesWith'), similar: list('similar') };
 }
 
 export function parseCategoryInput(raw: unknown): AdminCategoryInput {

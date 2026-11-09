@@ -30,6 +30,13 @@ export function toImageRef(storage: StorageProvider, image: StoredImage): ImageR
   };
 }
 
+/** Smallest size, for thumbnails in the admin. */
+export function thumbUrl(storage: StorageProvider, image: Pick<StoredImage, 'url' | 'storageKey' | 'widths'>): string {
+  return image.storageKey && image.widths.length
+    ? storage.publicUrl(copyKey(image.storageKey, image.widths[0], 'webp'))
+    : image.url;
+}
+
 export function toAdminImage(
   storage: StorageProvider,
   image: StoredImage & { colorValue: { code: string } | null },
@@ -38,7 +45,7 @@ export function toAdminImage(
   return {
     id: image.id,
     url: has ? storage.publicUrl(copyKey(image.storageKey!, defaultWidth(image.widths), 'webp')) : image.url,
-    thumbUrl: has ? storage.publicUrl(copyKey(image.storageKey!, image.widths[0], 'webp')) : image.url,
+    thumbUrl: thumbUrl(storage, image),
     colorCode: image.colorValue?.code ?? null,
     altHe: image.altHe,
     kind: image.kind.toLowerCase() as ImageKindCode,

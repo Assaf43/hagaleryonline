@@ -87,6 +87,9 @@ model Product {
   careHe           String?  @map("care_he")
   requiresAssembly Boolean  @default(false) @map("requires_assembly")
   active           Boolean  @default(true)
+  /// Fill the "goes with" / "similar" rows with automatic results after the manual picks (decision 67).
+  goesWithAutofill Boolean  @default(true) @map("goes_with_autofill")
+  similarAutofill  Boolean  @default(true) @map("similar_autofill")
   /// "Recommended" sort: lower first.
   sortOrder        Int      @default(0) @map("sort_order")
   /// "Best sellers" sort: higher first. Updated from orders in a later phase.
@@ -102,6 +105,8 @@ model Product {
   variants        Variant[]
   images          Image[]
   attributeValues ProductAttributeValue[]
+  relations       ProductRelation[]       @relation("relationsFrom")
+  relatedTo       ProductRelation[]       @relation("relationsTo")
 
   @@index([categoryId])
   /// Trigram index for fuzzy search (decision 47). Declared here so migrations keep it.
@@ -123,6 +128,30 @@ model ProductRoom {
 
 /// One purchasable combination (color × fabric × chaise side × size). Dimensions live here because
 /// size variants differ in width (categories.md §6).
+/// Kind of a manual related-product pick (decision 67).
+enum RelationKind {
+  goes_with
+  similar
+
+  @@map("relation_kind")
+}
+
+/// A manual "goes with" / "similar" pick (decision 67). Every link is stored both ways, as two rows;
+/// `position` orders the picks on the `productId` side.
+model ProductRelation {
+  productId Int          @map("product_id")
+  relatedId Int          @map("related_id")
+  kind      RelationKind
+  position  Int
+
+  product Product @relation("relationsFrom", fields: [productId], references: [id], onDelete: Cascade)
+  related Product @relation("relationsTo", fields: [relatedId], references: [id], onDelete: Cascade)
+
+  @@id([productId, relatedId, kind])
+  @@index([relatedId])
+  @@map("product_relations")
+}
+
 model Variant {
   id             Int             @id @default(autoincrement())
   productId      Int             @map("product_id")
