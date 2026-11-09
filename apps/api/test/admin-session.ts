@@ -3,8 +3,19 @@ import { Secret, TOTP } from 'otpauth';
 import request from 'supertest';
 import type { OneTimeLink, TotpSetup } from '@hg/models';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
+import type { PrismaService } from './../src/prisma/prisma.service.js';
 
 export const ORIGIN = 'http://localhost:4300';
+
+/**
+ * Removes the admin users, the audit log and the test products (model names starting with ZZ).
+ * Every e2e file that signs in calls it in beforeAll as well as afterAll, so it never depends on the
+ * file before it having cleaned up (it may have failed or crashed half-way, or run in another order).
+ */
+export async function resetAdminData(prisma: PrismaService) {
+  await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
+  await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
+}
 
 /** A browser on the admin app: keeps cookies and always sends the admin app's Origin. */
 export function adminBrowser(app: NestExpressApplication) {

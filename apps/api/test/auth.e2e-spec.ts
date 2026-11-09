@@ -7,6 +7,7 @@ import { AppModule } from './../src/app.module.js';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { resetAdminData } from './admin-session.js';
 
 const ORIGIN = 'http://localhost:4300';
 const SUPER = { email: 'owner@example.test', name: 'בעל העסק', password: 'olive sofa sunset window' };
@@ -58,9 +59,11 @@ describe('Admin auth (e2e)', () => {
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>());
     await app.init();
     prisma = app.get(PrismaService);
+    await resetAdminData(prisma);
   });
 
   afterAll(async () => {
+    await resetAdminData(prisma);
     await app.close();
   });
 
