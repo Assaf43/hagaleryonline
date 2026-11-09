@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import {
+  BRAND,
   FULFILLMENT_LABELS_HE,
   type AdminProduct,
   type AdminProductInput,
@@ -198,7 +199,7 @@ export class ExcelService {
     example?: Record<string, CellValue>,
   ): Promise<Buffer> {
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'הגלריה לכולם';
+    wb.creator = BRAND.name;
     const sheet = wb.addWorksheet(PRODUCTS_SHEET, { views: [{ rightToLeft: true, state: 'frozen', ySplit: 1 }] });
     const required = new Set([MODEL_COLUMN, SKU_COLUMN]);
     sheet.columns = columns.map((c) => ({
@@ -601,9 +602,12 @@ function newVariant(sku: string): AdminVariant {
   };
 }
 
-/** The product as the form would send it, starting from the saved version. */
+/**
+ * The product as the form would send it, starting from the saved version — without the related
+ * picks and auto-fill flags: the file has none, so they stay as they are.
+ */
 function formOf(p: AdminProduct): AdminProductInput {
-  const { id: _id, createdAt: _c, updatedAt, ...rest } = p;
+  const { id: _id, createdAt: _c, updatedAt, relations: _r, goesWithAutofill: _g, similarAutofill: _s, ...rest } = p;
   return { ...rest, expectedUpdatedAt: updatedAt };
 }
 

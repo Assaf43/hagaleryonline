@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { BRAND } from '@hg/models';
 import type { CategoryNode, RoomMenuItem } from '@hg/models';
 import { App } from './app';
 
@@ -26,11 +27,26 @@ describe('App', () => {
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.logo')?.textContent).toContain('הגלריה לכולם');
+    expect(el.querySelector('.logo')?.textContent).toContain(BRAND.name);
     expect(el.querySelector('hg-theme-toggle button')).toBeTruthy();
     expect(el.querySelector('a[href="/room/living-room"]')?.textContent).toContain('סלון');
     expect(el.querySelector('.nav-desktop a[href="/category/sofas"]')?.textContent).toContain('ספות');
     expect(el.querySelector('main#main')).toBeTruthy();
     http.verify();
+  });
+
+  it('shows the favorites count in the header only after rendering in the browser (CMP-01)', async () => {
+    localStorage.setItem('hg.favorites', '[4,2]');
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/favorites"]')!;
+    expect(link.getAttribute('aria-label')).toBe('המועדפים שלי (2)');
+    expect(link.querySelector('.count')?.textContent?.trim()).toBe('2');
+    localStorage.clear();
   });
 });

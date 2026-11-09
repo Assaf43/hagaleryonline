@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseProductListQuery } from './product-list-query.js';
+import { MAX_CARD_IDS, parseCardIds, parseProductListQuery } from './product-list-query.js';
 
 describe('parseProductListQuery', () => {
   it('parses every supported parameter', () => {
@@ -47,5 +47,29 @@ describe('parseProductListQuery', () => {
     [{ q: 'א'.repeat(101) }],
   ])('rejects %o', (raw) => {
     expect(() => parseProductListQuery(raw)).toThrow(BadRequestException);
+  });
+});
+
+describe('parseCardIds', () => {
+  it('keeps positive integers in order, first occurrence only', () => {
+    expect(parseCardIds('7,3,x,3, 12 ,0,-4,1.5,,7')).toEqual([7, 3, 12]);
+  });
+
+  it('returns no ids for a missing or empty parameter', () => {
+    expect(parseCardIds(undefined)).toEqual([]);
+    expect(parseCardIds('')).toEqual([]);
+    expect(parseCardIds('x,y')).toEqual([]);
+  });
+
+  it(`accepts ${MAX_CARD_IDS} ids and rejects more`, () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => i + 1).join(',');
+    expect(parseCardIds(ids(MAX_CARD_IDS))).toHaveLength(MAX_CARD_IDS);
+    expect(parseCardIds(`${ids(MAX_CARD_IDS)},1,2`)).toHaveLength(MAX_CARD_IDS);
+    expect(() => parseCardIds(ids(MAX_CARD_IDS + 1))).toThrow(BadRequestException);
+  });
+
+  it('rejects a repeated parameter and unsafe numbers are dropped', () => {
+    expect(() => parseCardIds(['1', '2'])).toThrow(BadRequestException);
+    expect(parseCardIds('99999999999999999999,5')).toEqual([5]);
   });
 });

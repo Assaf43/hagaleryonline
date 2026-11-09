@@ -20,6 +20,7 @@ import {
   LucideUserRound,
   LucideUsers,
 } from '@lucide/angular';
+import { BRAND } from '@hg/models';
 import type { Permission } from '@hg/models';
 import { ThemeToggle } from '@hg/ui';
 import { AuthService } from '../core/auth.service';
@@ -53,6 +54,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
   styleUrl: './shell.scss',
 })
 export class Shell {
+  protected readonly brand = BRAND.name;
   protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);

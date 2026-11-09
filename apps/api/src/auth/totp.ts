@@ -1,8 +1,9 @@
+import { BRAND } from '@hg/models';
 import { Secret, TOTP } from 'otpauth';
 import { toDataURL } from 'qrcode';
 import { randomInt } from 'node:crypto';
 
-const ISSUER = 'הגלריה לכולם';
+const ISSUER = BRAND.name;
 /** Accept the previous and next 30-second window, for clock drift. */
 const WINDOW = 1;
 export const RECOVERY_CODE_COUNT = 10;

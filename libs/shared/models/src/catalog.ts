@@ -71,6 +71,7 @@ export interface Swatch {
 }
 
 export interface ProductCard {
+  id: number;
   slug: string;
   modelName: string;
   nameHe: string;
@@ -87,6 +88,12 @@ export interface ProductCard {
   fulfillment: FulfillmentMode;
   leadTimeDays: number;
   isNew: boolean;
+}
+
+/** GET /api/products/:slug/related (PRD-12): manual picks first, then automatic results, up to 8 each. */
+export interface RelatedProducts {
+  goesWith: ProductCard[];
+  similar: ProductCard[];
 }
 
 export interface FacetValue {
@@ -158,6 +165,7 @@ export interface OptionAxis {
 
 /** GET /api/products/:slug */
 export interface ProductDetail {
+  id: number;
   slug: string;
   modelName: string;
   nameHe: string;

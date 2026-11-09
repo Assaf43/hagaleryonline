@@ -1,7 +1,15 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom, type Observable } from 'rxjs';
-import type { CategoryNode, ProductDetail, ProductListResponse, RoomMenuItem, SearchSuggestions } from '@hg/models';
+import type {
+  CategoryNode,
+  ProductCard,
+  ProductDetail,
+  ProductListResponse,
+  RelatedProducts,
+  RoomMenuItem,
+  SearchSuggestions,
+} from '@hg/models';
 
 /**
  * The public catalog API (Phase 1). GET responses rendered on the server are handed to the browser
@@ -28,6 +36,16 @@ export class CatalogApi {
 
   product(slug: string) {
     return firstValueFrom(this.http.get<ProductDetail>(`/api/products/${encodeURIComponent(slug)}`));
+  }
+
+  /** "Goes with" and "similar" rows of a product (PRD-12); 404 for an unknown or hidden slug. */
+  related(slug: string): Observable<RelatedProducts> {
+    return this.http.get<RelatedProducts>(`/api/products/${encodeURIComponent(slug)}/related`);
+  }
+
+  /** Cards of the given products (favorites, CMP-01): visible products only, in the requested order, max 100 ids. */
+  cards(ids: readonly number[]): Observable<ProductCard[]> {
+    return this.http.get<ProductCard[]>('/api/products/cards', { params: { ids: ids.join(',') } });
   }
 
   /** Search-as-you-type (SRC-01). An Observable so a newer keystroke can cancel the request in flight. */

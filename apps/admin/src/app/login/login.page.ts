@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { BRAND } from '@hg/models';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,7 +16,7 @@ import { errorMessage } from '../core/errors';
   template: `
     <main class="auth-page">
       <form class="auth-card" [formGroup]="form" (ngSubmit)="submit()">
-        <p class="auth-brand">הגלריה לכולם</p>
+        <p class="auth-brand">{{ brand }}</p>
         <h1>כניסה לממשק הניהול</h1>
 
         <mat-form-field>
@@ -38,6 +39,7 @@ import { errorMessage } from '../core/errors';
   `,
 })
 export class LoginPage {
+  protected readonly brand = BRAND.name;
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 

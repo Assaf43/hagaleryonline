@@ -31,6 +31,8 @@ const FIELDS: Record<string, string> = {
   attributes: 'מאפיינים',
   warrantyMonths: 'אחריות',
   sortOrder: 'סדר',
+  'relations.goesWith': 'הולך מושלם עם',
+  'relations.similar': 'מוצרים דומים',
   parentId: 'קטגוריית אב',
   attributeCodes: 'מסננים',
   code: 'קוד באנגלית',

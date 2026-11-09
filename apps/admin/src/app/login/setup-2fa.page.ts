@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { BRAND } from '@hg/models';
 import type { TotpSetup } from '@hg/models';
 import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
@@ -19,7 +20,7 @@ import { errorMessage } from '../core/errors';
     <main class="auth-page">
       @if (recoveryCodes(); as codes) {
         <section class="auth-card">
-          <p class="auth-brand">הגלריה לכולם</p>
+          <p class="auth-brand">{{ brand }}</p>
           <h1>שמרו את קודי השחזור</h1>
           <p class="auth-text">
             אם תאבדו את הטלפון, כל אחד מהקודים האלה יאפשר להיכנס פעם אחת. שמרו אותם במקום בטוח, למשל במנהל סיסמאות. הם
@@ -39,7 +40,7 @@ import { errorMessage } from '../core/errors';
         </section>
       } @else {
         <form class="auth-card" (ngSubmit)="enable()">
-          <p class="auth-brand">הגלריה לכולם</p>
+          <p class="auth-brand">{{ brand }}</p>
           <h1>הגדרת אימות דו-שלבי</h1>
           <ol class="auth-steps">
             <li>התקינו בטלפון אפליקציית אימות, למשל Google Authenticator או Microsoft Authenticator.</li>
@@ -76,6 +77,7 @@ import { errorMessage } from '../core/errors';
   `,
 })
 export class Setup2faPage implements OnInit {
+  protected readonly brand = BRAND.name;
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly clipboard = inject(Clipboard);
@@ -112,9 +114,9 @@ export class Setup2faPage implements OnInit {
   }
 
   download(codes: string[]) {
-    const text = `הגלריה לכולם — קודי שחזור לאימות דו-שלבי\nכל קוד עובד פעם אחת.\n\n${codes.join('\n')}\n`;
+    const text = `${BRAND.name} — קודי שחזור לאימות דו-שלבי\nכל קוד עובד פעם אחת.\n\n${codes.join('\n')}\n`;
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    const a = Object.assign(document.createElement('a'), { href: url, download: 'hagalery-recovery-codes.txt' });
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'nesto-recovery-codes.txt' });
     a.click();
     URL.revokeObjectURL(url);
   }

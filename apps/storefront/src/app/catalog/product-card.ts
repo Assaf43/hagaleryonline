@@ -2,17 +2,18 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import { RouterLink } from '@angular/router';
 import type { ProductCard as Card } from '@hg/models';
 import { deliveryBadge, formatPrice } from '../core/format';
+import { FavoriteButton } from './favorite-button';
 import { ResponsiveImage } from './responsive-image';
 
 const MAX_SWATCHES = 4;
 
 /**
  * Product card for grids (CAT-03, decision 63): a large photo on light gray with delivery and sale
- * badges on it, the English model name in bold with the Hebrew name under it, price and colors.
+ * badges on it (under the heart that saves it to favorites, CMP-01), the English model name in bold with the Hebrew name under it, price and colors.
  */
 @Component({
   selector: 'hg-product-card',
-  imports: [RouterLink, ResponsiveImage],
+  imports: [RouterLink, ResponsiveImage, FavoriteButton],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let p = product();
@@ -21,7 +22,8 @@ const MAX_SWATCHES = 4;
         @if (p.image) {
           <hg-responsive-image [image]="p.image" [sizes]="sizes()" [priority]="priority()" />
         }
-        <span class="badges">
+        <span class="corner">
+          <hg-favorite-button class="on-photo" [productId]="p.id" />
           <span class="badge badge-delivery" [class.out]="p.fulfillment === 'out_of_stock'">{{ delivery() }}</span>
           @if (p.discountPercent) {
             <span class="badge badge-dark"
@@ -97,14 +99,22 @@ const MAX_SWATCHES = 4;
       transform: scale(1.04);
     }
 
-    .badges {
+    // Heart and badges in the start corner of the photo, above the link that covers the whole card.
+    .corner {
       position: absolute;
+      z-index: 1;
       inset-block-start: var(--space-3);
       inset-inline-start: var(--space-3);
       display: flex;
       flex-direction: column;
       align-items: flex-start;
       gap: var(--space-1);
+      // Only the heart takes clicks; a click on a badge still opens the product.
+      pointer-events: none;
+    }
+
+    hg-favorite-button {
+      pointer-events: auto;
     }
 
     .badge-delivery {

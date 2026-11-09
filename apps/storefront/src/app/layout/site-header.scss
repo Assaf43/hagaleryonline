@@ -311,3 +311,22 @@
     border-block-end: none;
   }
 }
+
+// ---------- Favorites link (CMP-01) ----------
+
+.favorites .count {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  min-inline-size: var(--icon-size-sm);
+  block-size: var(--icon-size-sm);
+  padding-inline: var(--space-1);
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-caption);
+  font-weight: 700;
+  line-height: 1;
+}

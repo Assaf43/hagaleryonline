@@ -4,6 +4,7 @@ import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MAT_DIALOG_DATA, MatDialogModule } from '@angular/material/dialog';
 import { LucideCopy, LucideMessageCircle } from '@lucide/angular';
+import { BRAND } from '@hg/models';
 import type { OneTimeLink } from '@hg/models';
 
 export interface LinkDialogData {
@@ -47,8 +48,8 @@ export class LinkDialog {
   protected readonly whatsapp = computed(() => {
     const text =
       this.data.kind === 'invite'
-        ? `הוזמנת לממשק הניהול של הגלריה לכולם. לבחירת סיסמה: ${this.data.link.url}`
-        : `קישור לבחירת סיסמה חדשה בממשק הניהול של הגלריה לכולם: ${this.data.link.url}`;
+        ? `הוזמנת לממשק הניהול של ${BRAND.name}. לבחירת סיסמה: ${this.data.link.url}`
+        : `קישור לבחירת סיסמה חדשה בממשק הניהול של ${BRAND.name}: ${this.data.link.url}`;
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
   });
 

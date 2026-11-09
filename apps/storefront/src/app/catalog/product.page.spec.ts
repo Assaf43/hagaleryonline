@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import type { FulfillmentMode, ProductDetail, VariantDetail } from '@hg/models';
+import type { FulfillmentMode, ProductCard, ProductDetail, RelatedProducts, VariantDetail } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { ProductPage } from './product.page';
 import { adjustmentNotice } from './variant-selection';
@@ -32,6 +32,7 @@ function variant(
 
 function product(variants: VariantDetail[], withAxes = true, slug = 'alba', nameHe = 'ספה אלבה'): ProductDetail {
   return {
+    id: 1,
     slug,
     modelName: slug.toUpperCase(),
     nameHe,
@@ -67,6 +68,22 @@ function product(variants: VariantDetail[], withAxes = true, slug = 'alba', name
     variants,
   };
 }
+
+const card = (id: number): ProductCard => ({
+  id,
+  slug: `p${id}`,
+  modelName: `MODEL${id}`,
+  nameHe: `מוצר ${id}`,
+  priceFrom: 100000,
+  compareAtFrom: null,
+  discountPercent: null,
+  hasPriceRange: false,
+  swatches: [],
+  image: null,
+  fulfillment: 'in_stock',
+  leadTimeDays: 14,
+  isNew: false,
+});
 
 const beige240 = variant('B240', { color: 'beige', size: '240' }, 300000);
 const beige280 = variant('B280', { color: 'beige', size: '280' }, 350000);
@@ -165,11 +182,19 @@ describe('ProductPage', () => {
     router = TestBed.inject(Router);
   });
 
-  async function load(harness: RouterTestingHarness, url: string, body: ProductDetail | 404, slug = 'alba') {
+  async function load(
+    harness: RouterTestingHarness,
+    url: string,
+    body: ProductDetail | 404,
+    slug = 'alba',
+    related: RelatedProducts = { goesWith: [], similar: [] },
+  ) {
     await harness.navigateByUrl(url);
     const req = http.expectOne(`/api/products/${slug}`);
+    const relatedReq = http.expectOne(`/api/products/${slug}/related`);
     if (body === 404) req.flush({}, { status: 404, statusText: 'Not Found' });
     else req.flush(body);
+    relatedReq.flush(related);
     await harness.fixture.whenStable();
     harness.detectChanges();
     return harness;
@@ -192,6 +217,18 @@ describe('ProductPage', () => {
     expect(radio(h, '240').getAttribute('aria-checked')).toBe('true');
     expect(el(h).querySelector('h1')?.textContent).toContain('ספה אלבה');
     expect(text(h)).toContain('ALBA');
+  });
+
+  it('has a favorites button next to the title (CMP-01)', async () => {
+    localStorage.clear();
+    const h = await open('/product/alba', three());
+    const heart = el(h).querySelector<HTMLButtonElement>('.title-row hg-favorite-button button')!;
+    expect(heart.getAttribute('aria-pressed')).toBe('false');
+    heart.click();
+    h.detectChanges();
+    expect(heart.getAttribute('aria-pressed')).toBe('true');
+    expect(JSON.parse(localStorage.getItem('hg.favorites')!)).toEqual([1]);
+    localStorage.clear();
   });
 
   it('ignores unknown params and shows the default variant', async () => {
@@ -221,7 +258,7 @@ describe('ProductPage', () => {
     const expected = adjustmentNotice(['size'], three().optionAxes, green240);
     expect(expected).toBeTruthy();
     expect(page.notice()).toBe(expected);
-    const notice = el(h).querySelector('[aria-live="polite"]');
+    const notice = el(h).querySelector('hg-variant-picker [aria-live="polite"]');
     expect(notice?.textContent?.trim()).toBe(expected);
     expect(text(h)).toContain('3,200 ₪');
   });
@@ -261,6 +298,7 @@ describe('ProductPage', () => {
     const h = await RouterTestingHarness.create();
     await h.navigateByUrl('/product/alba?color=green&size=240');
     http.expectOne('/api/products/alba').flush({}, { status: 500, statusText: 'Server Error' });
+    http.expectOne('/api/products/alba/related').flush({}, { status: 500, statusText: 'Server Error' });
     await h.fixture.whenStable();
     h.detectChanges();
     expect(serverError).toHaveBeenCalled();
@@ -272,6 +310,7 @@ describe('ProductPage', () => {
 
     retry.click();
     http.expectOne('/api/products/alba').flush(three());
+    http.expectOne('/api/products/alba/related').flush({ goesWith: [], similar: [] });
     await h.fixture.whenStable();
     h.detectChanges();
     expect(text(h)).not.toContain('לא הצלחנו לטעון');
@@ -370,5 +409,55 @@ describe('ProductPage', () => {
     expect(radio(shared, '300 ס״מ').getAttribute('aria-checked')).toBe('true');
     expect(el(shared).querySelector('.price-now')?.textContent).toContain('4,990 ₪');
     expect(dimension(shared, 'רוחב')).toBe('300 ס״מ');
+  });
+
+  const rows = (h: RouterTestingHarness) => Array.from(el(h).querySelectorAll('hg-product-row'));
+  const rowModels = (row: Element) =>
+    Array.from(row.querySelectorAll('hg-product-card .model')).map((m) => m.textContent?.trim());
+
+  it('renders both rows from the API', async () => {
+    const h = await load(await RouterTestingHarness.create(), '/product/alba', three(), 'alba', {
+      goesWith: [card(10), card(11)],
+      similar: [card(20)],
+    });
+    const [goesWith, similar] = rows(h);
+    expect(goesWith.querySelector('h2')?.textContent).toContain('הולך מושלם עם');
+    expect(rowModels(goesWith)).toEqual(['MODEL10', 'MODEL11']);
+    expect(similar.querySelector('h2')?.textContent).toContain('מוצרים דומים');
+    expect(rowModels(similar)).toEqual(['MODEL20']);
+    // below the details accordion
+    const details = el(h).querySelector('hg-product-details')!;
+    expect(details.compareDocumentPosition(goesWith) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders no rows when related fails while the product still renders', async () => {
+    const h = await RouterTestingHarness.create();
+    await h.navigateByUrl('/product/alba');
+    http.expectOne('/api/products/alba').flush(three());
+    http.expectOne('/api/products/alba/related').flush({}, { status: 404, statusText: 'Not Found' });
+    await h.fixture.whenStable();
+    h.detectChanges();
+    expect(el(h).querySelector('h1')?.textContent).toContain('ספה אלבה');
+    expect(text(h)).not.toContain('לא הצלחנו לטעון');
+    expect(rows(h).every((r) => !r.querySelector('section'))).toBe(true);
+    expect(el(h).querySelector('hg-product-card')).toBeNull();
+  });
+
+  it('reloads related on slug change and ignores a late response for the old slug', async () => {
+    const h = await RouterTestingHarness.create();
+    await h.navigateByUrl('/product/alba');
+    const oldProduct = http.expectOne('/api/products/alba');
+    const oldRelated = http.expectOne('/api/products/alba/related');
+    await h.navigateByUrl('/product/other');
+    http.expectOne('/api/products/other').flush(product([variant('O', {}, 55500)], false, 'other', 'ספה אחרת'));
+    http.expectOne('/api/products/other/related').flush({ goesWith: [card(30)], similar: [] });
+    // The old slug's answers arrive after the new ones.
+    oldProduct.flush(three());
+    oldRelated.flush({ goesWith: [card(99)], similar: [card(98)] });
+    await h.fixture.whenStable();
+    h.detectChanges();
+    expect(el(h).querySelector('h1')?.textContent).toContain('ספה אחרת');
+    expect(rowModels(rows(h)[0])).toEqual(['MODEL30']);
+    expect(el(h).textContent).not.toContain('MODEL99');
   });
 });

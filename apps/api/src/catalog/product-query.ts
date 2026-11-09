@@ -259,7 +259,8 @@ function sortProducts(
 
 // ---------- cards ----------
 
-function toCard(
+/** Listing card of `p`; price and delivery come from the `matching` variants (all of them outside a filtered list). */
+export function toCard(
   snapshot: CatalogSnapshot,
   p: SnapshotProduct,
   matching: SnapshotVariant[],
@@ -277,6 +278,7 @@ function toCard(
       : null;
 
   return {
+    id: p.id,
     slug: p.slug,
     modelName: p.modelName,
     nameHe: p.nameHe,

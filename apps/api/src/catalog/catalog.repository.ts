@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Dimensions, FulfillmentMode, ImageRef, OptionAxis, ProductDetail } from '@hg/models';
-import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma } from '../generated/prisma/client.js';
+import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma, RelationKind } from '../generated/prisma/client.js';
 import { toImageRef as imageRef } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -57,6 +57,7 @@ export class CatalogRepository {
             include: { attributeValues: { include: { attributeValue: { include: { attribute: true } } } } },
           },
           images: { orderBy: imageOrder, include: { colorValue: { select: { code: true } } } },
+          relations: { orderBy: [{ position: 'asc' }, { relatedId: 'asc' }], select: { relatedId: true, kind: true } },
         },
       }),
     ]);
@@ -100,6 +101,13 @@ export class CatalogRepository {
           sortOrder: p.sortOrder,
           popularity: p.popularity,
           createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          goesWithAutofill: p.goesWithAutofill,
+          similarAutofill: p.similarAutofill,
+          picks: {
+            goesWith: p.relations.filter((r) => r.kind === RelationKind.goes_with).map((r) => r.relatedId),
+            similar: p.relations.filter((r) => r.kind === RelationKind.similar).map((r) => r.relatedId),
+          },
           attributes: productAttributes,
           variants: p.variants.map((v) => ({
             id: v.id,
@@ -198,6 +206,7 @@ export class CatalogRepository {
       : attributeAxes;
 
     return {
+      id: p.id,
       slug: p.slug,
       modelName: p.modelName,
       nameHe: p.nameHe,

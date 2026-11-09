@@ -94,6 +94,8 @@ export interface AdminProductRow {
   priceFrom: number | null;
   totalStock: number;
   updatedAt: string;
+  /** First photo, smallest size. */
+  thumbnailUrl: string | null;
 }
 
 /** GET /api/admin/catalog/products?q=&categoryId=&status=&page= */
@@ -139,12 +141,35 @@ export interface AdminProductInput {
   active: boolean;
   sortOrder: number;
   variants: AdminVariant[];
+  /**
+   * Manual "goes with" / "similar" picks (decision 67): product ids in display order. Stored both
+   * ways. Absent = leave the links unchanged (the Excel import never sends them).
+   */
+  relations?: { goesWith: number[]; similar: number[] };
+  /** Fill each row with automatic results after the manual picks. Absent = unchanged. */
+  goesWithAutofill?: boolean;
+  similarAutofill?: boolean;
   /** The updatedAt the editor started from; a newer save by someone else is a conflict. */
   expectedUpdatedAt?: string;
 }
 
-export interface AdminProduct extends Omit<AdminProductInput, 'expectedUpdatedAt'> {
+/** A manually picked related product, as the admin form lists it (hidden ones included). */
+export interface RelatedPick {
   id: number;
+  modelName: string;
+  nameHe: string;
+  active: boolean;
+  thumbnailUrl: string | null;
+}
+
+export interface AdminProduct extends Omit<
+  AdminProductInput,
+  'expectedUpdatedAt' | 'relations' | 'goesWithAutofill' | 'similarAutofill'
+> {
+  id: number;
+  relations: { goesWith: RelatedPick[]; similar: RelatedPick[] };
+  goesWithAutofill: boolean;
+  similarAutofill: boolean;
   /** Managed with the image endpoints, not with the product save. */
   images: AdminImage[];
   createdAt: string;

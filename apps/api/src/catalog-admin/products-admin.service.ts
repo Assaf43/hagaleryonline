@@ -7,12 +7,13 @@ import type {
   AdminVariant,
   FulfillmentMode,
   ProductStatusFilter,
+  RelatedPick,
 } from '@hg/models';
-import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma } from '../generated/prisma/client.js';
+import { AttributeScope, FulfillmentMode as DbFulfillment, Prisma, RelationKind } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { CacheStore } from '../cache/cache-store.js';
 import { SearchIndexer } from '../catalog/search/search-indexer.js';
-import { imageFiles, toAdminImage } from '../media/image-urls.js';
+import { imageFiles, thumbUrl, toAdminImage } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { changedFields } from './catalog-input.js';
@@ -32,14 +33,31 @@ const FROM_DB = Object.fromEntries(Object.entries(TO_DB).map(([k, v]) => [v, k])
 >;
 
 const valueCodes = { select: { attributeValue: { select: { code: true, attribute: { select: { code: true } } } } } };
+const imageOrder = [{ sortOrder: 'asc' }, { id: 'asc' }] satisfies Prisma.ImageOrderByWithRelationInput[];
+/** The main photo, enough for a thumbnail. */
+const firstImage = { orderBy: imageOrder, take: 1, select: { url: true, storageKey: true, widths: true } };
 const productInclude = {
   rooms: { select: { roomId: true } },
   attributeValues: valueCodes,
   variants: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], include: { attributeValues: valueCodes } },
-  images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], include: { colorValue: { select: { code: true } } } },
+  images: { orderBy: imageOrder, include: { colorValue: { select: { code: true } } } },
+  relations: {
+    orderBy: [{ position: 'asc' }, { relatedId: 'asc' }],
+    include: {
+      related: { select: { id: true, modelName: true, nameHe: true, active: true, images: firstImage } },
+    },
+  },
 } satisfies Prisma.ProductInclude;
 type ProductRow = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 type VariantRow = ProductRow['variants'][number];
+
+/** Input key of each relation kind (decision 67). */
+const RELATION_KINDS = [
+  ['goesWith', RelationKind.goes_with],
+  ['similar', RelationKind.similar],
+] as const;
+type RelationLists = { goesWith: number[]; similar: number[] };
+type Links = RelationLists & { goesWithAutofill: boolean; similarAutofill: boolean };
 
 export type Meta = { actorId: number; ip?: string };
 
@@ -87,7 +105,7 @@ export class ProductsAdminService {
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (filter.page - 1) * PRODUCTS_PAGE_SIZE,
         take: PRODUCTS_PAGE_SIZE,
-        include: { variants: { select: { price: true, stock: true, active: true } } },
+        include: { variants: { select: { price: true, stock: true, active: true } }, images: firstImage },
       }),
     ]);
     return {
@@ -107,6 +125,7 @@ export class ProductsAdminService {
           priceFrom: active.length ? Math.min(...active.map((v) => v.price)) : null,
           totalStock: active.reduce((sum, v) => sum + v.stock, 0),
           updatedAt: p.updatedAt.toISOString(),
+          thumbnailUrl: p.images[0] ? thumbUrl(this.storage, p.images[0]) : null,
         };
       }),
     };
@@ -188,6 +207,7 @@ export class ProductsAdminService {
     input.variants.forEach((v, i) => {
       if (v.id !== undefined && !existingVariants.has(v.id)) throw invalid(`variants.${i}.id`);
     });
+    await checkRelations(tx, id, input.relations);
     if (input.active) {
       const imageCount = id ? await tx.image.count({ where: { productId: id } }) : 0;
       const problems = activationProblems(input, category.active, imageCount);
@@ -207,6 +227,8 @@ export class ProductsAdminService {
       requiresAssembly: input.requiresAssembly,
       active: input.active,
       sortOrder: input.sortOrder,
+      ...(input.goesWithAutofill === undefined ? {} : { goesWithAutofill: input.goesWithAutofill }),
+      ...(input.similarAutofill === undefined ? {} : { similarAutofill: input.similarAutofill }),
     };
     const product = id ? await tx.product.update({ where: { id }, data }) : await tx.product.create({ data });
     await tx.productRoom.deleteMany({ where: { productId: product.id } });
@@ -216,8 +238,24 @@ export class ProductsAdminService {
       data: productValueIds.map((attributeValueId) => ({ productId: product.id, attributeValueId })),
     });
 
+    // Related picks: only when the input carries them (the Excel import never does).
+    const storedLinks: RelationLists = existing ? relationLists(existing) : { goesWith: [], similar: [] };
+    if (input.relations) await writeRelations(tx, product.id, storedLinks, input.relations);
+    const links: Links = {
+      ...(input.relations ?? storedLinks),
+      goesWithAutofill: product.goesWithAutofill,
+      similarAutofill: product.similarAutofill,
+    };
+
     if (existing) {
-      const change = changedFields(productSummary(toAdminProduct(existing, this.storage)), productSummary(input));
+      const change = changedFields(
+        productSummary(toAdminProduct(existing, this.storage), {
+          ...storedLinks,
+          goesWithAutofill: existing.goesWithAutofill,
+          similarAutofill: existing.similarAutofill,
+        }),
+        productSummary(input, links),
+      );
       if (change)
         await this.audit.record(
           {
@@ -236,7 +274,7 @@ export class ProductsAdminService {
           action: 'product.create',
           entityType: 'product',
           entityId: product.id,
-          after: { modelName: input.modelName, nameHe: input.nameHe, active: input.active },
+          after: { modelName: input.modelName, nameHe: input.nameHe, active: input.active, ...links },
         },
         tx,
       );
@@ -393,12 +431,87 @@ async function checkUnique(tx: Prisma.TransactionClient, id: number | null, inpu
   if (sku) throw duplicate('sku', sku.sku);
 }
 
+/** Picks must be other, existing products (decision 67); the parser already refused duplicates. */
+async function checkRelations(
+  tx: Prisma.TransactionClient,
+  id: number | null,
+  relations: AdminProductInput['relations'],
+) {
+  if (!relations) return;
+  for (const [key] of RELATION_KINDS) {
+    const list = relations[key];
+    if (id !== null && list.includes(id)) throw invalid(`relations.${key}`);
+    if (list.length && (await tx.product.count({ where: { id: { in: list } } })) !== list.length)
+      throw invalid(`relations.${key}`);
+  }
+}
+
+function relationLists(p: Pick<ProductRow, 'relations'>): RelationLists {
+  const of = (kind: RelationKind) => p.relations.filter((r) => r.kind === kind).map((r) => r.relatedId);
+  return { goesWith: of(RelationKind.goes_with), similar: of(RelationKind.similar) };
+}
+
+/**
+ * Replaces this product's side of the links with `next` and keeps the mirrored rows in step: an
+ * added link goes last on the other product's side, a removed one disappears from both sides. Every
+ * product on the other side of a change gets a new `updatedAt`, so an editor who opened it earlier
+ * gets the usual conflict instead of silently dropping the link by saving an older list.
+ */
+async function writeRelations(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  stored: RelationLists,
+  next: RelationLists,
+) {
+  const changes = RELATION_KINDS.map(([key, kind]) => ({
+    kind,
+    ids: next[key],
+    added: next[key].filter((x) => !stored[key].includes(x)),
+    removed: stored[key].filter((x) => !next[key].includes(x)),
+  }));
+  const others = [...new Set(changes.flatMap((c) => [...c.added, ...c.removed]))].sort((a, b) => a - b);
+  // Ascending id order, so concurrent saves lock the other products in the same order.
+  if (others.length) await tx.$queryRaw`SELECT id FROM products WHERE id = ANY(${others}) ORDER BY id FOR UPDATE`;
+
+  for (const { kind, ids, added, removed } of changes) {
+    if (removed.length)
+      await tx.productRelation.deleteMany({ where: { kind, productId: { in: removed }, relatedId: productId } });
+    // This side is rewritten whole, in the new order.
+    await tx.productRelation.deleteMany({ where: { kind, productId } });
+    await tx.productRelation.createMany({
+      data: ids.map((relatedId, position) => ({ productId, relatedId, kind, position })),
+    });
+    if (!added.length) continue;
+    const last = new Map(
+      (
+        await tx.productRelation.groupBy({
+          by: ['productId'],
+          where: { kind, productId: { in: added } },
+          _max: { position: true },
+        })
+      ).map((g) => [g.productId, g._max.position ?? -1]),
+    );
+    await tx.productRelation.createMany({
+      data: added.map((other) => ({
+        productId: other,
+        relatedId: productId,
+        kind,
+        position: (last.get(other) ?? -1) + 1,
+      })),
+    });
+  }
+  if (others.length) await tx.product.updateMany({ where: { id: { in: others } }, data: { updatedAt: new Date() } });
+}
+
 function auditBase(meta: Meta) {
   return { actorId: meta.actorId, ip: meta.ip };
 }
 
 /** The product fields the audit log compares (variants are logged one by one). */
-function productSummary(p: Omit<AdminProductInput, 'variants' | 'expectedUpdatedAt'> & { variants?: unknown }) {
+function productSummary(
+  p: Omit<AdminProductInput, 'variants' | 'expectedUpdatedAt' | 'relations' | 'goesWithAutofill' | 'similarAutofill'>,
+  links: Links,
+) {
   return {
     modelName: p.modelName,
     nameHe: p.nameHe,
@@ -417,6 +530,10 @@ function productSummary(p: Omit<AdminProductInput, 'variants' | 'expectedUpdated
     requiresAssembly: p.requiresAssembly,
     active: p.active,
     sortOrder: p.sortOrder,
+    goesWith: links.goesWith,
+    similar: links.similar,
+    goesWithAutofill: links.goesWithAutofill,
+    similarAutofill: links.similarAutofill,
   };
 }
 
@@ -446,10 +563,29 @@ function toAdminProduct(p: ProductRow, storage: StorageProvider): AdminProduct {
     active: p.active,
     sortOrder: p.sortOrder,
     variants: p.variants.map(toAdminVariant),
+    relations: {
+      goesWith: relatedPicks(p, RelationKind.goes_with, storage),
+      similar: relatedPicks(p, RelationKind.similar, storage),
+    },
+    goesWithAutofill: p.goesWithAutofill,
+    similarAutofill: p.similarAutofill,
     images: p.images.map((i) => toAdminImage(storage, i)),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };
+}
+
+/** This product's picks of one kind, in its own order — hidden products included (the form flags them). */
+function relatedPicks(p: ProductRow, kind: RelationKind, storage: StorageProvider): RelatedPick[] {
+  return p.relations
+    .filter((r) => r.kind === kind)
+    .map(({ related: r }) => ({
+      id: r.id,
+      modelName: r.modelName,
+      nameHe: r.nameHe,
+      active: r.active,
+      thumbnailUrl: r.images[0] ? thumbUrl(storage, r.images[0]) : null,
+    }));
 }
 
 function toAdminVariant(v: VariantRow): AdminVariant {

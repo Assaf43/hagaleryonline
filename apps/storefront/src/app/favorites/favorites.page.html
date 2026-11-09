@@ -1,0 +1,23 @@
+<section class="container page">
+  <h1>המועדפים שלי</h1>
+
+  @if (loadFailed()) {
+    <div class="empty" role="alert">
+      <p>לא הצלחנו לטעון את המועדפים. נסו שוב.</p>
+      <button type="button" class="btn btn-secondary" (click)="load()">נסו שוב</button>
+    </div>
+  } @else if (cards(); as list) {
+    @if (list.length) {
+      <ul class="product-grid">
+        @for (p of list; track p.id; let i = $index) {
+          <li><hg-product-card [product]="p" [priority]="i < 4" /></li>
+        }
+      </ul>
+    } @else {
+      <div class="empty">
+        <p>עוד לא שמרתם מוצרים</p>
+        <a routerLink="/" class="btn btn-primary">לדף הבית</a>
+      </div>
+    }
+  }
+</section>

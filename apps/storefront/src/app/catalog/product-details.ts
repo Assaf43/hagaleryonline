@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { LucideChevronDown } from '@lucide/angular';
 import type { ProductDetail, VariantDetail } from '@hg/models';
 import { dimensionRows } from './dimension-rows';
@@ -14,7 +15,7 @@ export function warrantyText(months: number | null): string | null {
 /** The product page accordion (PRD-06, PRD-08, PRD-10): description, dimensions, specs, shipping and returns. */
 @Component({
   selector: 'hg-product-details',
-  imports: [LucideChevronDown],
+  imports: [LucideChevronDown, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './product-details.html',
   styleUrl: './product-details.scss',

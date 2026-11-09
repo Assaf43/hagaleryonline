@@ -205,6 +205,25 @@
         }
       </section>
 
+      <!-- Related products (Phase 3c, spec 4.4) -->
+      <section class="panel" aria-labelledby="relations-title">
+        <h2 id="relations-title">המלצות</h2>
+        <hg-product-relations
+          title="הולך מושלם עם"
+          [productId]="product()?.id ?? null"
+          [disabled]="!canEdit()"
+          [(picks)]="goesWith"
+          [(autofill)]="goesWithAutofill"
+        />
+        <hg-product-relations
+          title="מוצרים דומים"
+          [productId]="product()?.id ?? null"
+          [disabled]="!canEdit()"
+          [(picks)]="similar"
+          [(autofill)]="similarAutofill"
+        />
+      </section>
+
       <!-- Variants -->
       <section class="panel" aria-labelledby="variants-title">
         <div class="variants-head">

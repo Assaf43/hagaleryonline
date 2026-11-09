@@ -6,12 +6,19 @@
     <button type="button" class="icon-btn only-mobile" aria-label="תפריט" (click)="openDrawer()">
       <svg lucideMenu></svg>
     </button>
-    <a routerLink="/" class="logo">הגלריה לכולם</a>
+    <a routerLink="/" class="logo">{{ brand }}</a>
 
     <hg-search-box class="search-desktop" idPrefix="search-desktop" />
 
     <div class="header-actions">
       <hg-theme-toggle />
+      <a routerLink="/favorites" class="icon-btn favorites" [attr.aria-label]="favoritesLabel()">
+        <svg lucideHeart aria-hidden="true"></svg>
+        @if (favoritesCount() > 0) {
+          <span class="count num" aria-hidden="true">{{ favoritesCount() }}</span>
+        }
+      </a>
+      <!-- Reserved (Phase 4): the cart icon goes here, after the favorites. -->
     </div>
   </div>
 
@@ -82,7 +89,7 @@
 <dialog #drawer class="drawer" aria-label="תפריט" (click)="drawerClick($event)">
   <div class="drawer-panel">
     <div class="drawer-head">
-      <span class="logo">הגלריה לכולם</span>
+      <span class="logo">{{ brand }}</span>
       <button type="button" class="icon-btn" aria-label="סגירת התפריט" (click)="closeDrawer()">
         <svg lucideX></svg>
       </button>
