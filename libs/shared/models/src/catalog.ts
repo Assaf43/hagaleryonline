@@ -165,6 +165,7 @@ export interface OptionAxis {
 
 /** GET /api/products/:slug */
 export interface ProductDetail {
+  id: number;
   slug: string;
   modelName: string;
   nameHe: string;

@@ -18,5 +18,6 @@ export const routes: Routes = [
     data: { kind: 'search' },
   },
   { path: 'product/:slug', loadComponent: () => import('./catalog/product.page').then((m) => m.ProductPage) },
+  { path: 'favorites', loadComponent: () => import('./favorites/favorites.page').then((m) => m.FavoritesPage) },
   { path: '**', loadComponent: () => import('./not-found.page').then((m) => m.NotFoundPage) },
 ];

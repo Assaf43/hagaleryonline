@@ -4,6 +4,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  afterNextRender,
   computed,
   inject,
   signal,
@@ -12,15 +13,17 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { filter } from 'rxjs';
-import { LucideChevronDown, LucideChevronLeft, LucideMenu, LucideX } from '@lucide/angular';
+import { LucideChevronDown, LucideChevronLeft, LucideHeart, LucideMenu, LucideX } from '@lucide/angular';
 import { ThemeToggle } from '@hg/ui';
+import { FavoritesStore } from '../core/favorites.store';
 import { MenuData } from './menu-data';
 import { SearchBox } from './search-box';
 
 /**
- * Sticky header (NAV-01, NAV-02): logo, "by room" menu, furniture types, search and theme switch.
+ * Sticky header (NAV-01, NAV-02, NAV-03): logo, "by room" menu, furniture types, search, theme switch and
+ * favorites (CMP-01).
  * Desktop opens a mega-menu (room → furniture types); phones get a full-screen drawer built on
- * <dialog>, which traps focus and closes with Escape. Favorites and cart join in later phases.
+ * <dialog>, which traps focus and closes with Escape. The cart joins in Phase 4.
  */
 @Component({
   selector: 'hg-site-header',
@@ -31,6 +34,7 @@ import { SearchBox } from './search-box';
     SearchBox,
     LucideChevronDown,
     LucideChevronLeft,
+    LucideHeart,
     LucideMenu,
     LucideX,
   ],
@@ -49,7 +53,14 @@ export class SiteHeader {
   protected readonly activeRoom = signal(0);
   protected readonly room = computed(() => this.menu.rooms()[this.activeRoom()] ?? null);
 
+  private readonly favorites = inject(FavoritesStore);
+  /** Favorites live on the device: the server and the hydration pass show none, then the browser's count. */
+  private readonly hydrated = signal(false);
+  protected readonly favoritesCount = computed(() => (this.hydrated() ? this.favorites.count() : 0));
+  protected readonly favoritesLabel = computed(() => `המועדפים שלי (${this.favoritesCount()})`);
+
   constructor() {
+    afterNextRender(() => this.hydrated.set(true));
     this.router.events
       .pipe(
         filter((e) => e instanceof NavigationEnd),

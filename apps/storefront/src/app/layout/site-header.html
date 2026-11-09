@@ -12,6 +12,13 @@
 
     <div class="header-actions">
       <hg-theme-toggle />
+      <a routerLink="/favorites" class="icon-btn favorites" [attr.aria-label]="favoritesLabel()">
+        <svg lucideHeart aria-hidden="true"></svg>
+        @if (favoritesCount() > 0) {
+          <span class="count num" aria-hidden="true">{{ favoritesCount() }}</span>
+        }
+      </a>
+      <!-- Reserved (Phase 4): the cart icon goes here, after the favorites. -->
     </div>
   </div>
 

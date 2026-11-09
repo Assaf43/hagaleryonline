@@ -18,6 +18,7 @@ import type { ProductDetail, VariantDetail } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { PageMeta } from '../core/page-meta';
 import { DeliveryLine } from './delivery-line';
+import { FavoriteButton } from './favorite-button';
 import { galleryImages } from './gallery-images';
 import { PriceBlock } from './price-block';
 import { ProductDetails } from './product-details';
@@ -42,7 +43,16 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
  */
 @Component({
   selector: 'hg-product-page',
-  imports: [RouterLink, LucideChevronLeft, ProductGallery, VariantPicker, PriceBlock, DeliveryLine, ProductDetails],
+  imports: [
+    RouterLink,
+    LucideChevronLeft,
+    ProductGallery,
+    VariantPicker,
+    PriceBlock,
+    DeliveryLine,
+    ProductDetails,
+    FavoriteButton,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="container page">
@@ -78,10 +88,13 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
             <hg-product-gallery [images]="gallery()" [label]="p.nameHe" />
 
             <div class="details">
-              <h1 class="title">
-                <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
-                <span class="name">{{ p.nameHe }}</span>
-              </h1>
+              <div class="title-row">
+                <h1 class="title">
+                  <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
+                  <span class="name">{{ p.nameHe }}</span>
+                </h1>
+                <hg-favorite-button [productId]="p.id" />
+              </div>
 
               <hg-price-block [variant]="v" />
 
@@ -132,6 +145,13 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
       align-content: start;
       gap: var(--space-4);
       min-inline-size: 0;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-3);
     }
 
     .title {

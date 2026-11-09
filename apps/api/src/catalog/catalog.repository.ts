@@ -206,6 +206,7 @@ export class CatalogRepository {
       : attributeAxes;
 
     return {
+      id: p.id,
       slug: p.slug,
       modelName: p.modelName,
       nameHe: p.nameHe,

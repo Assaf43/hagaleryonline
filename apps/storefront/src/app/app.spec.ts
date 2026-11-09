@@ -34,4 +34,19 @@ describe('App', () => {
     expect(el.querySelector('main#main')).toBeTruthy();
     http.verify();
   });
+
+  it('shows the favorites count in the header only after rendering in the browser (CMP-01)', async () => {
+    localStorage.setItem('hg.favorites', '[4,2]');
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = (fixture.nativeElement as HTMLElement).querySelector('a[href="/favorites"]')!;
+    expect(link.getAttribute('aria-label')).toBe('המועדפים שלי (2)');
+    expect(link.querySelector('.count')?.textContent?.trim()).toBe('2');
+    localStorage.clear();
+  });
 });

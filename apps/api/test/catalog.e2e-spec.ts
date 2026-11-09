@@ -74,6 +74,8 @@ describe('Catalog API (e2e)', () => {
   it('GET /api/products/:slug returns variants, option axes and dimensions', async () => {
     const product = (await get('/api/products/alba-corner-sofa').expect(200)).body as ProductDetail;
     expect(product.modelName).toBe('ALBA');
+    // The id is what the favorites store keeps (CMP-01).
+    expect(Number.isInteger(product.id) && product.id > 0).toBe(true);
     expect(product.breadcrumbs.map((b) => b.slug)).toEqual(['sofas', 'corner-sofas']);
     expect(product.optionAxes.map((a) => a.code)).toEqual(['color', 'fabric', 'size', 'chaise-side']);
     expect(product.variants).toHaveLength(3 * 4 * 2 * 2);

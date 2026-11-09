@@ -32,6 +32,7 @@ function variant(
 
 function product(variants: VariantDetail[], withAxes = true, slug = 'alba', nameHe = 'ספה אלבה'): ProductDetail {
   return {
+    id: 1,
     slug,
     modelName: slug.toUpperCase(),
     nameHe,
@@ -194,6 +195,18 @@ describe('ProductPage', () => {
     expect(text(h)).toContain('ALBA');
   });
 
+  it('has a favorites button next to the title (CMP-01)', async () => {
+    localStorage.clear();
+    const h = await open('/product/alba', three());
+    const heart = el(h).querySelector<HTMLButtonElement>('.title-row hg-favorite-button button')!;
+    expect(heart.getAttribute('aria-pressed')).toBe('false');
+    heart.click();
+    h.detectChanges();
+    expect(heart.getAttribute('aria-pressed')).toBe('true');
+    expect(JSON.parse(localStorage.getItem('hg.favorites')!)).toEqual([1]);
+    localStorage.clear();
+  });
+
   it('ignores unknown params and shows the default variant', async () => {
     const h = await open('/product/alba?color=purple&foo=1', three());
     expect(text(h)).toContain('3,000 ₪');
@@ -221,7 +234,7 @@ describe('ProductPage', () => {
     const expected = adjustmentNotice(['size'], three().optionAxes, green240);
     expect(expected).toBeTruthy();
     expect(page.notice()).toBe(expected);
-    const notice = el(h).querySelector('[aria-live="polite"]');
+    const notice = el(h).querySelector('hg-variant-picker [aria-live="polite"]');
     expect(notice?.textContent?.trim()).toBe(expected);
     expect(text(h)).toContain('3,200 ₪');
   });
