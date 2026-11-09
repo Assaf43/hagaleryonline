@@ -1,0 +1,201 @@
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.gallery {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.placeholder {
+  background: var(--color-surface-alt);
+  border-radius: var(--media-radius);
+  aspect-ratio: 1 / 1;
+}
+
+.counter {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border-radius: var(--radius-pill);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  font-size: var(--font-small);
+}
+
+// Mobile: swipe track.
+.track-wrap {
+  position: relative;
+}
+
+.track {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  border-radius: var(--media-radius);
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    scroll-behavior: smooth;
+  }
+}
+
+.slide {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-alt);
+  border: none;
+  overflow: hidden;
+}
+
+.track-wrap .counter {
+  position: absolute;
+  inset-block-end: var(--space-3);
+  inset-inline-end: var(--space-3);
+}
+
+// Desktop: main photo and thumbnails.
+.desktop {
+  display: none;
+}
+
+@media (width >= 1024px) {
+  .track-wrap {
+    display: none;
+  }
+
+  .desktop {
+    display: grid;
+    gap: var(--space-3);
+  }
+}
+
+.main {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-alt);
+  border: none;
+  border-radius: var(--media-radius);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thumb {
+  display: block;
+  inline-size: 72px;
+  aspect-ratio: 1 / 1;
+  background: var(--color-surface-alt);
+  border: var(--border-width-strong) solid transparent;
+  border-radius: var(--media-radius);
+  overflow: hidden;
+
+  &[aria-current='true'] {
+    border-color: var(--color-text);
+  }
+}
+
+// Full screen.
+.viewer {
+  inline-size: 100vw;
+  max-inline-size: 100vw;
+  block-size: 100dvh;
+  max-block-size: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow: hidden;
+
+  &:not([open]) {
+    display: none;
+  }
+}
+
+.close {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+  z-index: 2;
+}
+
+.nav {
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  z-index: 2;
+  background: var(--color-bg);
+
+  &.prev {
+    inset-inline-start: var(--space-3);
+  }
+
+  &.next {
+    inset-inline-end: var(--space-3);
+  }
+}
+
+.viewer .counter {
+  position: absolute;
+  inset-block-end: var(--space-4);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+}
+
+:host-context([dir='rtl']) .viewer .counter {
+  translate: 50% 0;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  cursor: zoom-in;
+
+  // Touch: pinch to zoom; our own swipe handles next/previous.
+  touch-action: pinch-zoom;
+  user-select: none;
+
+  &.zoomed {
+    cursor: zoom-out;
+  }
+}
+
+.zoom {
+  inline-size: min(100%, 100dvh);
+  max-block-size: 100%;
+  aspect-ratio: 1 / 1;
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform var(--duration-base) var(--ease);
+  }
+
+  .zoomed & {
+    transform: scale(2);
+  }
+}

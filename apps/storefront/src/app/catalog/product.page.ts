@@ -18,8 +18,9 @@ import type { ProductDetail, VariantDetail } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { PageMeta } from '../core/page-meta';
 import { DeliveryLine } from './delivery-line';
+import { galleryImages } from './gallery-images';
 import { PriceBlock } from './price-block';
-import { ResponsiveImage } from './responsive-image';
+import { ProductGallery } from './product-gallery';
 import { VariantPicker } from './variant-picker';
 import {
   adjustmentNotice,
@@ -36,12 +37,11 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
 /**
  * Product page (PRD-01..05, PRD-09): the chosen variant lives in the URL (`?color=green&size=280`),
- * so a shared link opens the same variant, also in the server render. The gallery (Task 6) and the
- * details accordion (Task 7) are added in the marked places.
+ * so a shared link opens the same variant, also in the server render. The details accordion (Task 7) is added in the marked place.
  */
 @Component({
   selector: 'hg-product-page',
-  imports: [RouterLink, LucideChevronLeft, ResponsiveImage, VariantPicker, PriceBlock, DeliveryLine],
+  imports: [RouterLink, LucideChevronLeft, ProductGallery, VariantPicker, PriceBlock, DeliveryLine],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="container page">
@@ -69,14 +69,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
           </nav>
 
           <div class="layout">
-            <!-- Gallery slot (Task 6): replaces this placeholder, follows the chosen color. -->
-            <div class="gallery">
-              @if (image(); as img) {
-                <div class="media">
-                  <hg-responsive-image [image]="img" sizes="(width >= 1024px) 50vw, 100vw" [priority]="true" />
-                </div>
-              }
-            </div>
+            <hg-product-gallery [images]="galleryImages(p, v)" [label]="p.nameHe" />
 
             <div class="details">
               <h1 class="title">
@@ -122,15 +115,6 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
     .layout {
       display: grid;
       gap: var(--space-5);
-    }
-
-    .media {
-      background: var(--color-surface-alt);
-      border-radius: var(--media-radius);
-      aspect-ratio: 1 / 1;
-      overflow: hidden;
-      display: grid;
-      place-items: center;
     }
 
     .details {
@@ -199,8 +183,7 @@ export class ProductPage {
     const v = this.variant();
     return p && v ? optionStates(p.variants, p.optionAxes, v) : {};
   });
-  /** Until the gallery (Task 6) exists: the first photo of the variant, else of the product. */
-  protected readonly image = computed(() => this.variant()?.images[0] ?? this.product()?.images[0] ?? null);
+  protected readonly galleryImages = galleryImages;
 
   constructor() {
     // Back/forward or a pasted link while the page is open: follow the URL. Our own picks write the
@@ -277,7 +260,7 @@ export class ProductPage {
           .trim()
           .slice(0, 160) || p.nameHe,
       path: `/product/${p.slug}`, // canonical without the variant params
-      image: v.images[0]?.url ?? p.images[0]?.url,
+      image: galleryImages(p, v)[0]?.url,
     });
   }
 }
