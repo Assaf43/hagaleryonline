@@ -4,6 +4,8 @@ import { LucideRuler, LucideSlidersHorizontal, LucideTruck } from '@lucide/angul
 import type { ImageRef, ProductCard as Card } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { PageMeta, SITE_NAME } from '../core/page-meta';
+import { SITE_ORIGIN } from '../core/server-tokens';
+import { homeJsonLd } from '../core/structured-data';
 import { MenuData } from '../layout/menu-data';
 import { ProductCard } from '../catalog/product-card';
 import { ResponsiveImage } from '../catalog/responsive-image';
@@ -35,6 +37,7 @@ export class HomePage {
       title: SITE_NAME,
       description: 'ספות, כורסאות ואביזרים לסלון, עם מידות מלאות לכל דגם, סינון לפי רוחב ועומק ומשלוח עד הבית.',
       path: '/',
+      jsonLd: homeJsonLd(inject(SITE_ORIGIN)),
     });
     void inject(PendingTasks).run(() => this.load());
   }

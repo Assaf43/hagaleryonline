@@ -2,6 +2,7 @@ import { DOCUMENT, Injectable, RESPONSE_INIT, inject } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { BRAND } from '@hg/models';
 import { SITE_ORIGIN } from './server-tokens';
+import { serializeJsonLd } from './structured-data';
 
 export const SITE_NAME: string = BRAND.name;
 
@@ -13,6 +14,8 @@ export interface PageInfo {
   image?: string | null;
   /** Filtered or paged listings are not indexed separately (NFR-04). */
   noindex?: boolean;
+  /** Schema.org data for this page (NFR-05); written as one `<script type="application/ld+json">`. */
+  jsonLd?: object | object[];
 }
 
 /** Title, description, canonical link and Open Graph tags of the current page (NFR-04). */
@@ -39,6 +42,7 @@ export class PageMeta {
     if (page.image) this.meta.updateTag({ property: 'og:image', content: new URL(page.image, this.origin).href });
     else this.meta.removeTag('property="og:image"');
     this.canonical(url);
+    this.structuredData(page.jsonLd);
   }
 
   /** Server render of a missing page answers 404, so search engines drop it. */
@@ -51,6 +55,20 @@ export class PageMeta {
   serverError(): void {
     if (this.response) this.response.status = 503;
     this.set({ title: 'שגיאה בטעינת הדף', description: 'לא הצלחנו לטעון את הדף.', path: '/', noindex: true });
+  }
+
+  /** Keeps one JSON-LD script in the head: replaced on every page, removed when the page has none. */
+  private structuredData(data: object | object[] | undefined): void {
+    const existing = this.document.head.querySelector('script#ld');
+    if (!data) {
+      existing?.remove();
+      return;
+    }
+    const script = existing ?? this.document.createElement('script');
+    script.setAttribute('type', 'application/ld+json');
+    script.id = 'ld';
+    script.textContent = serializeJsonLd(data);
+    if (!existing) this.document.head.appendChild(script);
   }
 
   private canonical(url: string): void {

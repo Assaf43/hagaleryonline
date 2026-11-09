@@ -17,6 +17,26 @@ describe('PageMeta', () => {
     expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
   });
 
+  it('replaces and clears the json-ld script', () => {
+    const { meta } = setup();
+    const ld = () => document.head.querySelectorAll('script#ld[type="application/ld+json"]');
+    const page = { title: 't', description: 'd', path: '/x' };
+    meta.set({ ...page, jsonLd: { a: '</script>' } });
+    expect(ld().length).toBe(1);
+    expect(ld()[0].textContent).toBe('{"a":"\\u003c/script>"}');
+    meta.set({ ...page, jsonLd: [{ b: 1 }] });
+    expect(ld().length).toBe(1);
+    expect(ld()[0].textContent).toBe('[{"b":1}]');
+    meta.set(page);
+    expect(ld().length).toBe(0);
+    meta.set({ ...page, jsonLd: { c: 1 } });
+    meta.notFound();
+    expect(ld().length).toBe(0);
+    meta.set({ ...page, jsonLd: { c: 1 } });
+    meta.serverError();
+    expect(ld().length).toBe(0);
+  });
+
   it('serverError answers 503 and is not indexed', () => {
     const { meta, response, tags } = setup();
     meta.serverError();
