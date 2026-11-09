@@ -20,6 +20,7 @@ import { PageMeta } from '../core/page-meta';
 import { DeliveryLine } from './delivery-line';
 import { galleryImages } from './gallery-images';
 import { PriceBlock } from './price-block';
+import { ProductDetails } from './product-details';
 import { ProductGallery } from './product-gallery';
 import { VariantPicker } from './variant-picker';
 import {
@@ -37,11 +38,11 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
 /**
  * Product page (PRD-01..05, PRD-09): the chosen variant lives in the URL (`?color=green&size=280`),
- * so a shared link opens the same variant, also in the server render. The details accordion (Task 7) is added in the marked place.
+ * so a shared link opens the same variant, also in the server render. The details accordion (PRD-06, PRD-08, PRD-10) sits under the delivery line.
  */
 @Component({
   selector: 'hg-product-page',
-  imports: [RouterLink, LucideChevronLeft, ProductGallery, VariantPicker, PriceBlock, DeliveryLine],
+  imports: [RouterLink, LucideChevronLeft, ProductGallery, VariantPicker, PriceBlock, DeliveryLine, ProductDetails],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="container page">
@@ -93,7 +94,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
               <!-- Reserved (Phase 4): the product's one primary "הוספה לסל" button and the sticky mobile bar. -->
 
-              <!-- Details slot (Task 7): accordion with description, dimensions, specs, shipping and returns. -->
+              <hg-product-details [product]="p" [variant]="v" />
             </div>
           </div>
         }

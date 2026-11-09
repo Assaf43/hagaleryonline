@@ -1,0 +1,59 @@
+<details class="group" open>
+  <summary>
+    תיאור
+    <svg lucideChevronDown aria-hidden="true"></svg>
+  </summary>
+  <div class="content description" [innerHTML]="product().descriptionHe"></div>
+</details>
+
+<details class="group">
+  <summary>
+    מידות
+    <svg lucideChevronDown aria-hidden="true"></svg>
+  </summary>
+  <div class="content">
+    <table class="table">
+      <tbody>
+        @for (r of dimensions(); track r.labelHe) {
+          <tr>
+            <th scope="row">{{ r.labelHe }}</th>
+            <td class="num">
+              <bdi>{{ r.value }}</bdi>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="group">
+  <summary>
+    מפרט
+    <svg lucideChevronDown aria-hidden="true"></svg>
+  </summary>
+  <div class="content">
+    <table class="table">
+      <tbody>
+        @for (r of specRows(); track r.labelHe) {
+          <tr>
+            <th scope="row">{{ r.labelHe }}</th>
+            <td>{{ r.value }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="group">
+  <summary>
+    משלוח, הרכבה והחזרות
+    <svg lucideChevronDown aria-hidden="true"></svg>
+  </summary>
+  <div class="content">
+    @for (t of shipping; track t) {
+      <p>{{ t }}</p>
+    }
+  </div>
+</details>
