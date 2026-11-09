@@ -87,7 +87,13 @@ export function breadcrumbJsonLd(items: { name: string; url: string }[]): object
 
 /** Router link segments (`['/category', 'sofas']`) as one root-relative path with single slashes. */
 export function linkPath(link: string[]): string {
-  return '/' + link.map((seg) => seg.replace(/^\/+|\/+$/g, '')).filter(Boolean).join('/');
+  return (
+    '/' +
+    link
+      .map((seg) => seg.replace(/^\/+|\/+$/g, ''))
+      .filter(Boolean)
+      .join('/')
+  );
 }
 
 /** Visible crumbs as absolute breadcrumb items; the crumb without a link is the current page. */

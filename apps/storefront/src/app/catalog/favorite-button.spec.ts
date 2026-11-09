@@ -44,3 +44,32 @@ describe('FavoriteButton', () => {
     expect(status().textContent?.trim()).toBe('הוסר מהמועדפים');
   });
 });
+
+describe('FavoriteButton accessible description', () => {
+  it('two buttons for two products have different descriptions, with the same label', () => {
+    localStorage.clear();
+    const make = (id: number, name: string) => {
+      const f = TestBed.createComponent(FavoriteButton);
+      f.componentRef.setInput('productId', id);
+      f.componentRef.setInput('productName', name);
+      f.detectChanges();
+      return f.nativeElement as HTMLElement;
+    };
+    const a = make(1, 'ALBA');
+    const b = make(2, 'MILO');
+    document.body.append(a, b);
+    const describedBy = (host: HTMLElement) => {
+      const btn = host.querySelector('button')!;
+      return document.getElementById(btn.getAttribute('aria-describedby')!)!.textContent!.trim();
+    };
+    expect(describedBy(a)).toBe('ALBA');
+    expect(describedBy(b)).toBe('MILO');
+    expect(a.querySelector('button')!.getAttribute('aria-describedby')).not.toBe(
+      b.querySelector('button')!.getAttribute('aria-describedby'),
+    );
+    expect(a.querySelector('button')!.getAttribute('aria-label')).toBe('הוספה למועדפים');
+    a.remove();
+    b.remove();
+    localStorage.clear();
+  });
+});

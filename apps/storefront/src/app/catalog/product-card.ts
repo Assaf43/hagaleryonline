@@ -23,7 +23,7 @@ const MAX_SWATCHES = 4;
           <hg-responsive-image [image]="p.image" [sizes]="sizes()" [priority]="priority()" />
         }
         <span class="corner">
-          <hg-favorite-button class="on-photo" [productId]="p.id" />
+          <hg-favorite-button class="on-photo" [productId]="p.id" [productName]="p.modelName" />
           <span class="badge badge-delivery" [class.out]="p.fulfillment === 'out_of_stock'">{{ delivery() }}</span>
           @if (p.discountPercent) {
             <span class="badge badge-dark"

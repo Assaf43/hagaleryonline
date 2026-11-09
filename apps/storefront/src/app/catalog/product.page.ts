@@ -100,7 +100,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
                   <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
                   <span class="name">{{ p.nameHe }}</span>
                 </h1>
-                <hg-favorite-button [productId]="p.id" />
+                <hg-favorite-button [productId]="p.id" [productName]="p.modelName" />
               </div>
 
               <hg-price-block [variant]="v" />

@@ -242,10 +242,7 @@ export class ListingPage {
         ? '/search'
         : `/${this.kind}/${this.kind === 'room' ? this.scope.room : this.scope.category}`;
     // Same crumbs as the page shows; the current one (no link) is this page. Search has none.
-    const jsonLd =
-      this.kind === 'search'
-        ? undefined
-        : breadcrumbJsonLd(crumbItems(heading.crumbs, path, this.origin));
+    const jsonLd = this.kind === 'search' ? undefined : breadcrumbJsonLd(crumbItems(heading.crumbs, path, this.origin));
     this.meta.set({
       title: heading.title,
       description: heading.description,
