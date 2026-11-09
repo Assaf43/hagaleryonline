@@ -63,6 +63,8 @@ export class ProductRelations {
   protected onInput(text: string) {
     this.query.set(text);
     clearTimeout(this.timer);
+    this.requestId++;
+    this.results.set([]);
     if (text.trim().length < MIN_CHARS) {
       this.requestId++;
       this.results.set([]);

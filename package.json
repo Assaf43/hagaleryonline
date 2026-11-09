@@ -1,7 +1,7 @@
 {
   "name": "hagaleryonline",
   "private": true,
-  "description": "Hagalery LaKol online furniture store",
+  "description": "NESTO online furniture store",
   "workspaces": [
     "apps/*",
     "libs/shared/*"

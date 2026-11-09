@@ -106,6 +106,11 @@ import { MenuData } from './menu-data';
       text-decoration: underline;
     }
 
+    .guide-link {
+      margin-block-start: var(--space-4);
+      font-size: var(--font-small);
+    }
+
     .bottom {
       margin-block-start: var(--space-6);
       padding-block-start: var(--space-4);

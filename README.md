@@ -1,4 +1,4 @@
-# Hagalery LaKol — online store
+# NESTO — online store
 
 Monorepo for the storefront (Angular SSR), the admin (Angular Material) and the API (NestJS + Prisma + PostgreSQL).
 

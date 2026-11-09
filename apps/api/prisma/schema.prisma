@@ -1,4 +1,4 @@
-// Hagalery LaKol data model. Spec: Lets start - md files/architecture.md §6 and categories.md.
+// NESTO data model. Spec: Lets start - md files/architecture.md §6 and categories.md.
 // Phase 1 holds the catalog only; customers, orders, payments etc. are added in the phase that uses them.
 //
 // Conventions (CLAUDE.md §4.3):

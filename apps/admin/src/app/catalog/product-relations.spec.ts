@@ -71,6 +71,18 @@ describe('ProductRelations', () => {
     expect(products).toHaveBeenCalledWith({ q: 'al', status: 'all', page: 1 });
   });
 
+  it('ignores Enter while a newer query is pending', async () => {
+    setup();
+    await search('LU');
+    expect(el().querySelectorAll('.results .model').length).toBeGreaterThan(0);
+    const input = el().querySelector<HTMLInputElement>('input[type=search]')!;
+    input.value = 'LUX';
+    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }));
+    fixture.detectChanges();
+    expect(picks()).toEqual([]);
+  });
+
   it('does not search below two characters', async () => {
     setup();
     await search('a');
