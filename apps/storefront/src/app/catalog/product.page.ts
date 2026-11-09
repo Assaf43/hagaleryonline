@@ -51,6 +51,11 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
           <h1>המוצר לא נמצא</h1>
           <a routerLink="/" class="btn btn-secondary">לדף הבית</a>
         </div>
+      } @else if (loadFailed()) {
+        <div class="missing" role="alert">
+          <p class="error">לא הצלחנו לטעון את המוצר. נסו שוב.</p>
+          <button type="button" class="btn btn-secondary" (click)="retry()">נסו שוב</button>
+        </div>
       } @else if (product(); as p) {
         @if (variant(); as v) {
           <nav aria-label="פירורי לחם" class="crumbs-wrap">
@@ -111,6 +116,10 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
       justify-items: start;
       gap: var(--space-4);
       padding-block: var(--space-6);
+    }
+
+    .error {
+      margin: 0;
     }
 
     .layout {
@@ -174,6 +183,8 @@ export class ProductPage {
   /** Shown when the picked combination was not available and the choice moved. */
   readonly notice = signal<string | null>(null);
   protected readonly notFound = signal(false);
+  /** The API failed with something other than 404 (PRD error state): a message and a retry button. */
+  protected readonly loadFailed = signal(false);
 
   /** Axes with a real choice; a single-value axis needs no buttons. */
   protected readonly visibleAxes = computed(() =>
@@ -217,6 +228,7 @@ export class ProductPage {
     this.variant.set(null);
     this.notice.set(null);
     this.notFound.set(false);
+    this.loadFailed.set(false);
     void this.tasks.run(async () => {
       try {
         const p = await this.api.product(slug);
@@ -228,9 +240,15 @@ export class ProductPage {
         this.variant.set(resolveSelection(p.variants, p.optionAxes, wanted).variant);
         this.updateMeta();
       } catch (e) {
-        if (this.slug() === slug && e instanceof HttpErrorResponse && e.status === 404) this.missing();
+        if (this.slug() !== slug) return;
+        if (e instanceof HttpErrorResponse && e.status === 404) this.missing();
+        else this.failed();
       }
     });
+  }
+
+  protected retry(): void {
+    this.load(this.slug());
   }
 
   protected pick(axis: string, value: string): void {
@@ -251,6 +269,11 @@ export class ProductPage {
   private missing(): void {
     this.notFound.set(true);
     this.meta.notFound();
+  }
+
+  private failed(): void {
+    this.loadFailed.set(true);
+    this.meta.serverError();
   }
 
   private updateMeta(): void {

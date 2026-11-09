@@ -4,6 +4,13 @@ import type { ProductDetail, VariantDetail } from '@hg/models';
 import { dimensionRows } from './dimension-rows';
 import { SHIPPING_INFO } from './shipping-info';
 
+/** Warranty in natural Hebrew ("שנה", "חודשיים"…); null or 0 means no warranty row. */
+export function warrantyText(months: number | null): string | null {
+  if (!months) return null;
+  const words: Record<number, string> = { 1: 'חודש אחד', 2: 'חודשיים', 12: 'שנה', 24: 'שנתיים' };
+  return words[months] ?? `${months} חודשים`;
+}
+
 /** The product page accordion (PRD-06, PRD-08, PRD-10): description, dimensions, specs, shipping and returns. */
 @Component({
   selector: 'hg-product-details',
@@ -23,7 +30,8 @@ export class ProductDetails {
     const rows: { labelHe: string; value: string }[] = [];
     for (const s of p.specs) if (s.valuesHe.length) rows.push({ labelHe: s.nameHe, value: s.valuesHe.join(', ') });
     if (p.countryOfOrigin) rows.push({ labelHe: 'ארץ ייצור', value: p.countryOfOrigin });
-    if (p.warrantyMonths != null) rows.push({ labelHe: 'אחריות', value: `${p.warrantyMonths} חודשים` });
+    const warranty = warrantyText(p.warrantyMonths);
+    if (warranty) rows.push({ labelHe: 'אחריות', value: warranty });
     if (p.careHe) rows.push({ labelHe: 'הוראות תחזוקה', value: p.careHe });
     rows.push({ labelHe: 'הרכבה', value: p.requiresAssembly ? 'נדרשת הרכבה' : 'מגיע מורכב' });
     return rows;

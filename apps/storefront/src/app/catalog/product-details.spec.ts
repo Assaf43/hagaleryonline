@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import type { ProductDetail, VariantDetail } from '@hg/models';
-import { ProductDetails } from './product-details';
+import { ProductDetails, warrantyText } from './product-details';
 import { SHIPPING_INFO } from './shipping-info';
 
 const variant = (widthCm: number): VariantDetail =>
@@ -83,7 +83,7 @@ describe('ProductDetails', () => {
     );
     expect(rows(2)).toEqual([
       ['סגנון', 'מודרני, קלאסי'],
-      ['אחריות', '24 חודשים'],
+      ['אחריות', 'שנתיים'],
       ['הרכבה', 'מגיע מורכב'],
     ]);
     fixture.componentRef.setInput('product', product({ requiresAssembly: true, careHe: 'ניגוב עדין' }));
@@ -92,6 +92,23 @@ describe('ProductDetails', () => {
       ['הוראות תחזוקה', 'ניגוב עדין'],
       ['הרכבה', 'נדרשת הרכבה'],
     ]);
+  });
+
+  it('warranty reads naturally and is skipped when there is none', async () => {
+    expect([0, 1, 2, 12, 24, 36].map(warrantyText)).toEqual([
+      null,
+      'חודש אחד',
+      'חודשיים',
+      'שנה',
+      'שנתיים',
+      '36 חודשים',
+    ]);
+    expect(warrantyText(null)).toBeNull();
+    await setup(product({ warrantyMonths: 0 }), variant(280));
+    expect(rows(2).map(([label]) => label)).not.toContain('אחריות');
+    fixture.componentRef.setInput('product', product({ warrantyMonths: 12 }));
+    fixture.detectChanges();
+    expect(rows(2)).toContainEqual(['אחריות', 'שנה']);
   });
 
   it('shipping section shows the interim paragraphs', async () => {

@@ -256,6 +256,29 @@ describe('ProductPage', () => {
     expect(text(h)).toContain('המוצר לא נמצא');
   });
 
+  it('an API error shows a message and a retry button that loads the product again', async () => {
+    const serverError = vi.spyOn(TestBed.inject(PageMeta), 'serverError');
+    const h = await RouterTestingHarness.create();
+    await h.navigateByUrl('/product/alba?color=green&size=240');
+    http.expectOne('/api/products/alba').flush({}, { status: 500, statusText: 'Server Error' });
+    await h.fixture.whenStable();
+    h.detectChanges();
+    expect(serverError).toHaveBeenCalled();
+    expect(text(h)).toContain('לא הצלחנו לטעון את המוצר. נסו שוב.');
+    expect(text(h)).not.toContain('המוצר לא נמצא');
+    const retry = el(h).querySelector<HTMLButtonElement>('button.btn-secondary')!;
+    expect(retry.textContent?.trim()).toBe('נסו שוב');
+    expect(el(h).querySelector('.btn-primary')).toBeNull();
+
+    retry.click();
+    http.expectOne('/api/products/alba').flush(three());
+    await h.fixture.whenStable();
+    h.detectChanges();
+    expect(text(h)).not.toContain('לא הצלחנו לטעון');
+    expect(el(h).querySelector('h1')?.textContent).toContain('ספה אלבה');
+    expect(text(h)).toContain('3,200 ₪');
+  });
+
   it('a product without variants is treated as not found', async () => {
     const spy = vi.spyOn(TestBed.inject(PageMeta), 'notFound');
     await open('/product/alba', product([]));

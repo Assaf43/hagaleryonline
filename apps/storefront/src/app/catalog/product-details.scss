@@ -42,12 +42,41 @@
   }
 }
 
-.description {
-  :first-child {
+// The description is server-sanitized HTML (p, h3, strong, em, lists, links) set with [innerHTML],
+// so emulated encapsulation does not reach it: style its nodes through ::ng-deep, scoped to this block.
+:host ::ng-deep .description {
+  p,
+  ul,
+  ol {
+    margin-block: 0 var(--space-3);
+  }
+
+  h3 {
+    margin-block: var(--space-4) var(--space-2);
+    font-size: var(--font-body);
+    font-weight: 600;
+  }
+
+  ul,
+  ol {
+    padding-inline-start: var(--space-5);
+  }
+
+  li + li {
+    margin-block-start: var(--space-1);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  > :first-child {
     margin-block-start: 0;
   }
 
-  :last-child {
+  > :last-child {
     margin-block-end: 0;
   }
 }
