@@ -18,6 +18,8 @@ import { firstValueFrom } from 'rxjs';
 import type { ProductDetail, RelatedProducts, VariantDetail } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { PageMeta } from '../core/page-meta';
+import { SITE_ORIGIN } from '../core/server-tokens';
+import { breadcrumbJsonLd, productJsonLd } from '../core/structured-data';
 import { DeliveryLine } from './delivery-line';
 import { FavoriteButton } from './favorite-button';
 import { galleryImages } from './gallery-images';
@@ -98,7 +100,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
                   <bdi dir="ltr" class="model">{{ p.modelName }}</bdi>
                   <span class="name">{{ p.nameHe }}</span>
                 </h1>
-                <hg-favorite-button [productId]="p.id" />
+                <hg-favorite-button [productId]="p.id" [productName]="p.modelName" />
               </div>
 
               <hg-price-block [variant]="v" />
@@ -201,6 +203,7 @@ export class ProductPage {
 
   private readonly api = inject(CatalogApi);
   private readonly meta = inject(PageMeta);
+  private readonly origin = inject(SITE_ORIGIN);
   private readonly tasks = inject(PendingTasks);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -315,6 +318,7 @@ export class ProductPage {
     const p = this.product();
     const v = this.variant();
     if (!p || !v) return;
+    const url = `${this.origin}/product/${p.slug}`;
     this.meta.set({
       title: p.nameHe,
       description:
@@ -325,6 +329,14 @@ export class ProductPage {
           .slice(0, 160) || p.nameHe,
       path: `/product/${p.slug}`, // canonical without the variant params
       image: this.gallery()[0]?.url,
+      jsonLd: [
+        productJsonLd(p, url, this.origin),
+        breadcrumbJsonLd([
+          { name: 'בית', url: `${this.origin}/` },
+          ...p.breadcrumbs.map((c) => ({ name: c.nameHe, url: `${this.origin}/category/${c.slug}` })),
+          { name: p.nameHe, url },
+        ]),
+      ],
     });
   }
 }

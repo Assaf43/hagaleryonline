@@ -9,6 +9,7 @@ import type {
   RelatedProducts,
   RoomMenuItem,
   SearchSuggestions,
+  SitemapData,
 } from '@hg/models';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './../src/app.module.js';
@@ -248,6 +249,44 @@ describe('Catalog API (e2e)', () => {
         .body as SearchSuggestions;
       expect(suggestions.products.map((p) => p.modelName)).toEqual(expect.arrayContaining(['DUNE', 'KESHET']));
       expect(suggestions.categories).toEqual([{ slug: 'rugs', nameHe: 'שטיחים' }]);
+    });
+  });
+
+  describe('sitemap data (NFR-06)', () => {
+    let prisma: PrismaService;
+    const sitemap = async () => (await get('/api/seo/sitemap').expect(200)).body as SitemapData;
+
+    beforeAll(async () => {
+      prisma = app.get(PrismaService);
+      await prisma.category.deleteMany({ where: { slug: 'zz-empty-category' } });
+      await prisma.room.deleteMany({ where: { slug: 'zz-empty-room' } });
+      await prisma.category.create({ data: { slug: 'zz-empty-category', nameHe: 'ריקה' } });
+      await prisma.room.create({ data: { slug: 'zz-empty-room', nameHe: 'חדר ריק' } });
+      await app.get(CacheStore).invalidate('catalog:');
+    });
+
+    afterAll(async () => {
+      await prisma.product.update({ where: { slug: 'luna-armchair' }, data: { active: true } });
+      await prisma.category.deleteMany({ where: { slug: 'zz-empty-category' } });
+      await prisma.room.deleteMany({ where: { slug: 'zz-empty-room' } });
+      await app.get(CacheStore).invalidate('catalog:');
+    });
+
+    it('sitemap lists visible products only and skips empty categories', async () => {
+      const before = await sitemap();
+      const luna = before.products.find((p) => p.slug === 'luna-armchair');
+      expect(luna?.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(before.products.map((p) => p.slug)).toContain('alba-corner-sofa');
+      // A parent is listed through its sub-categories' products.
+      expect(before.categories.map((c) => c.slug)).toEqual(expect.arrayContaining(['sofas', 'corner-sofas', 'rugs']));
+      expect(before.categories.map((c) => c.slug)).not.toContain('zz-empty-category');
+      expect(before.rooms).toEqual([{ slug: 'living-room' }]);
+
+      await prisma.product.update({ where: { slug: 'luna-armchair' }, data: { active: false } });
+      await app.get(CacheStore).invalidate('catalog:');
+      const after = await sitemap();
+      expect(after.products.map((p) => p.slug)).not.toContain('luna-armchair');
+      expect(after.products).toHaveLength(before.products.length - 1);
     });
   });
 });

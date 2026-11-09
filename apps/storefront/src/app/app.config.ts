@@ -4,7 +4,7 @@ import { provideClientHydration, withEventReplay } from '@angular/platform-brows
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideLucideConfig } from '@lucide/angular';
 import { routes } from './app.routes';
-import { apiOriginInterceptor } from './core/server-tokens';
+import { apiOriginInterceptor, provideSeoIndexingFromState } from './core/server-tokens';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -13,5 +13,6 @@ export const appConfig: ApplicationConfig = {
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch(), withInterceptors([apiOriginInterceptor])),
     provideLucideConfig({ strokeWidth: 1.5 }),
+    provideSeoIndexingFromState(),
   ],
 };

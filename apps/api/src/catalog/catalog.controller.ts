@@ -7,6 +7,7 @@ import type {
   RelatedProducts,
   RoomMenuItem,
   SearchSuggestions,
+  SitemapData,
 } from '@hg/models';
 import { CatalogService } from './catalog.service.js';
 import { parseCardIds, parseProductListQuery } from './product-list-query.js';
@@ -53,5 +54,10 @@ export class CatalogController {
   @Get('search/suggest')
   suggest(@Query('q') q: unknown): Promise<SearchSuggestions> {
     return this.catalog.suggest(typeof q === 'string' ? q.slice(0, 100) : '');
+  }
+
+  @Get('seo/sitemap')
+  sitemap(): Promise<SitemapData> {
+    return this.catalog.sitemap();
   }
 }

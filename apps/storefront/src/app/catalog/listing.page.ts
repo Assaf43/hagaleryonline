@@ -17,6 +17,8 @@ import { LucideChevronLeft, LucideSlidersHorizontal, LucideX } from '@lucide/ang
 import { BRAND } from '@hg/models';
 import type { ImageRef, ProductCard as Card, ProductListResponse, ProductSort } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
+import { SITE_ORIGIN } from '../core/server-tokens';
+import { breadcrumbJsonLd, crumbItems } from '../core/structured-data';
 import { productCount } from '../core/format';
 import { MenuData } from '../layout/menu-data';
 import { CatalogApi } from '../core/catalog.api';
@@ -72,6 +74,7 @@ export class ListingPage {
   private readonly api = inject(CatalogApi);
   private readonly menu = inject(MenuData);
   private readonly meta = inject(PageMeta);
+  private readonly origin = inject(SITE_ORIGIN);
   private readonly tasks = inject(PendingTasks);
   private readonly document = inject(DOCUMENT);
   private readonly filtersBox = viewChild<ElementRef<HTMLElement>>('filtersBox');
@@ -157,7 +160,11 @@ export class ListingPage {
       this.response.set(results[results.length - 1]);
       this.setMeta(heading);
     } catch {
-      if (request === this.request) this.error.set(true);
+      if (request === this.request) {
+        this.error.set(true);
+        // A failed first load is a server error for search engines; a failed "load more" keeps the page as is.
+        if (!append) this.meta.serverError();
+      }
     } finally {
       if (request === this.request) this.loading.set(false);
     }
@@ -238,10 +245,13 @@ export class ListingPage {
       this.kind === 'search'
         ? '/search'
         : `/${this.kind}/${this.kind === 'room' ? this.scope.room : this.scope.category}`;
+    // Same crumbs as the page shows; the current one (no link) is this page. Search has none.
+    const jsonLd = this.kind === 'search' ? undefined : breadcrumbJsonLd(crumbItems(heading.crumbs, path, this.origin));
     this.meta.set({
       title: heading.title,
       description: heading.description,
       path,
+      jsonLd,
       image: this.items()[0]?.image?.url,
       // Filtered, sorted, paged and search views point search engines to the plain page.
       noindex: this.kind === 'search' || filterCount(s) > 0 || s.sort !== 'recommended' || s.page > 1,

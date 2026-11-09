@@ -2,6 +2,19 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseTokens, resolveAll, resolveTokens } from './resolve-tokens';
 
+const channel = (v: number): number => {
+  const c = v / 255;
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const luminance = (hex: string): number => {
+  const n = parseInt(hex.slice(1, 7), 16);
+  return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255);
+};
+const contrast = (a: string, b: string): number => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
 describe('design tokens', () => {
   it('semantic tokens resolve to the v2 values', async () => {
     expect(await resolveTokens()).toMatchSnapshot();
@@ -61,6 +74,15 @@ describe('design tokens', () => {
     };
     for (const [name, value] of Object.entries(expected)) expect(t.light[name], name).toBe(value);
     expect(t['light@1024']['--control-height']).toBe('44px');
+  });
+
+  it('swatch border reaches 3:1 against the page background in both themes (WCAG 1.4.11)', async () => {
+    const t = await resolveAll();
+    for (const theme of ['light', 'dark'] as const) {
+      const border = t[theme]['--swatch-border'];
+      expect(border, theme).toMatch(/^#[0-9a-f]{6}$/);
+      expect(contrast(border, t[theme]['--color-bg']), theme).toBeGreaterThanOrEqual(3);
+    }
   });
 
   it('semantic file has no raw colors', () => {
