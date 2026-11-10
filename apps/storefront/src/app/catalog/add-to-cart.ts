@@ -8,9 +8,9 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { LucideMinus, LucidePlus } from '@lucide/angular';
 import type { FulfillmentMode } from '@hg/models';
 import { CartStore } from '../core/cart.store';
+import { QuantityStepper } from './quantity-stepper';
 
 /**
  * The product page's one primary button (CRT-01, BRAND §9.4): a quantity stepper and "הוספה לסל". An
@@ -19,32 +19,12 @@ import { CartStore } from '../core/cart.store';
  */
 @Component({
   selector: 'hg-add-to-cart',
-  imports: [LucideMinus, LucidePlus],
+  imports: [QuantityStepper],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="row">
       @if (canAdd()) {
-        <div class="stepper" role="group" aria-label="כמות">
-          <button
-            type="button"
-            class="step"
-            aria-label="הקטנת הכמות"
-            [attr.aria-disabled]="quantity() <= 1"
-            (click)="step(-1)"
-          >
-            <svg lucideMinus aria-hidden="true"></svg>
-          </button>
-          <span class="qty num" aria-live="polite">{{ quantity() }}</span>
-          <button
-            type="button"
-            class="step"
-            aria-label="הגדלת הכמות"
-            [attr.aria-disabled]="quantity() >= max()"
-            (click)="step(1)"
-          >
-            <svg lucidePlus aria-hidden="true"></svg>
-          </button>
-        </div>
+        <hg-quantity-stepper [value]="quantity()" [max]="max()" (changed)="wanted.set($event)" />
       }
       <button
         #main
@@ -68,42 +48,6 @@ import { CartStore } from '../core/cart.store';
     .row {
       display: flex;
       gap: var(--space-3);
-    }
-
-    .stepper {
-      display: inline-flex;
-      align-items: stretch;
-      flex: none;
-      block-size: var(--control-height);
-      border: var(--border-width) solid var(--color-border-strong);
-      border-radius: var(--radius-md);
-    }
-
-    .step {
-      display: inline-grid;
-      place-items: center;
-      inline-size: var(--icon-button-size);
-      block-size: var(--control-height);
-      background: none;
-      border: none;
-      color: var(--color-text);
-
-      &[aria-disabled='true'] {
-        color: var(--color-text-muted);
-        cursor: default;
-      }
-
-      svg {
-        inline-size: var(--icon-size-md);
-        block-size: var(--icon-size-md);
-      }
-    }
-
-    .qty {
-      align-self: center;
-      min-inline-size: var(--space-6);
-      text-align: center;
-      font-weight: 600;
     }
 
     .add {
@@ -141,7 +85,7 @@ export class AddToCart {
   /** The main button, watched by the sticky bar on phones. */
   readonly button = viewChild.required<ElementRef<HTMLButtonElement>>('main');
 
-  private readonly wanted = signal(1);
+  protected readonly wanted = signal(1);
   protected readonly max = computed(() => Math.max(1, this.maxQuantity()));
   /** Follows a smaller limit when another variant is chosen. */
   protected readonly quantity = computed(() => Math.min(this.wanted(), this.max()));
@@ -152,13 +96,6 @@ export class AddToCart {
   readonly errorMessage = computed(() => (this.failed() ? 'לא הצלחנו להוסיף לסל. נסו שוב.' : ''));
   /** Polite status, cleared at each try so every success is announced again. */
   protected readonly status = signal('');
-
-  /** The buttons stay focusable at a bound (aria-disabled), so a keyboard user keeps their place. */
-  protected step(delta: 1 | -1): void {
-    const next = this.quantity() + delta;
-    if (next < 1 || next > this.max()) return;
-    this.wanted.set(next);
-  }
 
   async add(): Promise<void> {
     const id = this.variantId();

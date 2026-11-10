@@ -153,4 +153,27 @@ describe('MiniCart', () => {
     expect(dialog.querySelector('.subtotal')).toBeNull();
     expect(dialog.querySelector('a[href="/checkout"]')).toBeNull();
   });
+
+  it('shows a retry instead of "טוען…" when the cart cannot be loaded', async () => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+    const store = TestBed.inject(CartStore);
+    const http = TestBed.inject(HttpTestingController);
+    const loading = store.load();
+    http.expectOne('/api/cart').flush({}, { status: 500, statusText: 'Server Error' });
+    await loading;
+    const fixture = TestBed.createComponent(Host);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    store.miniCartOpen.set(true);
+    fixture.detectChanges();
+    // Opening with no cart yet reads it again; that read fails too.
+    http.expectOne('/api/cart').flush({}, { status: 500, statusText: 'Server Error' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.textContent).toContain('לא הצלחנו לטעון את הסל.');
+    expect(el.textContent).not.toContain('טוען…');
+    el.querySelector<HTMLButtonElement>('button.retry')!.click();
+    http.expectOne('/api/cart').flush(cartView());
+  });
 });

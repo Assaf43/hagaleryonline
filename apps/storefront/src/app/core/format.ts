@@ -14,6 +14,11 @@ export function deliveryText(mode: FulfillmentMode, days: number): string {
   return `${label} · אספקה עד ${days} ימי עסקים`;
 }
 
+/** The cart's one delivery line (CRT-04): "זמן אספקה משוער: עד 14 ימי עסקים". */
+export function deliveryEstimateText(days: number): string {
+  return `זמן אספקה משוער: עד ${days} ימי עסקים`;
+}
+
 /** Short delivery badge on a product photo: "אספקה עד 14 ימי עסקים". */
 export function deliveryBadge(mode: FulfillmentMode, days: number): string {
   switch (mode) {

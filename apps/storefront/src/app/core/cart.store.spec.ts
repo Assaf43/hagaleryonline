@@ -50,6 +50,19 @@ describe('CartStore', () => {
     await done;
     expect(store.view()).toBeNull();
     expect(store.count()).toBe(0);
+    expect(store.loadFailed()).toBe(true);
+  });
+
+  it('a later successful load clears the failed state', async () => {
+    const { store, http } = setup();
+    const first = store.load();
+    http.expectOne('/api/cart').flush({}, { status: 500, statusText: 'Server Error' });
+    await first;
+    const second = store.load();
+    expect(store.loadFailed()).toBe(false);
+    http.expectOne('/api/cart').flush(cartView());
+    await second;
+    expect(store.loadFailed()).toBe(false);
   });
 
   it('add() posts the line and updates the view and count', async () => {

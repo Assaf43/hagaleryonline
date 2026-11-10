@@ -70,6 +70,7 @@ describe('AddToCart', () => {
     fixture.detectChanges();
     expect(qty()).toBe('1');
     plus().click();
+    fixture.detectChanges();
     plus().click();
     fixture.detectChanges();
     expect(qty()).toBe('3');

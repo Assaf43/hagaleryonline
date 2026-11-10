@@ -22,16 +22,21 @@ export class CartStore {
   readonly count = computed(() => this.state()?.itemCount ?? 0);
   /** The mini cart dialog (`MiniCart`) follows this. */
   readonly miniCartOpen = signal(false);
+  private readonly failed = signal(false);
+  /** The last `load()` failed; the cart page and mini cart offer a retry while there is no view yet. */
+  readonly loadFailed = this.failed.asReadonly();
 
-  /** Reads the cart; a failure keeps the last view (the header simply shows no count). */
+  /** Reads the cart; a failure keeps the last view (the header simply shows no count) and sets `loadFailed`. */
   async load(): Promise<void> {
     if (!this.browser) return;
     const writesBefore = this.writes;
+    this.failed.set(false);
     try {
       const view = await this.api.get();
       if (this.writes === writesBefore) this.state.set(view);
     } catch {
       // Keep what we had.
+      if (this.writes === writesBefore) this.failed.set(true);
     }
   }
 
@@ -53,6 +58,7 @@ export class CartStore {
     this.writes++;
     const view = await call();
     this.state.set(view);
+    this.failed.set(false);
     return view;
   }
 }

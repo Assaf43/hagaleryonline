@@ -1,0 +1,101 @@
+<section class="container page">
+  <h1>סל הקניות</h1>
+
+  @if (loading()) {
+    <p class="state">טוען…</p>
+  } @else if (failed()) {
+    <div class="state" role="alert">
+      <p>לא הצלחנו לטעון את הסל.</p>
+      <button type="button" class="btn btn-secondary retry" (click)="retry()">נסו שוב</button>
+    </div>
+  } @else if (cart.view(); as view) {
+    <ul class="notices" aria-live="polite">
+      @for (n of view.notices; track $index) {
+        <li>{{ n.messageHe }}</li>
+      }
+    </ul>
+    <p class="error" role="alert">{{ error() }}</p>
+
+    @if (lines().length) {
+      <div class="layout">
+        <ul class="lines">
+          @for (l of lines(); track l.variantId) {
+            <li class="line" [class.unavailable]="!l.available">
+              <div class="media">
+                @if (l.image; as img) {
+                  <hg-responsive-image [image]="img" sizes="120px" />
+                }
+              </div>
+              <div class="info">
+                <a class="model" [routerLink]="['/product', l.productSlug]"
+                  ><bdi dir="ltr">{{ l.modelName }}</bdi></a
+                >
+                <span class="name">{{ l.nameHe }}</span>
+                @if (l.optionLabels.length) {
+                  <span class="options">{{ l.optionLabels.join(' · ') }}</span>
+                }
+                @if (l.available) {
+                  <span class="unit">
+                    <span class="num" [class.sale]="l.compareAtPrice !== null && l.compareAtPrice > l.unitPrice">{{
+                      price(l.unitPrice)
+                    }}</span>
+                    @if (l.compareAtPrice !== null && l.compareAtPrice > l.unitPrice) {
+                      <s class="old num"><span class="visually-hidden">במקום </span>{{ price(l.compareAtPrice) }}</s>
+                    }
+                  </span>
+                } @else {
+                  <span class="unavailable-label">לא זמין יותר</span>
+                }
+                <div class="controls">
+                  @if (l.available) {
+                    <hg-quantity-stepper
+                      [value]="l.quantity"
+                      [max]="l.maxQuantity"
+                      [label]="'כמות: ' + l.modelName"
+                      (changed)="setQuantity(l.variantId, $event)"
+                    />
+                  }
+                  <button type="button" class="link-btn remove" (click)="remove(l.variantId)">הסרה</button>
+                </div>
+              </div>
+              @if (l.available) {
+                <span class="line-total num">{{ price(l.lineTotal) }}</span>
+              }
+            </li>
+          }
+        </ul>
+
+        <aside class="summary" aria-label="סיכום הסל">
+          @if (estimate()) {
+            <p class="delivery">{{ estimate() }}</p>
+          }
+          @if (view.shippingFrom !== null) {
+            <p class="row shipping-row">
+              <span>משלוח החל מ־</span><span class="num">{{ price(view.shippingFrom) }}</span>
+            </p>
+          }
+          @if (view.discount; as d) {
+            <p class="row discount-row">
+              <span>{{ d.labelHe }}</span
+              ><span class="num">-{{ price(d.amount) }}</span>
+            </p>
+          }
+          <p class="row subtotal">
+            <span>סכום ביניים</span><span class="num">{{ price(view.subtotal) }}</span>
+          </p>
+          <p class="vat">המחיר כולל מע״מ</p>
+          @if (canCheckout()) {
+            <a routerLink="/checkout" class="btn btn-primary checkout">למעבר לתשלום</a>
+          } @else {
+            <a class="btn btn-primary checkout" role="link" aria-disabled="true">למעבר לתשלום</a>
+          }
+        </aside>
+      </div>
+    } @else {
+      <div class="state">
+        <p>הסל ריק</p>
+        <a routerLink="/" class="btn btn-primary">להמשך קניות</a>
+      </div>
+    }
+  }
+</section>

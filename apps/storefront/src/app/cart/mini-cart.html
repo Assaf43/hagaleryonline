@@ -22,6 +22,11 @@
 
     @if (loading()) {
       <p class="empty">טוען…</p>
+    } @else if (failed()) {
+      <div class="empty" role="alert">
+        <p>לא הצלחנו לטעון את הסל.</p>
+        <button type="button" class="btn btn-secondary retry" (click)="retry()">נסו שוב</button>
+      </div>
     } @else if (lines().length) {
       <ul class="lines">
         @for (l of lines(); track l.variantId) {

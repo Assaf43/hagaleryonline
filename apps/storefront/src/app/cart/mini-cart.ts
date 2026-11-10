@@ -44,7 +44,8 @@ export class MiniCart {
   protected readonly titleId = `hg-mini-cart-title-${nextId++}`;
 
   /** No answer from the server yet: show "טוען…" rather than an empty cart. */
-  protected readonly loading = computed(() => this.cart.view() === null);
+  protected readonly loading = computed(() => this.cart.view() === null && !this.cart.loadFailed());
+  protected readonly failed = computed(() => this.cart.view() === null && this.cart.loadFailed());
   protected readonly lines = computed(() => this.cart.view()?.lines ?? []);
   protected readonly notices = computed(() => this.cart.view()?.notices ?? []);
   protected readonly subtotal = computed(() => formatPrice(this.cart.view()?.subtotal ?? 0));
@@ -69,6 +70,10 @@ export class MiniCart {
   protected close(): void {
     this.cart.miniCartOpen.set(false);
     this.hide();
+  }
+
+  protected retry(): void {
+    void this.cart.load();
   }
 
   /** Clicking the dark backdrop closes it. */
