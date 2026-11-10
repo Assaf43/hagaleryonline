@@ -16,7 +16,7 @@ import type { CookieOptions, Request, Response } from 'express';
 import type { CartView } from '@hg/models';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
-import { CART_COOKIE, CART_TTL_MS } from './cart-token.js';
+import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
 import { CartError, CartService, type CartResult } from './cart.service.js';
 
 /** Most units one request may ask for; the line limit clamps it further. */
@@ -72,11 +72,6 @@ export class CartController {
     else if (tokenOf(req)) res.clearCookie(CART_COOKIE, options);
     return view;
   }
-}
-
-function tokenOf(req: Request): string | undefined {
-  const value: unknown = req.cookies?.[CART_COOKIE];
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function parseIdParam(value: string): number {
