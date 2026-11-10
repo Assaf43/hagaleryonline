@@ -5,6 +5,8 @@ import type { CatalogSnapshot, SnapshotProduct, SnapshotVariant } from '../catal
 import { CatalogService } from '../catalog/catalog.service.js';
 import { insertSizeAxis, SIZE_AXIS, sizeAxis } from '../catalog/size-axis.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import type { ShipmentItem } from '../shipping/shipping-provider.js';
+import { ShippingService } from '../shipping/shipping.service.js';
 import { availableStock } from './available-stock.js';
 import { clampQuantity, deliveryEstimate, lineLimit } from './cart-rules.js';
 import { CART_TTL_MS, hashToken, newToken } from './cart-token.js';
@@ -50,6 +52,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly catalog: CatalogService,
+    private readonly shipping: ShippingService,
   ) {}
 
   onModuleInit(): void {
@@ -136,6 +139,38 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     return { view: await this.buildView(cart.id, []), token: token! };
   }
 
+  /**
+   * The available lines to ship (quantity clamped to the line limit), without the cart view's side effects:
+   * notices stay for the cart page. Empty when there is no cart.
+   */
+  async shippableItems(token: string | undefined): Promise<ShipmentItem[]> {
+    const cart = await this.resolve(token);
+    if (!cart) return [];
+    const [snapshot, items] = await Promise.all([
+      this.catalog.snapshot(),
+      this.prisma.cartItem.findMany({
+        where: { cartId: cart.id },
+        orderBy: [{ addedAt: 'asc' }, { variantId: 'asc' }],
+        select: { variantId: true, quantity: true, variant: { select: { active: true, fulfillment: true } } },
+      }),
+    ]);
+    const stock = await availableStock(
+      this.prisma,
+      items.map((i) => i.variantId),
+    );
+    return items.flatMap((item) => {
+      const { shown, limit } = availability(snapshot, item.variantId, item.variant, stock);
+      if (!shown || limit < 1) return [];
+      return [
+        {
+          variantId: item.variantId,
+          topCategoryId: topCategoryId(snapshot, shown.product),
+          quantity: Math.min(item.quantity, limit),
+        },
+      ];
+    });
+  }
+
   /** The cart of a cookie token, marked as used; an expired cart is deleted and reads as none. */
   private async resolve(token: string | undefined): Promise<{ id: string } | null> {
     if (!token) return null;
@@ -194,12 +229,12 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     );
 
     const lines: CartLine[] = [];
+    const shippable: ShipmentItem[] = [];
     const notices: CartNotice[] = [...requestNotices];
     for (const item of items) {
       const v = item.variant;
       const fulfillment = FULFILLMENT[v.fulfillment];
-      const shown = v.active ? findShown(snapshot, item.variantId) : undefined;
-      const limit = shown ? lineLimit(fulfillment, stock.get(item.variantId) ?? 0) : 0;
+      const { shown, limit } = availability(snapshot, item.variantId, v, stock);
       const available = limit >= 1;
       let quantity = item.quantity;
 
@@ -232,6 +267,9 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
           });
       }
 
+      if (available && shown)
+        shippable.push({ variantId: item.variantId, topCategoryId: topCategoryId(snapshot, shown.product), quantity });
+
       lines.push({
         variantId: item.variantId,
         productSlug: v.product.slug,
@@ -259,10 +297,15 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       subtotal: counted.reduce((sum, l) => sum + l.lineTotal, 0),
       deliveryEstimate: deliveryEstimate(lines),
       notices,
-      shippingFrom: null,
+      shippingFrom: await this.shipping.shippingFrom(shippable),
       discount: null,
     };
   }
+}
+
+/** The top-level category of a product: shipping rates are per top-level category (spec §4.1). */
+function topCategoryId(snapshot: CatalogSnapshot, product: SnapshotProduct): number {
+  return snapshot.categoriesById.get(product.categoryId)?.pathIds[0] ?? product.categoryId;
 }
 
 function staleBefore(now: Date): Date {
@@ -275,6 +318,21 @@ function clampedNotice(variantId: number, fulfillment: FulfillmentMode, limit: n
     kind: 'quantity_clamped',
     messageHe: fulfillment === 'in_stock' ? `נשארו רק ${limit} במלאי` : `אפשר להזמין עד ${limit} יחידות`,
   };
+}
+
+/**
+ * Whether a cart line can be bought now: the variant and product as shown on the site (none when the variant is
+ * inactive or no longer in the active-only snapshot), and how many units the line may hold (0 when not shown).
+ */
+function availability(
+  snapshot: CatalogSnapshot,
+  variantId: number,
+  variant: { active: boolean; fulfillment: keyof typeof FULFILLMENT },
+  stock: Map<number, number>,
+): { shown: ReturnType<typeof findShown>; limit: number } {
+  const shown = variant.active ? findShown(snapshot, variantId) : undefined;
+  const limit = shown ? lineLimit(FULFILLMENT[variant.fulfillment], stock.get(variantId) ?? 0) : 0;
+  return { shown, limit };
 }
 
 /** The variant and its product when both are shown on the site (in the active-only snapshot). */

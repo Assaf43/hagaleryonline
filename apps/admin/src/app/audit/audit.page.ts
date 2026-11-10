@@ -41,6 +41,10 @@ const ACTIONS: Record<string, string> = {
   'synonym.create': 'הוספת מילים נרדפות',
   'synonym.update': 'עדכון מילים נרדפות',
   'synonym.delete': 'מחיקת מילים נרדפות',
+  'shipping.rates.update': 'עדכון מחירון המשלוחים',
+  'shipping_zone.create': 'יצירת אזור משלוח',
+  'shipping_zone.update': 'עדכון אזור משלוח',
+  'shipping_zone.delete': 'מחיקת אזור משלוח',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -52,7 +56,12 @@ const ENTITIES: Record<string, string> = {
   attribute: 'רשימה',
   attribute_value: 'ערך',
   synonym: 'מילים נרדפות',
+  shipping: 'מחירון משלוחים',
+  shipping_zone: 'אזור משלוח',
 };
+
+/** Entries recorded readable as they are: Hebrew keys and display values (shipping price list and zones). */
+const READABLE = new Set(['shipping', 'shipping_zone']);
 
 /** Prices are stored in agorot; show them in shekels. */
 const MONEY = new Set(['price', 'compareAtPrice']);
@@ -243,6 +252,12 @@ export class AuditPageComponent implements OnInit {
   changes(entry: AuditEntry): { field: string; label: string; before: string; after: string }[] {
     const before = (entry.before ?? {}) as Record<string, unknown>;
     const after = (entry.after ?? {}) as Record<string, unknown>;
+    if (READABLE.has(entry.entityType)) {
+      // Also for a create or delete: what the zone held.
+      return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+        .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+        .map((key) => ({ field: key, label: key, before: show(key, before[key]), after: show(key, after[key]) }));
+    }
     if (!entry.before || !entry.after) return [];
     return Object.keys(FIELDS)
       .filter(

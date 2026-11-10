@@ -67,6 +67,12 @@
           ייבוא וייצוא Excel
         </a>
       }
+      @if (can('shipping.manage')) {
+        <a class="nav-link" routerLink="/shipping" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideTruck></svg>
+          משלוחים
+        </a>
+      }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>

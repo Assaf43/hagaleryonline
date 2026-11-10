@@ -52,10 +52,12 @@ model Category {
   sortOrder Int     @default(0) @map("sort_order")
   active    Boolean @default(true)
 
-  parent     Category?           @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children   Category[]          @relation("CategoryTree")
-  products   Product[]
-  attributes CategoryAttribute[]
+  parent       Category?           @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Category[]          @relation("CategoryTree")
+  products     Product[]
+  attributes   CategoryAttribute[]
+  /// Shipping rate of a top-level category (Phase 4b).
+  shippingRate ShippingRate?
 
   @@index([parentId])
   @@map("categories")
@@ -452,4 +454,65 @@ model CartItem {
   @@id([cartId, variantId])
   @@index([variantId])
   @@map("cart_items")
+}
+
+/// Israeli localities (CBS list), reference data also used in production. `id` is the CBS locality code.
+model Locality {
+  id     Int    @id
+  nameHe String @map("name_he")
+
+  zone ZoneLocality?
+
+  @@index([nameHe])
+  @@map("localities")
+}
+
+/// Shipping price list (spec §4.1, SHP-01): one row per top-level category, plus the default row
+/// (`categoryId` null) for categories without one. Amounts in agorot. Exactly one default row is enforced by a
+/// partial unique index (migration shipping_single_default_rate).
+model ShippingRate {
+  id            Int  @id @default(autoincrement())
+  categoryId    Int? @unique @map("category_id")
+  deliveryPrice Int  @map("delivery_price")
+  assemblyPrice Int  @map("assembly_price")
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@map("shipping_rates")
+}
+
+/// The one row of shipping settings (id 1). Amounts in agorot.
+model ShippingSettings {
+  id                    Int @id @default(1)
+  /// Percent of its delivery price every unit after the most expensive one pays.
+  additionalItemPercent Int @default(50) @map("additional_item_percent")
+  /// Per floor at and above `floorSurchargeFrom` without an elevator (full service only).
+  floorSurcharge        Int @map("floor_surcharge")
+  floorSurchargeFrom    Int @default(2) @map("floor_surcharge_from")
+
+  @@map("shipping_settings")
+}
+
+/// Remote zone (SHP-03): its surcharge is added once per order, to both methods.
+model ShippingZone {
+  id        Int    @id @default(autoincrement())
+  name      String
+  /// Agorot.
+  surcharge Int
+
+  localities ZoneLocality[]
+
+  @@map("shipping_zones")
+}
+
+/// A locality belongs to at most one zone.
+model ZoneLocality {
+  zoneId     Int @map("zone_id")
+  localityId Int @unique @map("locality_id")
+
+  zone     ShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  locality Locality     @relation(fields: [localityId], references: [id], onDelete: Cascade)
+
+  @@id([zoneId, localityId])
+  @@map("zone_localities")
 }

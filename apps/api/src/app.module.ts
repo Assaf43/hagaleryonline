@@ -9,6 +9,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MediaModule } from './media/media.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { ShippingModule } from './shipping/shipping.module.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     CatalogModule,
     CatalogAdminModule,
     CartModule,
+    ShippingModule,
   ],
 })
 export class AppModule {}

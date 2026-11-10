@@ -64,6 +64,11 @@
           <span>סכום ביניים</span>
           <span class="num">{{ subtotal() }}</span>
         </p>
+        @if (shippingFrom(); as from) {
+          <p class="shipping-from">
+            <span>משלוח החל מ־</span><span class="num">{{ from }}</span>
+          </p>
+        }
         <div class="actions">
           <a routerLink="/cart" class="btn btn-secondary">לסל</a>
           @if (canCheckout()) {

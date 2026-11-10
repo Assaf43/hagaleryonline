@@ -124,6 +124,17 @@
   font-weight: 700;
 }
 
+.shipping-from {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+
+  // Reads with the subtotal above it, closer than the foot's gap.
+  margin-block-start: calc(var(--space-1) - var(--space-4));
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
 .actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

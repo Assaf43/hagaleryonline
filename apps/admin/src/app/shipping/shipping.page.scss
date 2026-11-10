@@ -1,0 +1,143 @@
+:host {
+  display: grid;
+  gap: var(--space-5);
+}
+
+h2 {
+  font-size: var(--font-h3);
+  margin: 0;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+.rates,
+.zones,
+.localities {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rates {
+  display: grid;
+  gap: var(--space-3);
+}
+
+// Name, delivery and assembly in one row from tablet width; stacked on phones (ADM-15).
+.rate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+  padding-block-end: var(--space-3);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.rate.default .rate-name {
+  font-weight: 700;
+}
+
+.rate-name {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.default-missing {
+  font-weight: 400;
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (width >= 768px) {
+  .rate {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 12rem) minmax(0, 12rem);
+    gap: var(--space-4);
+  }
+
+  .settings {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.save-rates,
+.add-zone {
+  justify-self: start;
+}
+
+.zones-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.zones {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.zone {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-bg);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.zone-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (width >= 768px) {
+  .zone-fields {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+.localities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.locality {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-3) var(--space-1);
+  min-block-size: var(--control-height-sm);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font-size: var(--font-small);
+}
+
+.chip-button svg {
+  inline-size: var(--icon-size-sm);
+  block-size: var(--icon-size-sm);
+}
+
+.zone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}

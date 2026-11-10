@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { ShippingModule } from '../shipping/shipping.module.js';
 import { CartController } from './cart.controller.js';
 import { CartService } from './cart.service.js';
 
 @Module({
-  imports: [AuthModule, CatalogModule],
+  imports: [AuthModule, CatalogModule, forwardRef(() => ShippingModule)],
   controllers: [CartController],
   providers: [CartService],
   exports: [CartService],

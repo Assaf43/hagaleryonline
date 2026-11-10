@@ -1,0 +1,210 @@
+<h1>משלוחים</h1>
+<p class="page-intro">
+  מחירי ההובלה וההרכבה, ההנחה על פריטים נוספים, תוספת הקומה ואזורים מרוחקים. המחירים בשקלים וכוללים מע״מ, והם חלים באתר
+  מיד אחרי השמירה.
+</p>
+
+@if (loadError()) {
+  <p class="form-error" role="alert">{{ loadError() }}</p>
+}
+
+@if (loaded()) {
+  <section class="panel" aria-labelledby="rates-title">
+    <h2 id="rates-title">מחירון לפי קטגוריה</h2>
+    <p class="muted">
+      קטגוריה בלי מחירים משתמשת בשורת ברירת המחדל. ההרכבה נגבית במלואה על כל פריט, רק במשלוח הכולל סבלות והרכבה.
+    </p>
+    <ul class="rates">
+      @for (row of rows(); track row.categoryId; let i = $index) {
+        <li class="rate" [class.default]="row.categoryId === null">
+          <span class="rate-name">
+            {{ row.nameHe }}
+            @if (row.categoryId === null && !defaultRateSet()) {
+              <span class="default-missing">עדיין לא נקבע מחיר ברירת מחדל</span>
+            }
+          </span>
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>הובלה (₪)</mat-label>
+            <input
+              matInput
+              inputmode="decimal"
+              autocomplete="off"
+              [id]="rateId(row, 'delivery')"
+              [ngModel]="row.delivery"
+              (ngModelChange)="setRate(i, 'delivery', $event)"
+              [errorStateMatcher]="rateMatcher('rates.' + i + '.delivery')"
+              [placeholder]="row.categoryId === null ? '' : 'לפי ברירת המחדל'"
+            />
+            <mat-error>{{ rateErrors()['rates.' + i + '.delivery'] }}</mat-error>
+          </mat-form-field>
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>הרכבה (₪)</mat-label>
+            <input
+              matInput
+              inputmode="decimal"
+              autocomplete="off"
+              [id]="rateId(row, 'assembly')"
+              [ngModel]="row.assembly"
+              (ngModelChange)="setRate(i, 'assembly', $event)"
+              [errorStateMatcher]="rateMatcher('rates.' + i + '.assembly')"
+              [placeholder]="row.categoryId === null ? '' : 'לפי ברירת המחדל'"
+            />
+            <mat-error>{{ rateErrors()['rates.' + i + '.assembly'] }}</mat-error>
+          </mat-form-field>
+        </li>
+      }
+    </ul>
+
+    <h2>הנחה ותוספת קומה</h2>
+    <div class="settings">
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>אחוז מההובלה לכל פריט נוסף</mat-label>
+        <input
+          matInput
+          id="additional-item-percent"
+          inputmode="numeric"
+          autocomplete="off"
+          [ngModel]="settings().additionalItemPercent"
+          (ngModelChange)="setSetting('additionalItemPercent', $event)"
+          [errorStateMatcher]="rateMatcher('additionalItemPercent')"
+        />
+        <span matTextSuffix>%</span>
+        <mat-hint>הפריט היקר ביותר משלם הובלה מלאה, וכל פריט נוסף משלם את האחוז הזה מההובלה שלו</mat-hint>
+        <mat-error id="additional-item-percent-error">{{ rateErrors()['additionalItemPercent'] }}</mat-error>
+      </mat-form-field>
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>תוספת לכל קומה (₪)</mat-label>
+        <input
+          matInput
+          id="floor-surcharge"
+          inputmode="decimal"
+          autocomplete="off"
+          [ngModel]="settings().floorSurcharge"
+          (ngModelChange)="setSetting('floorSurcharge', $event)"
+          [errorStateMatcher]="rateMatcher('floorSurcharge')"
+        />
+        <mat-hint>כשאין מעלית, רק במשלוח הכולל סבלות והרכבה</mat-hint>
+        <mat-error>{{ rateErrors()['floorSurcharge'] }}</mat-error>
+      </mat-form-field>
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>החל מקומה</mat-label>
+        <input
+          matInput
+          id="floor-surcharge-from"
+          inputmode="numeric"
+          autocomplete="off"
+          [ngModel]="settings().floorSurchargeFrom"
+          (ngModelChange)="setSetting('floorSurchargeFrom', $event)"
+          [errorStateMatcher]="rateMatcher('floorSurchargeFrom')"
+        />
+        <mat-hint>קומות נמוכות יותר לא משלמות תוספת</mat-hint>
+        <mat-error>{{ rateErrors()['floorSurchargeFrom'] }}</mat-error>
+      </mat-form-field>
+    </div>
+
+    @if (ratesProblem()) {
+      <p class="form-error" role="alert">{{ ratesProblem() }}</p>
+    }
+    <button matButton="filled" type="button" class="save-rates" [disabled]="savingRates()" (click)="saveRates()">
+      שמירת המחירון
+    </button>
+  </section>
+
+  <section class="panel zones-panel" aria-labelledby="zones-title">
+    <div class="zones-head">
+      <h2 id="zones-title">אזורים מרוחקים</h2>
+      <button matButton="tonal" type="button" class="add-zone" (click)="addZone()">
+        <svg lucidePlus></svg>
+        אזור
+      </button>
+    </div>
+    <p class="muted">התוספת נגבית פעם אחת בהזמנה, בשתי שיטות המשלוח. כל יישוב יכול להיות באזור אחד בלבד.</p>
+
+    <ul class="zones">
+      @for (zone of zones(); track zone.key) {
+        <li class="zone">
+          <div class="zone-fields">
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>שם האזור</mat-label>
+              <input
+                matInput
+                class="zone-name"
+                autocomplete="off"
+                [ngModel]="zone.name"
+                (ngModelChange)="setZone(zone.key, { name: $event })"
+                [errorStateMatcher]="zoneMatcher(zone.key + '.name')"
+              />
+              <mat-error>{{ zoneErrors()[zone.key + '.name'] }}</mat-error>
+            </mat-form-field>
+            <mat-form-field subscriptSizing="dynamic">
+              <mat-label>תוספת (₪)</mat-label>
+              <input
+                matInput
+                class="zone-surcharge"
+                inputmode="decimal"
+                autocomplete="off"
+                [ngModel]="zone.surcharge"
+                (ngModelChange)="setZone(zone.key, { surcharge: $event })"
+                [errorStateMatcher]="zoneMatcher(zone.key + '.surcharge')"
+              />
+              <mat-error>{{ zoneErrors()[zone.key + '.surcharge'] }}</mat-error>
+            </mat-form-field>
+          </div>
+
+          <ul class="localities" [attr.aria-label]="'יישובים באזור ' + (zone.name || 'החדש')">
+            @for (l of zone.localities; track l.id) {
+              <li class="locality">
+                <span>{{ l.nameHe }}</span>
+                <button
+                  matIconButton
+                  type="button"
+                  class="chip-button"
+                  [attr.aria-label]="'הסרת ' + l.nameHe"
+                  (click)="removeLocality(zone.key, l.id)"
+                >
+                  <svg lucideX></svg>
+                </button>
+              </li>
+            } @empty {
+              <li class="muted">אין יישובים באזור עדיין.</li>
+            }
+          </ul>
+
+          <hga-locality-picker
+            [selected]="localityIds(zone)"
+            [otherZone]="otherZoneFor(zone.key)"
+            (picked)="addLocality(zone.key, $event)"
+          />
+
+          @if (zoneProblems()[zone.key]) {
+            <p class="form-error" role="alert">{{ zoneProblems()[zone.key] }}</p>
+          }
+          <div class="zone-actions">
+            <button
+              matButton="filled"
+              type="button"
+              class="save-zone"
+              [disabled]="busyZone() === zone.key"
+              (click)="saveZone(zone)"
+            >
+              שמירת האזור
+            </button>
+            <button
+              matButton
+              type="button"
+              class="delete-zone"
+              [disabled]="busyZone() === zone.key"
+              (click)="deleteZone(zone)"
+            >
+              מחיקת האזור
+            </button>
+          </div>
+        </li>
+      } @empty {
+        <li class="muted">אין אזורים מרוחקים.</li>
+      }
+    </ul>
+  </section>
+} @else if (!loadError()) {
+  <p class="page-intro">טוען…</p>
+}

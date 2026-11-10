@@ -5,6 +5,7 @@ import { config } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { AttributeScope, FulfillmentMode, ImageKind, PrismaClient } from '../src/generated/prisma/client.js';
 import { buildProductSearchText } from '../src/catalog/search/search-text.js';
+import { seedLocalities } from './seed-localities.js';
 import {
   ATTRIBUTES,
   CARE_HE,
@@ -68,8 +69,11 @@ const SKU_CODE: Record<string, string> = {
 const DAY = 24 * 60 * 60 * 1000;
 
 async function main() {
+  // Localities are reference data: never truncated, only upserted.
+  await seedLocalities(prisma);
+
   await prisma.$executeRawUnsafe(
-    'TRUNCATE products, categories, rooms, attributes, search_synonyms RESTART IDENTITY CASCADE',
+    'TRUNCATE products, categories, rooms, attributes, search_synonyms, shipping_rates, shipping_settings, shipping_zones RESTART IDENTITY CASCADE',
   );
 
   // Attributes and their closed value lists (ADM-03).
@@ -120,6 +124,8 @@ async function main() {
       await createCategory(child, i, { slug: seed.slug, id: category.id });
   };
   for (const [i, seed] of CATEGORIES.entries()) await createCategory(seed, i);
+
+  await seedShipping(new Map([...categories].map(([slug, c]) => [slug, c.id])));
 
   const rooms = await Promise.all(
     ROOMS.map((r, i) => prisma.room.create({ data: { slug: r.slug, nameHe: r.nameHe, sortOrder: i } })),
@@ -228,6 +234,53 @@ async function main() {
   console.log(
     `Seeded ${categories.size} categories, ${ATTRIBUTES.length} attributes, ${PRODUCTS.length} products, ${variantCount} variants.`,
   );
+}
+
+/**
+ * Shipping price list (Phase 4b, spec §4.1). SAMPLE DATA, DEV ONLY (like the placeholder images): the real
+ * rates, settings and zones are entered by staff in the admin "משלוחים" screen. Agorot.
+ */
+const SAMPLE_SHIPPING_RATES: Record<string, [delivery: number, assembly: number]> = {
+  sofas: [35_000, 25_000],
+  armchairs: [20_000, 10_000],
+  recliners: [20_000, 10_000],
+  'coffee-tables': [15_000, 5_000],
+  'side-tables': [10_000, 0],
+  sideboards: [25_000, 15_000],
+  ottomans: [10_000, 0],
+  cushions: [3_500, 0],
+  throws: [3_500, 0],
+  rugs: [6_000, 0],
+  decor: [3_500, 0],
+  lighting: [6_000, 5_000],
+};
+/** Default row, for top-level categories without a rate. Sample data, dev only. */
+const SAMPLE_DEFAULT_RATE: [number, number] = [15_000, 0];
+/** One sample remote zone: Eilat (2600) and Arava localities by CBS code. Sample data, dev only. */
+const SAMPLE_ZONE = {
+  name: 'אילת והערבה',
+  surcharge: 25_000,
+  localityIds: [2600, 866, 806, 13, 1176, 1150, 1151],
+};
+
+async function seedShipping(categoryIds: Map<string, number>) {
+  const rates = Object.entries(SAMPLE_SHIPPING_RATES).map(([slug, [deliveryPrice, assemblyPrice]]) => {
+    const categoryId = categoryIds.get(slug);
+    if (!categoryId) throw new Error(`Unknown category ${slug}`);
+    return { categoryId, deliveryPrice, assemblyPrice };
+  });
+  const [deliveryPrice, assemblyPrice] = SAMPLE_DEFAULT_RATE;
+  await prisma.shippingRate.createMany({ data: [{ categoryId: null, deliveryPrice, assemblyPrice }, ...rates] });
+  await prisma.shippingSettings.create({
+    data: { id: 1, additionalItemPercent: 50, floorSurcharge: 5_000, floorSurchargeFrom: 2 },
+  });
+  await prisma.shippingZone.create({
+    data: {
+      name: SAMPLE_ZONE.name,
+      surcharge: SAMPLE_ZONE.surcharge,
+      localities: { create: SAMPLE_ZONE.localityIds.map((localityId) => ({ localityId })) },
+    },
+  });
 }
 
 function delivery(d: ProductSeed['delivery']) {
