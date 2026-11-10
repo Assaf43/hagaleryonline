@@ -1,0 +1,318 @@
+<section class="container page">
+  <h1>מעבר לתשלום</h1>
+
+  @if (loading()) {
+    <p class="state">טוען…</p>
+  } @else if (failed()) {
+    <div class="state" role="alert">
+      <p>לא הצלחנו לטעון את הסל.</p>
+      <button type="button" class="btn btn-secondary" (click)="retryLoad()">נסו שוב</button>
+    </div>
+  } @else if (cart.view(); as view) {
+    <form class="layout" novalidate (submit)="submit($event)">
+      <div class="main">
+        <section class="block" aria-labelledby="chk-details">
+          <h2 id="chk-details">פרטים</h2>
+          <div class="grid">
+            <div class="field wide">
+              <label class="field-label" [for]="ids['contact.fullName']">שם מלא</label>
+              <input
+                class="input"
+                type="text"
+                autocomplete="name"
+                maxlength="80"
+                [id]="ids['contact.fullName']"
+                [value]="form().fullName"
+                [attr.aria-invalid]="errorOf('contact.fullName') ? true : null"
+                [attr.aria-describedby]="errorOf('contact.fullName') ? ids['contact.fullName'] + '-error' : null"
+                (input)="set('fullName', $event)"
+              />
+              @if (errorOf('contact.fullName'); as e) {
+                <p class="field-error" [id]="ids['contact.fullName'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['contact.phone']">טלפון נייד</label>
+              <input
+                class="input"
+                type="tel"
+                dir="ltr"
+                inputmode="tel"
+                autocomplete="tel"
+                maxlength="20"
+                [id]="ids['contact.phone']"
+                [value]="form().phone"
+                [attr.aria-invalid]="errorOf('contact.phone') ? true : null"
+                [attr.aria-describedby]="errorOf('contact.phone') ? ids['contact.phone'] + '-error' : null"
+                (input)="set('phone', $event)"
+              />
+              @if (errorOf('contact.phone'); as e) {
+                <p class="field-error" [id]="ids['contact.phone'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['contact.email']">דוא״ל</label>
+              <input
+                class="input"
+                type="email"
+                dir="ltr"
+                autocomplete="email"
+                maxlength="254"
+                [id]="ids['contact.email']"
+                [value]="form().email"
+                [attr.aria-invalid]="errorOf('contact.email') ? true : null"
+                [attr.aria-describedby]="errorOf('contact.email') ? ids['contact.email'] + '-error' : null"
+                (input)="set('email', $event)"
+              />
+              @if (errorOf('contact.email'); as e) {
+                <p class="field-error" [id]="ids['contact.email'] + '-error'">{{ e }}</p>
+              }
+            </div>
+          </div>
+        </section>
+
+        <section class="block" aria-labelledby="chk-address">
+          <h2 id="chk-address">כתובת ומסירה</h2>
+          <div class="grid">
+            <hg-locality-field
+              class="field wide"
+              [inputId]="ids['address.localityId']"
+              [error]="errorOf('address.localityId')"
+              [value]="form().locality"
+              (valueChange)="setLocality($event)"
+            />
+            <div class="field">
+              <label class="field-label" [for]="ids['address.street']">רחוב</label>
+              <input
+                class="input"
+                type="text"
+                autocomplete="address-line1"
+                maxlength="80"
+                [id]="ids['address.street']"
+                [value]="form().street"
+                [attr.aria-invalid]="errorOf('address.street') ? true : null"
+                [attr.aria-describedby]="errorOf('address.street') ? ids['address.street'] + '-error' : null"
+                (input)="set('street', $event)"
+              />
+              @if (errorOf('address.street'); as e) {
+                <p class="field-error" [id]="ids['address.street'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.houseNumber']">מספר בית</label>
+              <input
+                class="input"
+                type="text"
+                maxlength="10"
+                [id]="ids['address.houseNumber']"
+                [value]="form().houseNumber"
+                [attr.aria-invalid]="errorOf('address.houseNumber') ? true : null"
+                [attr.aria-describedby]="errorOf('address.houseNumber') ? ids['address.houseNumber'] + '-error' : null"
+                (input)="set('houseNumber', $event)"
+              />
+              @if (errorOf('address.houseNumber'); as e) {
+                <p class="field-error" [id]="ids['address.houseNumber'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.apartment']">דירה (לא חובה)</label>
+              <input
+                class="input"
+                type="text"
+                maxlength="10"
+                [id]="ids['address.apartment']"
+                [value]="form().apartment"
+                [attr.aria-invalid]="errorOf('address.apartment') ? true : null"
+                [attr.aria-describedby]="errorOf('address.apartment') ? ids['address.apartment'] + '-error' : null"
+                (input)="set('apartment', $event)"
+              />
+              @if (errorOf('address.apartment'); as e) {
+                <p class="field-error" [id]="ids['address.apartment'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.floor']">קומה (קרקע = 0)</label>
+              <input
+                class="input"
+                type="text"
+                inputmode="numeric"
+                maxlength="2"
+                [id]="ids['address.floor']"
+                [value]="form().floor"
+                [attr.aria-invalid]="errorOf('address.floor') ? true : null"
+                [attr.aria-describedby]="errorOf('address.floor') ? ids['address.floor'] + '-error' : null"
+                (input)="setFloor($event)"
+              />
+              @if (errorOf('address.floor'); as e) {
+                <p class="field-error" [id]="ids['address.floor'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field check-field">
+              <label class="check">
+                <input
+                  type="checkbox"
+                  [id]="ids['address.hasElevator']"
+                  [checked]="form().hasElevator"
+                  [attr.aria-invalid]="errorOf('address.hasElevator') ? true : null"
+                  [attr.aria-describedby]="
+                    errorOf('address.hasElevator') ? ids['address.hasElevator'] + '-error' : null
+                  "
+                  (change)="setElevator($event)"
+                />
+                יש מעלית בבניין
+              </label>
+              @if (errorOf('address.hasElevator'); as e) {
+                <p class="field-error" [id]="ids['address.hasElevator'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field wide">
+              <label class="field-label" [for]="ids['address.notes']">הערות לשליח (לא חובה)</label>
+              <textarea
+                class="input textarea"
+                rows="3"
+                maxlength="500"
+                [id]="ids['address.notes']"
+                [value]="form().notes"
+                [attr.aria-invalid]="errorOf('address.notes') ? true : null"
+                [attr.aria-describedby]="errorOf('address.notes') ? ids['address.notes'] + '-error' : null"
+                (input)="set('notes', $event)"
+              ></textarea>
+              @if (errorOf('address.notes'); as e) {
+                <p class="field-error" [id]="ids['address.notes'] + '-error'">{{ e }}</p>
+              }
+            </div>
+          </div>
+        </section>
+
+        <section class="block" aria-labelledby="chk-shipping">
+          <h2 id="chk-shipping">שיטת משלוח</h2>
+          <fieldset
+            class="methods"
+            tabindex="-1"
+            [id]="ids['method']"
+            [attr.aria-describedby]="errorOf('method') ? ids['method'] + '-error' : null"
+          >
+            <legend class="visually-hidden">שיטת משלוח</legend>
+            <div aria-live="polite">
+              @switch (quote().kind) {
+                @case ('none') {
+                  <p class="muted small">בחרו יישוב והזינו קומה כדי לראות את מחירי המשלוח.</p>
+                }
+                @case ('loading') {
+                  <p class="muted small">מחשבים את מחיר המשלוח…</p>
+                }
+                @case ('error') {
+                  <p class="small">{{ quoteMessage() }}</p>
+                  <button type="button" class="btn btn-secondary" (click)="retryQuote()">נסו שוב</button>
+                }
+              }
+            </div>
+            @for (o of options(); track o.method) {
+              <label class="method" [class.selected]="form().method === o.method">
+                <input
+                  type="radio"
+                  name="method"
+                  [value]="o.method"
+                  [checked]="form().method === o.method"
+                  (change)="setMethod(o.method)"
+                />
+                <span class="method-body">
+                  <span class="method-head">
+                    <span class="method-name">{{ methodLabels[o.method] }}</span>
+                    <span class="num method-total">{{ price(o.total) }}</span>
+                  </span>
+                  <span class="breakdown">
+                    @for (l of o.lines; track $index) {
+                      <span class="row"
+                        ><span>{{ l.labelHe }}</span
+                        ><span class="num">{{ price(l.amount) }}</span></span
+                      >
+                    }
+                  </span>
+                </span>
+              </label>
+            }
+          </fieldset>
+          @if (errorOf('method'); as e) {
+            <p class="field-error" [id]="ids['method'] + '-error'">{{ e }}</p>
+          }
+        </section>
+      </div>
+
+      <section class="block summary" aria-labelledby="chk-summary">
+        <h2 id="chk-summary">סיכום</h2>
+        <ul class="lines">
+          @for (l of lines(); track l.variantId) {
+            <li class="line">
+              <span class="line-info">
+                <bdi dir="ltr" class="model">{{ l.modelName }}</bdi>
+                <span class="muted small">{{ l.nameHe }}</span>
+                @if (l.optionLabels.length) {
+                  <span class="muted small">{{ l.optionLabels.join(' · ') }}</span>
+                }
+                <span class="muted small"
+                  >כמות: <span class="num">{{ l.quantity }}</span></span
+                >
+              </span>
+              <span class="num">{{ price(l.lineTotal) }}</span>
+            </li>
+          }
+        </ul>
+        <p class="row">
+          <span>סכום ביניים</span><span class="num">{{ price(view.subtotal) }}</span>
+        </p>
+        @if (view.discount; as d) {
+          <p class="row">
+            <span>{{ d.labelHe }}</span
+            ><span class="num">-{{ price(d.amount) }}</span>
+          </p>
+        }
+        <p class="row">
+          <span>משלוח</span>
+          @if (chosen(); as c) {
+            <span class="num">{{ price(c.total) }}</span>
+          } @else {
+            <span class="muted small">לפי הכתובת ושיטת המשלוח</span>
+          }
+        </p>
+        <p class="row total">
+          <span>סה״כ לתשלום</span><span class="num">{{ price(total()) }}</span>
+        </p>
+        <p class="muted small">המחיר כולל מע״מ</p>
+        @if (estimate()) {
+          <p class="muted small">{{ estimate() }}</p>
+        }
+
+        <div class="field">
+          <span class="check">
+            <input
+              type="checkbox"
+              [id]="ids['acceptTerms']"
+              [checked]="form().acceptTerms"
+              [attr.aria-invalid]="errorOf('acceptTerms') ? true : null"
+              [attr.aria-describedby]="errorOf('acceptTerms') ? ids['acceptTerms'] + '-error' : null"
+              (change)="setTerms($event)"
+            />
+            <label [for]="ids['acceptTerms']"
+              >קראתי ואני מסכים/ה ל<a routerLink="/terms" target="_blank">תנאי השימוש</a></label
+            >
+          </span>
+          @if (errorOf('acceptTerms'); as e) {
+            <p class="field-error" [id]="ids['acceptTerms'] + '-error'">{{ e }}</p>
+          }
+        </div>
+
+        <div class="form-error" role="alert">
+          @if (formError(); as fe) {
+            <p>{{ fe.message }}</p>
+            @if (fe.cartLink) {
+              <a routerLink="/cart">לסל הקניות</a>
+            }
+          }
+        </div>
+
+        <button type="submit" class="btn btn-primary submit" [disabled]="submitting()">למעבר לתשלום</button>
+      </section>
+    </form>
+  }
+</section>
