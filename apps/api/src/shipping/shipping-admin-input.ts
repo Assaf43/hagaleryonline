@@ -1,10 +1,9 @@
 import type { AdminShippingRatesInput, AdminShippingSettings, AdminShippingZoneInput } from '@hg/models';
 import { invalid } from '../catalog-admin/catalog-errors.js';
+import { MAX_FLOOR } from './shipping-rules.js';
 
 /** Highest amount any price-list field accepts (₪100,000 in agorot): keeps sums far from the Int limit. */
 export const MAX_AMOUNT = 10_000_000;
-/** Highest floor a quote accepts; the floor surcharge cannot start above it. */
-export const MAX_FLOOR = 60;
 const MAX_NAME = 100;
 const MAX_ZONE_LOCALITIES = 2_000;
 

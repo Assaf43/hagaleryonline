@@ -11,6 +11,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { invalid, notFound } from '../catalog-admin/catalog-errors.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { auditDiff, ratesAuditView, zoneAuditView } from './shipping-audit.js';
 import { DEFAULT_SETTINGS } from './shipping.service.js';
 
 type Meta = { actorId: number; ip?: string };
@@ -46,7 +47,7 @@ export class ShippingAdminService {
   ) {}
 
   async config(tx: Tx = this.prisma): Promise<AdminShippingConfig> {
-    const [rates, zones] = await Promise.all([
+    const [{ rates, defaultRateSet }, zones] = await Promise.all([
       this.rates(tx),
       tx.shippingZone.findMany({ orderBy: { id: 'asc' }, select: ZONE_SELECT }),
     ]);
@@ -54,7 +55,7 @@ export class ShippingAdminService {
       where: { id: 1 },
       select: { additionalItemPercent: true, floorSurcharge: true, floorSurchargeFrom: true },
     });
-    return { rates, settings: settings ?? DEFAULT_SETTINGS, zones: zones.map(toZone) };
+    return { rates, defaultRateSet, settings: settings ?? DEFAULT_SETTINGS, zones: zones.map(toZone) };
   }
 
   /** Replaces the whole price list and the settings in one transaction. */
@@ -75,9 +76,13 @@ export class ShippingAdminService {
       for (const { categoryId, deliveryPrice, assemblyPrice } of keep) {
         const data = { deliveryPrice, assemblyPrice };
         if (categoryId === null) {
-          // One default row (partial unique index): update it, or create it the first time.
-          const { count } = await tx.shippingRate.updateMany({ where: { categoryId: null }, data });
-          if (count === 0) await tx.shippingRate.create({ data: { categoryId: null, ...data } });
+          // One default row (partial unique index): an upsert on that index, so two first saves at once
+          // both succeed (the second waits for the first and updates its row).
+          await tx.$executeRaw`
+            INSERT INTO shipping_rates (category_id, delivery_price, assembly_price)
+            VALUES (NULL, ${deliveryPrice}, ${assemblyPrice})
+            ON CONFLICT ((true)) WHERE category_id IS NULL
+            DO UPDATE SET delivery_price = EXCLUDED.delivery_price, assembly_price = EXCLUDED.assembly_price`;
         } else {
           await tx.shippingRate.upsert({ where: { categoryId }, create: { categoryId, ...data }, update: data });
         }
@@ -89,18 +94,12 @@ export class ShippingAdminService {
       });
 
       const after = await this.config(tx);
-      const snapshot = (c: AdminShippingConfig) => ({ rates: c.rates, settings: c.settings });
-      if (JSON.stringify(snapshot(before)) !== JSON.stringify(snapshot(after)))
-        await this.audit.record(
-          {
-            ...meta,
-            action: 'shipping.rates.update',
-            entityType: 'shipping',
-            before: snapshot(before),
-            after: snapshot(after),
-          },
-          tx,
-        );
+      const change = auditDiff(
+        ratesAuditView(before.rates, before.settings),
+        ratesAuditView(after.rates, after.settings),
+      );
+      if (change)
+        await this.audit.record({ ...meta, action: 'shipping.rates.update', entityType: 'shipping', ...change }, tx);
       return after;
     });
   }
@@ -122,7 +121,7 @@ export class ShippingAdminService {
           action: 'shipping_zone.create',
           entityType: 'shipping_zone',
           entityId: zone.id,
-          after: zoneInput(toZone(zone)),
+          after: zoneAuditView(toZone(zone)),
         },
         tx,
       );
@@ -145,11 +144,10 @@ export class ShippingAdminService {
         },
         select: ZONE_SELECT,
       });
-      const before = zoneInput(toZone(existing));
-      const after = zoneInput(toZone(zone));
-      if (JSON.stringify(before) !== JSON.stringify(after))
+      const change = auditDiff(zoneAuditView(toZone(existing)), zoneAuditView(toZone(zone)));
+      if (change)
         await this.audit.record(
-          { ...meta, action: 'shipping_zone.update', entityType: 'shipping_zone', entityId: id, before, after },
+          { ...meta, action: 'shipping_zone.update', entityType: 'shipping_zone', entityId: id, ...change },
           tx,
         );
       return toZone(zone);
@@ -167,7 +165,7 @@ export class ShippingAdminService {
           action: 'shipping_zone.delete',
           entityType: 'shipping_zone',
           entityId: id,
-          before: zoneInput(toZone(existing)),
+          before: zoneAuditView(toZone(existing)),
         },
         tx,
       );
@@ -175,7 +173,7 @@ export class ShippingAdminService {
   }
 
   /** Default row first, then every top-level category in tree order, each with its own rate or none. */
-  private async rates(tx: Tx): Promise<AdminShippingRate[]> {
+  private async rates(tx: Tx): Promise<{ rates: AdminShippingRate[]; defaultRateSet: boolean }> {
     const [categories, rates] = await Promise.all([
       tx.category.findMany({
         where: { parentId: null },
@@ -186,7 +184,7 @@ export class ShippingAdminService {
     ]);
     const byCategory = new Map(rates.map((r) => [r.categoryId, r]));
     const fallback = byCategory.get(null);
-    return [
+    const list: AdminShippingRate[] = [
       {
         categoryId: null,
         categoryNameHe: DEFAULT_RATE_NAME,
@@ -200,6 +198,7 @@ export class ShippingAdminService {
         assemblyPrice: byCategory.get(c.id)?.assemblyPrice ?? null,
       })),
     ];
+    return { rates: list, defaultRateSet: fallback !== undefined };
   }
 
   /** A save that raced another one onto the same locality hits the unique index: still a 409. */
@@ -241,9 +240,4 @@ function toZone(z: ZoneRow): AdminShippingZone {
     surcharge: z.surcharge,
     localities: z.localities.map((l) => l.locality).sort((a, b) => a.nameHe.localeCompare(b.nameHe, 'he')),
   };
-}
-
-/** What the audit log keeps of a zone; locality codes in ascending order so before and after compare. */
-function zoneInput(z: AdminShippingZone): AdminShippingZoneInput {
-  return { name: z.name, surcharge: z.surcharge, localityIds: z.localities.map((l) => l.id).sort((a, b) => a - b) };
 }

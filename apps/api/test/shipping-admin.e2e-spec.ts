@@ -70,6 +70,7 @@ describe('Shipping admin (e2e, ADM-07)', () => {
   it('lists the default row first, then every top-level category but no sub-category', async () => {
     const c = await config();
     expect(c.rates[0]).toMatchObject({ categoryId: null });
+    expect(c.defaultRateSet).toBe(true);
     const ids = c.rates.map((r) => r.categoryId);
     expect(ids).toContain(topCategory);
     expect(ids).not.toContain(subCategory);
@@ -103,7 +104,24 @@ describe('Shipping admin (e2e, ADM-07)', () => {
     expect(await prisma.shippingRate.count({ where: { categoryId: null } })).toBe(1);
 
     const audit = (await owner.get('/audit?entityType=shipping').expect(200)).body as AuditPage;
-    expect(audit.items[0]).toMatchObject({ action: 'shipping.rates.update' });
+    // Readable before/after: Hebrew keys, shekels, only what changed.
+    const shekels = (agorot: number | null) => `₪${(agorot ?? 0) / 100}`;
+    const was = saved.rates[0];
+    expect(audit.items[0]).toMatchObject({ action: 'shipping.rates.update', entityLabel: null });
+    expect(audit.items[0].before).toEqual({
+      'ברירת מחדל': `הובלה ${shekels(was.deliveryPrice)} / הרכבה ${shekels(was.assemblyPrice)}`,
+      'בדיקת משלוח': 'ללא מחיר משלו',
+      'הנחה לפריט נוסף': `${saved.settings.additionalItemPercent}%`,
+      'תוספת לקומה': shekels(saved.settings.floorSurcharge),
+      מקומה: String(saved.settings.floorSurchargeFrom),
+    });
+    expect(audit.items[0].after).toEqual({
+      'ברירת מחדל': 'הובלה ₪123 / הרכבה ₪45',
+      'בדיקת משלוח': 'הובלה ₪500 / הרכבה ₪250',
+      'הנחה לפריט נוסף': '40%',
+      'תוספת לקומה': '₪60',
+      מקומה: '3',
+    });
 
     // Emptying a category's prices removes its rate: it uses the default row again.
     input.rates = input.rates.map((r) =>
@@ -170,6 +188,36 @@ describe('Shipping admin (e2e, ADM-07)', () => {
     expect(audit.items.map((e) => e.action)).toEqual(
       expect.arrayContaining(['shipping_zone.create', 'shipping_zone.update', 'shipping_zone.delete']),
     );
-    expect(audit.items.find((e) => e.action === 'shipping_zone.delete')).toMatchObject({ entityId: String(a.id) });
+    const entry = (action: string) => audit.items.find((e) => e.action === action && e.entityId === String(a.id));
+    expect(entry('shipping_zone.create')).toMatchObject({
+      before: null,
+      after: { שם: ZONE_A, תוספת: '₪200', יישובים: 'שחר' },
+    });
+    expect(entry('shipping_zone.update')).toMatchObject({
+      before: { שם: ZONE_A, תוספת: '₪200', יישובים: 'שחר' },
+      after: { שם: `${ZONE_A} מעודכן`, תוספת: '₪210', יישובים: 'ללא יישובים' },
+    });
+    expect(entry('shipping_zone.delete')).toMatchObject({
+      entityLabel: `${ZONE_A} מעודכן`,
+      before: { שם: `${ZONE_A} מעודכן`, תוספת: '₪210', יישובים: 'ללא יישובים' },
+      after: null,
+    });
+  });
+
+  it('says when there is no default rate yet, and two first saves at once both succeed', async () => {
+    await prisma.shippingRate.deleteMany({ where: { categoryId: null } });
+    const c = await config();
+    expect(c.defaultRateSet).toBe(false);
+    expect(c.rates[0]).toMatchObject({ categoryId: null, deliveryPrice: 0, assemblyPrice: 0 });
+
+    const input = ratesInput(c);
+    input.rates[0] = { categoryId: null, deliveryPrice: 9_900, assemblyPrice: 0 };
+    const [first, second] = await Promise.all([
+      owner.put('/shipping/rates', input),
+      owner.put('/shipping/rates', input),
+    ]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(await prisma.shippingRate.count({ where: { categoryId: null } })).toBe(1);
+    expect((await config()).defaultRateSet).toBe(true);
   });
 });

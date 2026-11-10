@@ -17,7 +17,12 @@
     <ul class="rates">
       @for (row of rows(); track row.categoryId; let i = $index) {
         <li class="rate" [class.default]="row.categoryId === null">
-          <span class="rate-name">{{ row.nameHe }}</span>
+          <span class="rate-name">
+            {{ row.nameHe }}
+            @if (row.categoryId === null && !defaultRateSet()) {
+              <span class="default-missing">עדיין לא נקבע מחיר ברירת מחדל</span>
+            }
+          </span>
           <mat-form-field subscriptSizing="dynamic">
             <mat-label>הובלה (₪)</mat-label>
             <input

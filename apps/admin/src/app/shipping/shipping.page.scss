@@ -46,6 +46,17 @@ svg {
   font-weight: 700;
 }
 
+.rate-name {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.default-missing {
+  font-weight: 400;
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
 .settings {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -113,7 +124,7 @@ svg {
   align-items: center;
   gap: var(--space-1);
   padding-inline: var(--space-3) var(--space-1);
-  min-block-size: 36px;
+  min-block-size: var(--control-height-sm);
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface);

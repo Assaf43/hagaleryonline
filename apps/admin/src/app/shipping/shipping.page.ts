@@ -47,6 +47,8 @@ export class ShippingPage implements OnInit {
     floorSurcharge: '',
     floorSurchargeFrom: '',
   });
+  /** False until the default row was saved once: it then shows 0 / 0. */
+  protected readonly defaultRateSet = signal(true);
   protected readonly rateErrors = signal<FormErrors>({});
   protected readonly ratesProblem = signal('');
   protected readonly savingRates = signal(false);
@@ -113,6 +115,7 @@ export class ShippingPage implements OnInit {
     try {
       const saved = await this.api.saveRates(input);
       this.rows.set(rateRows(saved));
+      this.defaultRateSet.set(saved.defaultRateSet);
       this.settings.set(settingsForm(saved.settings));
       this.snack.open('המחירון נשמר', undefined, { duration: 2500 });
     } catch (e) {
@@ -216,6 +219,7 @@ export class ShippingPage implements OnInit {
     try {
       const config: AdminShippingConfig = await this.api.config();
       this.rows.set(rateRows(config));
+      this.defaultRateSet.set(config.defaultRateSet);
       this.settings.set(settingsForm(config.settings));
       const drafts = config.zones.map((z) => zoneDraft(z, this.nextKey++));
       this.zones.set(drafts);

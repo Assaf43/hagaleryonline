@@ -71,6 +71,8 @@ export interface AdminShippingZone {
 /** GET /api/admin/shipping: the default row first, then one row per top-level category in tree order. */
 export interface AdminShippingConfig {
   rates: AdminShippingRate[];
+  /** False until the default row is saved for the first time (it then reads as 0 / 0). */
+  defaultRateSet: boolean;
   settings: AdminShippingSettings;
   zones: AdminShippingZone[];
 }

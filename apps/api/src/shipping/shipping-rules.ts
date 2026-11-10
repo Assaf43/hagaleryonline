@@ -31,6 +31,9 @@ export interface ShippingContext {
   zoneName?: string;
 }
 
+/** Highest floor a quote accepts; the floor surcharge cannot start above it. */
+export const MAX_FLOOR = 60;
+
 export const LABEL_DELIVERY = 'הובלה';
 export const LABEL_DISCOUNT = 'הנחה על פריטים נוספים';
 export const LABEL_ASSEMBLY = 'הרכבה';

@@ -60,8 +60,11 @@ const ENTITIES: Record<string, string> = {
   shipping_zone: 'אזור משלוח',
 };
 
+/** Entries recorded readable as they are: Hebrew keys and display values (shipping price list and zones). */
+const READABLE = new Set(['shipping', 'shipping_zone']);
+
 /** Prices are stored in agorot; show them in shekels. */
-const MONEY = new Set(['price', 'compareAtPrice', 'surcharge']);
+const MONEY = new Set(['price', 'compareAtPrice']);
 const ILS = new Intl.NumberFormat('he-IL', {
   style: 'currency',
   currency: 'ILS',
@@ -71,10 +74,6 @@ const ILS = new Intl.NumberFormat('he-IL', {
 
 const FIELDS: Record<string, string> = {
   name: 'שם',
-  rates: 'מחירון',
-  settings: 'הגדרות משלוח',
-  surcharge: 'תוספת',
-  localityIds: 'יישובים (קודי למ״ס)',
   email: 'אימייל',
   status: 'מצב',
   template: 'תבנית',
@@ -253,6 +252,12 @@ export class AuditPageComponent implements OnInit {
   changes(entry: AuditEntry): { field: string; label: string; before: string; after: string }[] {
     const before = (entry.before ?? {}) as Record<string, unknown>;
     const after = (entry.after ?? {}) as Record<string, unknown>;
+    if (READABLE.has(entry.entityType)) {
+      // Also for a create or delete: what the zone held.
+      return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+        .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+        .map((key) => ({ field: key, label: key, before: show(key, before[key]), after: show(key, after[key]) }));
+    }
     if (!entry.before || !entry.after) return [];
     return Object.keys(FIELDS)
       .filter(

@@ -11,6 +11,7 @@ const CONFIG: AdminShippingConfig = {
     { categoryId: 1, categoryNameHe: 'ספות', deliveryPrice: 40_050, assemblyPrice: 30_000 },
     { categoryId: 2, categoryNameHe: 'כורסאות', deliveryPrice: null, assemblyPrice: null },
   ],
+  defaultRateSet: true,
   settings: { additionalItemPercent: 50, floorSurcharge: 5_000, floorSurchargeFrom: 2 },
   zones: [{ id: 7, name: 'אילת והערבה', surcharge: 25_000, localities: [{ id: 2600, nameHe: 'אילת' }] }],
 };
@@ -131,6 +132,18 @@ describe('ShippingPage', () => {
       ],
       settings: { additionalItemPercent: 50, floorSurcharge: 6_000, floorSurchargeFrom: 2 },
     });
+  });
+
+  it('says when no default price was set yet, next to the default row only', async () => {
+    expect(el().querySelector('.default-missing')).toBeNull();
+    api.config.mockResolvedValue({ ...structuredClone(CONFIG), defaultRateSet: false });
+    fixture = TestBed.createComponent(ShippingPage);
+    fixture.detectChanges();
+    await settle();
+    const hints = el().querySelectorAll('.default-missing');
+    expect(hints).toHaveLength(1);
+    expect(hints[0].closest('.rate')?.classList).toContain('default');
+    expect(hints[0].textContent?.trim()).toBe('עדיין לא נקבע מחיר ברירת מחדל');
   });
 
   it('does not save invalid values and says what is wrong', async () => {

@@ -157,7 +157,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 /** A deleted entity has no row to name it; fall back to what was recorded about it. */
 function deletedLabel(before: Prisma.JsonValue): string | null {
   const b = (before ?? {}) as Record<string, unknown>;
-  for (const key of ['sku', 'modelName', 'labelHe', 'nameHe', 'name'])
+  for (const key of ['sku', 'modelName', 'labelHe', 'nameHe', 'שם'])
     if (typeof b[key] === 'string') return b[key] as string;
   return null;
 }

@@ -4,7 +4,7 @@ import type { ShippingQuote, ShippingQuoteRequest } from '@hg/models';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { cartTokenOf } from '../cart/cart-token.js';
 import { CartService } from '../cart/cart.service.js';
-import { MAX_FLOOR } from './shipping-admin-input.js';
+import { MAX_FLOOR } from './shipping-rules.js';
 import { ShippingError, ShippingService } from './shipping.service.js';
 
 /** Public shipping API (spec §4.3). POSTs go through StorefrontOriginGuard (storefront origin only). */
