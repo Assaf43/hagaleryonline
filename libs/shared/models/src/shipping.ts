@@ -10,6 +10,9 @@ export interface LocalityOption {
  */
 export type ShippingMethod = 'curbside' | 'full_service';
 
+/** Highest floor a quote or an order accepts (0 = ground floor); the floor surcharge cannot start above it. */
+export const MAX_FLOOR = 60;
+
 /** POST /api/shipping/quote — the cart comes from the cookie. */
 export interface ShippingQuoteRequest {
   /** CBS locality code (GET /api/localities). */

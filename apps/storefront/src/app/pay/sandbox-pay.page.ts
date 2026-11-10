@@ -52,13 +52,28 @@ const INSTALLMENTS = Array.from({ length: 12 }, (_, i) => i + 1);
             </select>
           </div>
           <div class="actions">
-            <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="complete('success')">
+            <button
+              type="button"
+              class="btn btn-primary"
+              [disabled]="busy() || v.status !== 'pending'"
+              (click)="complete('success')"
+            >
               תשלום מצליח
             </button>
-            <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="complete('failure')">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="busy() || v.status !== 'pending'"
+              (click)="complete('failure')"
+            >
               תשלום נכשל
             </button>
-            <button type="button" class="btn btn-secondary" [disabled]="busy()" (click)="complete('cancel')">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              [disabled]="busy() || v.status !== 'pending'"
+              (click)="complete('cancel')"
+            >
               ביטול
             </button>
           </div>
@@ -174,7 +189,7 @@ export class SandboxPayPage {
   }
 
   protected async complete(outcome: SandboxPaymentOutcome): Promise<void> {
-    if (this.busy()) return;
+    if (this.busy() || this.view()?.status !== 'pending') return;
     this.busy.set(true);
     this.error.set('');
     try {

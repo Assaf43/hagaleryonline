@@ -214,6 +214,7 @@
                   name="method"
                   [value]="o.method"
                   [checked]="form().method === o.method"
+                  [attr.aria-invalid]="errorOf('method') ? true : null"
                   (change)="setMethod(o.method)"
                 />
                 <span class="method-body">
@@ -294,7 +295,9 @@
               (change)="setTerms($event)"
             />
             <label [for]="ids['acceptTerms']"
-              >קראתי ואני מסכים/ה ל<a routerLink="/terms" target="_blank">תנאי השימוש</a></label
+              >קראתי ואני מסכים/ה ל<a routerLink="/terms" target="_blank"
+                >תנאי השימוש<span class="visually-hidden"> (נפתח בחלון חדש)</span></a
+              ></label
             >
           </span>
           @if (errorOf('acceptTerms'); as e) {

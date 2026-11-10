@@ -10,6 +10,7 @@ import type {
   SandboxCompleteRequest,
   SandboxCompleteResponse,
   SandboxPaymentView,
+  ShippingErrorCode,
   ShippingMethod,
   ShippingQuote,
   ShippingQuoteRequest,
@@ -82,18 +83,21 @@ export const SHIPPING_METHOD_LABELS_HE: Record<ShippingMethod, string> = {
   full_service: 'כולל סבלות והרכבה',
 };
 
+/** Codes this file turns into Hebrew: checkout/order/payment codes plus the quote's `unknown_locality`. */
+export type ApiErrorCode = CheckoutErrorCode | ShippingErrorCode;
+
 /** The `code` of an API error body, or null (network error, other shape). */
-export function apiErrorCode(error: unknown): CheckoutErrorCode | null {
+export function apiErrorCode(error: unknown): ApiErrorCode | null {
   if (!(error instanceof HttpErrorResponse)) return null;
   const body: unknown = error.error;
   if (typeof body === 'object' && body !== null && typeof (body as { code?: unknown }).code === 'string') {
-    return (body as { code: CheckoutErrorCode }).code;
+    return (body as { code: ApiErrorCode }).code;
   }
   return null;
 }
 
 /** Hebrew for the checkout, order and payment error codes that have no field of their own. */
-export function checkoutErrorMessage(code: CheckoutErrorCode | null): string {
+export function checkoutErrorMessage(code: ApiErrorCode | null): string {
   switch (code) {
     case 'insufficient_stock':
       return 'חלק מהפריטים כבר לא זמינים בכמות שביקשתם. עדכנו את הסל.';
@@ -109,6 +113,10 @@ export function checkoutErrorMessage(code: CheckoutErrorCode | null): string {
       return 'אי אפשר לשלם שוב על ההזמנה הזאת. רעננו את הדף כדי לראות את מצבה.';
     case 'superseded':
       return 'נוצרה הזמנה חדשה יותר מאותו סל, ולכן אי אפשר לשלם על ההזמנה הזאת. חזרו לסל כדי להמשיך.';
+    case 'unknown_locality':
+      return 'יש לבחור יישוב מהרשימה';
+    case 'invalid_input':
+      return 'הנתונים שנשלחו לא תקינים. נסו שוב.';
     case 'not_found':
       return 'לא מצאנו את מה שחיפשתם.';
     default:

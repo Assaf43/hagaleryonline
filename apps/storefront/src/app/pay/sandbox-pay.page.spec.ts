@@ -37,6 +37,10 @@ describe('SandboxPayPage', () => {
     await render();
   }
 
+  afterEach(() => {
+    http.verify();
+  });
+
   it('sets a noindex title', async () => {
     await setup();
     expect(metaSet).toHaveBeenCalledWith(expect.objectContaining({ path: '/pay/sandbox', noindex: true }));
@@ -79,6 +83,24 @@ describe('SandboxPayPage', () => {
     await setup(404);
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('העסקה לא נמצאה');
     expect(button('תשלום מצליח')).toBeUndefined();
+  });
+
+  it('disables the outcome buttons once the payment is no longer pending', async () => {
+    await setup({ ...VIEW, status: 'succeeded' });
+    expect(el().textContent).toContain('התשלום הזה כבר טופל.');
+    for (const label of ['תשלום מצליח', 'תשלום נכשל', 'ביטול']) expect(button(label).disabled).toBe(true);
+    button('תשלום מצליח').click();
+    http.expectNone(`${URL}/complete`);
+  });
+
+  it('explains a malformed request', async () => {
+    await setup();
+    button('ביטול').click();
+    http
+      .expectOne(`${URL}/complete`)
+      .flush({ statusCode: 400, code: 'invalid_input' }, { status: 400, statusText: 'Bad Request' });
+    await render();
+    expect(el().querySelector('[role="alert"]')?.textContent).toContain('הנתונים שנשלחו לא תקינים. נסו שוב.');
   });
 
   it('shows an error when completing fails', async () => {

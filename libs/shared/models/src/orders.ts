@@ -29,6 +29,57 @@ export interface CheckoutAddress {
   notes: string | null;
 }
 
+// ---------- Checkout validation (spec §5.1): one set of rules for the API and the storefront ----------
+
+/** Length limits of the checkout fields (characters, after trimming). */
+export const CHECKOUT_LIMITS = {
+  fullNameMin: 2,
+  fullNameMax: 80,
+  emailMax: 254,
+  streetMax: 80,
+  houseNumberMax: 10,
+  apartmentMax: 10,
+  notesMax: 500,
+} as const;
+
+/** Israeli mobile after spaces and dashes are removed. */
+export const CHECKOUT_PHONE_PATTERN = /^05\d{8}$/;
+export const CHECKOUT_EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+/** Fields a checkout 400 can name (`field`), in the order the form shows them. */
+export const CHECKOUT_FIELDS = [
+  'contact.fullName',
+  'contact.phone',
+  'contact.email',
+  'address.localityId',
+  'address.street',
+  'address.houseNumber',
+  'address.apartment',
+  'address.floor',
+  'address.hasElevator',
+  'address.notes',
+  'method',
+  'acceptTerms',
+] as const;
+
+export type CheckoutField = (typeof CHECKOUT_FIELDS)[number];
+
+/** The Hebrew message of each invalid field (`messageHe` of a 400; the storefront shows the same before sending). */
+export const CHECKOUT_FIELD_MESSAGES_HE: Record<CheckoutField, string> = {
+  'contact.fullName': 'יש למלא שם מלא (2–80 תווים)',
+  'contact.phone': 'יש להזין מספר טלפון נייד תקין, למשל 050-1234567',
+  'contact.email': 'יש להזין כתובת דוא״ל תקינה',
+  'address.localityId': 'יש לבחור יישוב מהרשימה',
+  'address.street': 'יש למלא רחוב (עד 80 תווים)',
+  'address.houseNumber': 'יש למלא מספר בית (עד 10 תווים)',
+  'address.apartment': 'מספר הדירה ארוך מדי (עד 10 תווים)',
+  'address.floor': 'יש להזין קומה בין 0 ל־60',
+  'address.hasElevator': 'יש לציין אם יש מעלית',
+  'address.notes': 'ההערות לשליח ארוכות מדי (עד 500 תווים)',
+  method: 'יש לבחור שיטת משלוח',
+  acceptTerms: 'יש לאשר את תנאי השימוש',
+};
+
 /** POST /api/checkout — the cart comes from the cookie. */
 export interface CheckoutRequest {
   contact: CheckoutContact;

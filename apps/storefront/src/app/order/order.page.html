@@ -18,10 +18,15 @@
     }
     @case ('ready') {
       @if (order(); as o) {
-        <div class="status" [attr.data-status]="o.status" aria-live="polite">
-          <h1>{{ title() }}</h1>
+        <div class="status" [attr.data-status]="o.status">
+          <!-- Only the status is announced as it changes; the retry error has its own alert below. -->
+          <div class="status-text" aria-live="polite">
+            <h1>{{ title() }}</h1>
+            @if (o.status === 'pending_payment' && pollingStopped()) {
+              <p>עדיין לא קיבלנו אישור על התשלום. אפשר לבדוק שוב בעוד רגע.</p>
+            }
+          </div>
           @if (o.status === 'pending_payment' && pollingStopped()) {
-            <p>עדיין לא קיבלנו אישור על התשלום. אפשר לבדוק שוב בעוד רגע.</p>
             <button type="button" class="btn btn-secondary check-again" (click)="checkAgain()">בדיקה שוב</button>
           }
           @if (failed()) {

@@ -10,6 +10,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -131,6 +132,12 @@ export class CheckoutPage {
       if (view && view.itemCount === 0 && !this.submitting()) this.toCart();
     });
 
+    // Every cart (re)load can change the prices: requote, so the method cards and the total are never stale.
+    effect(() => {
+      this.cart.view();
+      untracked(() => this.requote$.next());
+    });
+
     if (isPlatformBrowser(inject(PLATFORM_ID))) {
       this.requote$
         .pipe(
@@ -250,14 +257,15 @@ export class CheckoutPage {
       return;
     }
     this.formError.set({ message: checkoutErrorMessage(code), cartLink: code === 'insufficient_stock' });
+    // The reload requotes too (the effect on the cart view).
     if (code === 'insufficient_stock' || code === 'cart_changed') void this.cart.load();
-    if (code === 'cart_changed') this.requote$.next();
   }
 
   private quoteError(error: unknown): QuoteState {
     const code = apiErrorCode(error);
     if (code === 'empty_cart') this.toCart();
-    if (code === 'shipping_unavailable') return { kind: 'error', message: checkoutErrorMessage(code) };
+    if (code === 'shipping_unavailable' || code === 'unknown_locality')
+      return { kind: 'error', message: checkoutErrorMessage(code) };
     return { kind: 'error', message: 'לא הצלחנו לחשב את מחיר המשלוח.' };
   }
 

@@ -59,6 +59,7 @@ describe('LocalityField', () => {
   });
 
   afterEach(() => {
+    http.verify();
     vi.useRealTimers();
   });
 

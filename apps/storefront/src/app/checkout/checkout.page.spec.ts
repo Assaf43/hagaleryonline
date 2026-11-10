@@ -80,8 +80,8 @@ describe('CheckoutPage', () => {
     fixture.detectChanges();
   }
 
-  /** Fills a valid form up to the quote, flushes the quote and picks full service. */
-  async function fillValid() {
+  /** Fills a valid form up to the quote, flushes the quote and (unless told not to) picks full service. */
+  async function fillValid(pickMethod = true) {
     fill('chk-fullName', 'דנה כהן');
     fill('chk-phone', '050-1234567');
     fill('chk-email', 'dana@example.com');
@@ -92,12 +92,13 @@ describe('CheckoutPage', () => {
     await vi.advanceTimersByTimeAsync(300);
     http.expectOne('/api/shipping/quote').flush(QUOTE);
     await render();
-    q('input[name="method"][value="full_service"]').click();
+    if (pickMethod) q('input[name="method"][value="full_service"]').click();
     q('#chk-acceptTerms').click();
     fixture.detectChanges();
   }
 
   afterEach(() => {
+    http.verify();
     fixture.nativeElement.remove();
     vi.useRealTimers();
   });
@@ -114,8 +115,10 @@ describe('CheckoutPage', () => {
     const headings = Array.from(el().querySelectorAll('h2')).map((h) => h.textContent?.trim());
     expect(headings).toEqual(['פרטים', 'כתובת ומסירה', 'שיטת משלוח', 'סיכום']);
     const terms = q('label[for="chk-acceptTerms"]');
-    expect(terms.textContent?.replace(/\s+/g, ' ').trim()).toBe('קראתי ואני מסכים/ה לתנאי השימוש');
-    expect(el().querySelector('a[href="/terms"]')?.textContent?.trim()).toBe('תנאי השימוש');
+    expect(terms.textContent?.replace(/\s+/g, ' ').trim()).toBe('קראתי ואני מסכים/ה לתנאי השימוש (נפתח בחלון חדש)');
+    const link = q<HTMLAnchorElement>('a[href="/terms"]');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.querySelector('.visually-hidden')?.textContent?.trim()).toBe('(נפתח בחלון חדש)');
     expect(q('button[type="submit"]').textContent?.trim()).toBe('למעבר לתשלום');
   });
 
@@ -279,6 +282,74 @@ describe('CheckoutPage', () => {
     expect(alert.getAttribute('role')).toBe('alert');
     expect(alert.textContent).toContain('חלק מהפריטים כבר לא זמינים בכמות שביקשתם. עדכנו את הסל.');
     expect(alert.querySelector('a')?.getAttribute('href')).toBe('/cart');
+    // The cart reloads, and the quote follows it so the cards and the total are not stale.
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1, 150000)]));
+    await render();
+    await vi.advanceTimersByTimeAsync(300);
+    const requote = http.expectOne('/api/shipping/quote');
+    expect(requote.request.body).toEqual({ localityId: 5000, floor: 3, hasElevator: false });
+    requote.flush(QUOTE);
+    await render();
+    expect(q<HTMLElement>('.summary .total').textContent).toContain('2,050 ₪');
+  });
+
+  it('on cart_changed reloads the cart and the quote and asks to check again', async () => {
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush({ statusCode: 409, code: 'cart_changed' }, { status: 409, statusText: 'Conflict' });
+    await render();
+    expect(q<HTMLElement>('.form-error').textContent).toContain('הסל השתנה בזמן ההזמנה. בדקו את הסיכום ונסו שוב.');
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000), cartLine(2, 1, 50000)]));
+    await render();
+    await vi.advanceTimersByTimeAsync(300);
+    http.expectOne('/api/shipping/quote').flush(QUOTE);
+    await render();
+    expect(q<HTMLElement>('.summary').textContent).toContain('MODEL2');
+    expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+  });
+
+  it('focuses the method group when only the method is missing, and marks the radios invalid', async () => {
+    await setup();
+    await fillValid(false);
+    await submit();
+    http.expectNone('/api/checkout');
+    const group = q<HTMLFieldSetElement>('#chk-method');
+    expect(document.activeElement).toBe(group);
+    expect(group.getAttribute('aria-describedby')).toBe('chk-method-error');
+    expect(q<HTMLElement>('#chk-method-error').textContent).toContain('יש לבחור שיטת משלוח');
+    const radios = Array.from(el().querySelectorAll('input[name="method"]'));
+    expect(radios.map((r) => r.getAttribute('aria-invalid'))).toEqual(['true', 'true']);
+    q('input[name="method"][value="curbside"]').click();
+    fixture.detectChanges();
+    expect(el().querySelector('#chk-method-error')).toBeNull();
+    expect(radios.map((r) => r.getAttribute('aria-invalid'))).toEqual([null, null]);
+  });
+
+  it('sends the customer to /cart when the quote finds the cart empty', async () => {
+    await setup();
+    await pickLocality();
+    fill('chk-floor', '0');
+    await vi.advanceTimersByTimeAsync(300);
+    http
+      .expectOne('/api/shipping/quote')
+      .flush({ statusCode: 409, code: 'empty_cart' }, { status: 409, statusText: 'Conflict' });
+    await render();
+    expect(navigateByUrl).toHaveBeenCalledWith('/cart', { replaceUrl: true });
+  });
+
+  it('says which locality problem the quote found', async () => {
+    await setup();
+    await pickLocality();
+    fill('chk-floor', '0');
+    await vi.advanceTimersByTimeAsync(300);
+    http
+      .expectOne('/api/shipping/quote')
+      .flush({ statusCode: 400, code: 'unknown_locality' }, { status: 400, statusText: 'Bad Request' });
+    await render();
+    expect(q<HTMLElement>('.methods').textContent).toContain('יש לבחור יישוב מהרשימה');
   });
 
   it('sends an emptied cart back to /cart', async () => {

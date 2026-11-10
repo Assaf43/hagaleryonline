@@ -92,6 +92,9 @@ describe('OrderPage', () => {
   }
 
   afterEach(() => {
+    // A paid order refreshes the cart; tests that do not check that load drain it here.
+    http.match('/api/cart');
+    http.verify();
     vi.useRealTimers();
   });
 
@@ -194,6 +197,16 @@ describe('OrderPage', () => {
     const alert = el().querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('הזמנה חדשה יותר');
     expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('announces only the status politely; the retry error is an alert outside that region', async () => {
+    await setup(order('payment_failed', { canRetryPayment: true }));
+    const live = el().querySelector('[aria-live="polite"]')!;
+    expect(live.querySelector('h1')?.textContent).toContain('התשלום לא הושלם');
+    expect(el().querySelectorAll('[aria-live]').length).toBe(1);
+    const alert = el().querySelector('[role="alert"]')!;
+    expect(live.contains(alert)).toBe(false);
+    expect(live.querySelector('button')).toBeNull();
   });
 
   it('says the order was not found for a wrong token', async () => {

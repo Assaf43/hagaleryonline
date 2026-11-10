@@ -1,12 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type {
-  CheckoutAddress,
-  CheckoutContact,
-  CheckoutRequest,
-  CheckoutResponse,
-  ShippingMethod,
-  ShippingOption,
+import {
+  CHECKOUT_EMAIL_PATTERN,
+  CHECKOUT_FIELD_MESSAGES_HE,
+  CHECKOUT_LIMITS,
+  CHECKOUT_PHONE_PATTERN,
+  MAX_FLOOR,
+  type CheckoutAddress,
+  type CheckoutContact,
+  type CheckoutField,
+  type CheckoutRequest,
+  type CheckoutResponse,
+  type ShippingMethod,
+  type ShippingOption,
 } from '@hg/models';
 import type { ComputedLine } from '../cart/cart-lines.js';
 import { computeCartLines } from '../cart/cart-lines.js';
@@ -17,7 +23,6 @@ import { OrderShippingMethod, OrderStatus } from '../generated/prisma/client.js'
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
-import { MAX_FLOOR } from '../shipping/shipping-rules.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
 import { lockCart, lockVariants } from './locks.js';
 import { cartChanged, emptyCart, fieldError, shippingUnavailable, shortage } from './order-errors.js';
@@ -174,23 +179,9 @@ function sameShipment(a: ShipmentItem[], b: ShipmentItem[]): boolean {
 
 // ---------- Validation (spec §5.1) ----------
 
-export const MESSAGES = {
-  'contact.fullName': 'יש למלא שם מלא (2–80 תווים)',
-  'contact.phone': 'יש להזין מספר טלפון נייד תקין, למשל 050-1234567',
-  'contact.email': 'יש להזין כתובת דוא״ל תקינה',
-  'address.localityId': 'יש לבחור יישוב מהרשימה',
-  'address.street': 'יש למלא רחוב (עד 80 תווים)',
-  'address.houseNumber': 'יש למלא מספר בית (עד 10 תווים)',
-  'address.apartment': 'מספר הדירה ארוך מדי (עד 10 תווים)',
-  'address.floor': 'יש להזין קומה בין 0 ל־60',
-  'address.hasElevator': 'יש לציין אם יש מעלית',
-  'address.notes': 'ההערות לשליח ארוכות מדי (עד 500 תווים)',
-  method: 'יש לבחור שיטת משלוח',
-  acceptTerms: 'יש לאשר את תנאי השימוש',
-} as const;
-
-const PHONE = /^05\d{8}$/;
-const EMAIL = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+/** The Hebrew field messages and limits are shared with the storefront's form (`@hg/models`). */
+export const MESSAGES = CHECKOUT_FIELD_MESSAGES_HE;
+const L = CHECKOUT_LIMITS;
 const METHODS: readonly ShippingMethod[] = ['curbside', 'full_service'];
 
 /** Validates and normalizes a checkout request; throws 400 `{ code: 'invalid_field', field, messageHe }` on the first bad field. */
@@ -198,28 +189,29 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   const root = record(body);
   const contact = record(root.contact);
   const address = record(root.address);
-  const fail = (field: keyof typeof MESSAGES) => fieldError(field, MESSAGES[field]);
+  const fail = (field: CheckoutField) => fieldError(field, MESSAGES[field]);
 
   const fullName = text(contact.fullName);
-  if (fullName === null || fullName.length < 2 || fullName.length > 80) throw fail('contact.fullName');
+  if (fullName === null || fullName.length < L.fullNameMin || fullName.length > L.fullNameMax)
+    throw fail('contact.fullName');
   const phone = typeof contact.phone === 'string' ? contact.phone.replace(/[\s-]/g, '') : null;
-  if (phone === null || !PHONE.test(phone)) throw fail('contact.phone');
+  if (phone === null || !CHECKOUT_PHONE_PATTERN.test(phone)) throw fail('contact.phone');
   const email = text(contact.email);
-  if (email === null || email.length > 254 || !EMAIL.test(email)) throw fail('contact.email');
+  if (email === null || email.length > L.emailMax || !CHECKOUT_EMAIL_PATTERN.test(email)) throw fail('contact.email');
 
   const { localityId, floor, hasElevator } = address;
   if (typeof localityId !== 'number' || !Number.isSafeInteger(localityId) || localityId < 1)
     throw fail('address.localityId');
   const street = text(address.street);
-  if (!street || street.length > 80) throw fail('address.street');
+  if (!street || street.length > L.streetMax) throw fail('address.street');
   const houseNumber = text(address.houseNumber);
-  if (!houseNumber || houseNumber.length > 10) throw fail('address.houseNumber');
-  const apartment = optionalText(address.apartment, 10);
+  if (!houseNumber || houseNumber.length > L.houseNumberMax) throw fail('address.houseNumber');
+  const apartment = optionalText(address.apartment, L.apartmentMax);
   if (apartment === undefined) throw fail('address.apartment');
   if (typeof floor !== 'number' || !Number.isInteger(floor) || floor < 0 || floor > MAX_FLOOR)
     throw fail('address.floor');
   if (typeof hasElevator !== 'boolean') throw fail('address.hasElevator');
-  const notes = optionalText(address.notes, 500);
+  const notes = optionalText(address.notes, L.notesMax);
   if (notes === undefined) throw fail('address.notes');
 
   if (typeof root.method !== 'string' || !METHODS.includes(root.method as ShippingMethod)) throw fail('method');
