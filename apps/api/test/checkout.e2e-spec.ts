@@ -20,6 +20,7 @@ import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import { FulfillmentMode, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
 import { sign } from './../src/payments/webhook-signature.js';
+import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, type AdminBrowser } from './admin-session.js';
 
@@ -541,6 +542,10 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     await complete(first.tx, 'success').expect(200);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: first.order.id } })).status).toBe(OrderStatus.PAID);
     expect((await b.cart()).lines.map((l) => l.variantId)).toEqual([few]);
+    // Both orders of the cart could now be paid: the payment is flagged for staff.
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: first.tx } })).rawStatus).toBe(
+      'superseded_paid',
+    );
     await complete(second.tx, 'cancel').expect(200);
   });
 
@@ -586,6 +591,117 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(await stockOf(madeToOrder)).toBe(0);
   });
 
+  it('expectedTotal: a different total is refused with 409 price_changed and nothing is created or reserved', async () => {
+    const b = browser();
+    await b.add(plenty, 1);
+    const orders = await prisma.order.count();
+    const available = await limitOf(plenty);
+    // One unit: 50,000 + delivery 40,000.
+    const res = await b.checkout({ ...checkoutBody(), expectedTotal: 90_000 - 1 }).expect(409);
+    expect(res.body).toEqual({ statusCode: 409, code: 'price_changed', total: 90_000 });
+    expect(await prisma.order.count()).toBe(orders);
+    expect(await limitOf(plenty)).toBe(available);
+    await b.checkout({ ...checkoutBody(), expectedTotal: -5 }).expect(400);
+    await b.checkout({ ...checkoutBody(), expectedTotal: '90000' }).expect(400);
+    const ok = await b.checkout({ ...checkoutBody(), expectedTotal: 90_000 }).expect(201);
+    expect((await orderOfTx(txOf(ok))).total).toBe(90_000);
+  });
+
+  it('a price change after the customer saw the total is caught (price_changed), not charged silently', async () => {
+    const b = browser();
+    await b.add(plenty, 1);
+    await prisma.variant.update({ where: { id: plenty }, data: { price: 55_000 } });
+    await invalidateCatalog();
+    try {
+      const res = await b.checkout({ ...checkoutBody(), expectedTotal: 90_000 }).expect(409);
+      expect(res.body).toMatchObject({ code: 'price_changed', total: 95_000 });
+    } finally {
+      await prisma.variant.update({ where: { id: plenty }, data: { price: 50_000 } });
+      await invalidateCatalog();
+    }
+  });
+
+  it('public writes are rate limited per IP (429 too_many_requests with Retry-After)', async () => {
+    const throttle = app.get(WriteThrottle);
+    throttle.setLimit('checkout', 2);
+    throttle.setLimit('retry', 1);
+    try {
+      const empty = () => http().post('/api/checkout').set('Origin', ORIGIN).send(checkoutBody());
+      await empty().expect(409);
+      await empty().expect(409);
+      const limited = await empty().expect(429);
+      expect(limited.body).toMatchObject({ statusCode: 429, code: 'too_many_requests' });
+      expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+
+      const retry = () => http().post('/api/orders/100001/retry-payment?t=wrong').set('Origin', ORIGIN);
+      await retry().expect(404);
+      await retry().expect(429);
+    } finally {
+      throttle.setLimit('checkout', 100_000);
+      throttle.setLimit('retry', 100_000);
+    }
+  });
+
+  it('a failure webhook followed by a success webhook on the same payment ends paid, stock taken once', async () => {
+    const b = browser();
+    await b.add(plenty, 2);
+    const stock = await stockOf(plenty);
+    const { tx, order } = await placeOrder(b);
+    await signed({ transactionId: tx, status: 'failed', amount: order.total, installments: 1 }).expect(200);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.PAYMENT_FAILED);
+    await signed({ transactionId: tx, status: 'succeeded', amount: order.total, installments: 2 }).expect(200);
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+      status: OrderStatus.PAID,
+      stockShortage: false,
+    });
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: tx } })).status).toBe(
+      PaymentStatus.SUCCEEDED,
+    );
+    expect(await stockOf(plenty)).toBe(stock - 2);
+    // Repeating the success changes nothing.
+    await signed({ transactionId: tx, status: 'succeeded', amount: order.total, installments: 2 }).expect(200);
+    expect(await stockOf(plenty)).toBe(stock - 2);
+  });
+
+  it('when the payment row cannot be recorded the order fails at once and holds no stock', async () => {
+    const b = browser();
+    await b.add(plenty, 1);
+    const available = await limitOf(plenty);
+    const spy = vi.spyOn(prisma.payment, 'create').mockRejectedValueOnce(new Error('db down'));
+    try {
+      const res = await b.checkout(checkoutBody()).expect(502);
+      expect(res.body).toMatchObject({ code: 'payment_unavailable' });
+    } finally {
+      spy.mockRestore();
+    }
+    const order = await prisma.order.findFirstOrThrow({
+      where: { items: { some: { variantId: plenty } } },
+      orderBy: { number: 'desc' },
+    });
+    expect(order.status).toBe(OrderStatus.PAYMENT_FAILED);
+    expect(await limitOf(plenty)).toBe(available);
+  });
+
+  it('a retry and a new checkout of the same cart at once never leave two orders holding stock', async () => {
+    for (let round = 0; round < 4; round++) {
+      const b = browser();
+      await b.add(plenty, 1);
+      const { tx, order } = await placeOrder(b);
+      await complete(tx, 'failure').expect(200);
+      const [retry, again] = await Promise.all([
+        http().post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`).set('Origin', ORIGIN),
+        b.checkout(checkoutBody()),
+      ]);
+      expect([retry.status, again.status]).not.toContain(500);
+      expect(again.status).toBe(201);
+      expect([201, 409]).toContain(retry.status);
+      const pending = await prisma.order.count({
+        where: { cartId: order.cartId!, status: OrderStatus.PENDING_PAYMENT },
+      });
+      expect(pending).toBe(1);
+    }
+  });
+
   it('refuses invalid input, a missing origin and an empty cart', async () => {
     const b = browser();
     await b.add(plenty, 1);
@@ -625,6 +741,25 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     await http().get(`/api/orders/${order.number}`).expect(404);
     await http().get(`/api/orders/999999?t=${order.publicToken}`).expect(404);
     await http().get(`/api/orders/abc?t=${order.publicToken}`).expect(404);
+  });
+
+  it('a product save and a checkout at once both finish (no deadlock)', async () => {
+    const b = browser();
+    await b.add(plenty, 1);
+    const current = (await owner.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    const { id: _id, images: _i, createdAt: _c, updatedAt, relations: _r, ...rest } = current;
+    const input: AdminProductInput = {
+      ...rest,
+      active: false,
+      variants: current.variants.map((v, i) => ({ ...v, widthCm: 150 + i })),
+      expectedUpdatedAt: updatedAt,
+    };
+    const [saved, placed] = await Promise.all([
+      owner.put(`/catalog/products/${productId}`, input),
+      b.checkout(checkoutBody()),
+    ]);
+    expect(saved.status).toBe(200);
+    expect([201, 409]).toContain(placed.status);
   });
 
   it('saving a product cannot remove a variant that was ordered (409); an unordered one can go', async () => {

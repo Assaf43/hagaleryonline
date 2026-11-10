@@ -15,6 +15,8 @@ export const shortage = (variantId: number, available: number) =>
   new CheckoutError(HttpStatus.CONFLICT, 'insufficient_stock', { variantId, available });
 export const emptyCart = () => new CheckoutError(HttpStatus.CONFLICT, 'empty_cart');
 export const cartChanged = () => new CheckoutError(HttpStatus.CONFLICT, 'cart_changed');
+/** The recomputed total differs from the one the customer saw; `total` is the new one (agorot). */
+export const priceChanged = (total: number) => new CheckoutError(HttpStatus.CONFLICT, 'price_changed', { total });
 export const shippingUnavailable = () => new CheckoutError(HttpStatus.SERVICE_UNAVAILABLE, 'shipping_unavailable');
 export const paymentUnavailable = () => new CheckoutError(HttpStatus.BAD_GATEWAY, 'payment_unavailable');
 export const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'not_retryable');

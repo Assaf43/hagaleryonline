@@ -86,6 +86,8 @@ export interface CheckoutRequest {
   address: CheckoutAddress;
   method: ShippingMethod;
   acceptTerms: true;
+  /** Agorot: the total the customer saw. When it differs from the recomputed total the order is not placed (409 `price_changed`). */
+  expectedTotal?: number;
 }
 
 /** Where to send the customer to pay (the provider's page). Also the answer of POST /api/orders/:number/retry-payment. */
@@ -99,6 +101,8 @@ export interface CheckoutResponse {
  * - `insufficient_stock` (409): `variantId` and `available` (the line's new limit, 0 when none is left);
  * - `empty_cart` (409): nothing in the cart can be ordered;
  * - `cart_changed` (409): the cart changed while the order was being placed — try again;
+ * - `price_changed` (409): the total differs from `expectedTotal`; `total` is the new one (agorot);
+ * - `too_many_requests` (429): per-IP limit of a public write; `retryAfterSeconds`;
  * - `shipping_unavailable` (503): the shipping price list is not configured;
  * - `payment_unavailable` (502): the payment provider did not answer;
  * - `not_retryable` (409): the order is paid or still waiting for its payment;
@@ -114,6 +118,8 @@ export type CheckoutErrorCode =
   | 'insufficient_stock'
   | 'empty_cart'
   | 'cart_changed'
+  | 'price_changed'
+  | 'too_many_requests'
   | 'shipping_unavailable'
   | 'payment_unavailable'
   | 'not_retryable'
@@ -214,6 +220,21 @@ export const ORDER_STATUS_LABELS_HE: Record<OrderStatus, string> = {
   expired: 'פג תוקף',
 };
 
+/**
+ * Why an order needs staff: `stock_shortage` (paid, stock was short), `paid_twice` (a second payment succeeded),
+ * `amount_mismatch` (the provider reported another amount), `superseded_paid` (paid although a newer order of the
+ * same cart exists, so the customer may pay twice).
+ */
+export type OrderAttentionReason = 'stock_shortage' | 'paid_twice' | 'amount_mismatch' | 'superseded_paid';
+
+/** Hebrew label of each attention reason, shown next to the order in the admin. */
+export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
+  stock_shortage: 'שולמה אבל המלאי לא הספיק',
+  paid_twice: 'שולמה פעמיים',
+  amount_mismatch: 'סכום התשלום לא תואם להזמנה',
+  superseded_paid: 'שולמה למרות שנוצרה הזמנה חדשה מאותו סל',
+};
+
 /** One row of GET /api/admin/orders. */
 export interface AdminOrderRow {
   number: number;
@@ -225,6 +246,9 @@ export interface AdminOrderRow {
   /** A pending order past its reservation reads as expired. */
   status: OrderStatus;
   itemCount: number;
+  /** Staff must look at it: see `attentionReasons`. */
+  needsAttention: boolean;
+  attentionReasons: OrderAttentionReason[];
 }
 
 export interface AdminOrderPage {
@@ -268,6 +292,8 @@ export interface AdminOrderDetail {
   lines: OrderLine[];
   /** Paid with an in-stock line short of stock: staff must contact the customer. */
   stockShortage: boolean;
+  needsAttention: boolean;
+  attentionReasons: OrderAttentionReason[];
   paymentProvider: string;
   shippingProvider: string;
   payments: AdminOrderPayment[];

@@ -15,6 +15,7 @@ import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import { WriteThrottle } from './write-throttle.js';
 
 /**
  * Checkout, orders and payments (spec §5). The active `PaymentProvider` comes from `PAYMENT_PROVIDER` (default
@@ -29,6 +30,7 @@ import { OrdersService } from './orders.service.js';
     OrdersService,
     OrdersAdminService,
     PaymentsService,
+    WriteThrottle,
     { provide: WebhookDispatcher, useClass: HttpWebhookDispatcher },
     {
       provide: PAYMENT_PROVIDER,

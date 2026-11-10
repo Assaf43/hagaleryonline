@@ -14,6 +14,7 @@ import {
 import type { Request } from 'express';
 import type { SandboxCompleteResponse, SandboxPaymentView } from '@hg/models';
 import { StorefrontOriginGuard } from '../auth/guards.js';
+import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { PaymentsService } from './payments.service.js';
 
 /**
@@ -42,7 +43,8 @@ export class PaymentsController {
   }
 
   @Post('sandbox/:transactionId/complete')
-  @UseGuards(StorefrontOriginGuard)
+  @UseGuards(StorefrontOriginGuard, WriteThrottleGuard)
+  @Throttled('sandbox')
   @HttpCode(HttpStatus.OK)
   complete(@Param('transactionId') transactionId: string, @Body() body: unknown): Promise<SandboxCompleteResponse> {
     return this.payments.completeSandbox(transactionId, body);

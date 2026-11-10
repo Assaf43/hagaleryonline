@@ -14,7 +14,11 @@ export class OrdersAdminController {
   @Get('orders')
   @RequirePermission('orders.view')
   @Header('Cache-Control', 'no-store')
-  list(@Query('status') status: unknown, @Query('page') page: unknown): Promise<AdminOrderPage> {
+  list(
+    @Query('status') status: unknown,
+    @Query('page') page: unknown,
+    @Query('attention') attention: unknown,
+  ): Promise<AdminOrderPage> {
     let filter: OrderStatusFilter | undefined;
     if (status !== undefined && status !== '') {
       if (typeof status !== 'string' || !(ORDER_STATUS_FILTERS as readonly string[]).includes(status))
@@ -26,7 +30,8 @@ export class OrdersAdminController {
       if (typeof page !== 'string' || !/^\d{1,6}$/.test(page) || Number(page) < 1) throw invalid('page');
       pageNumber = Number(page);
     }
-    return this.orders.list(filter, pageNumber);
+    if (attention !== undefined && attention !== '' && attention !== 'true') throw invalid('attention');
+    return this.orders.list(filter, pageNumber, attention === 'true');
   }
 
   @Get('orders/:number')
@@ -39,6 +44,7 @@ export class OrdersAdminController {
   /** The Super Admin holds every permission, so `orders.manage` covers both. */
   @Get('providers')
   @RequirePermission('orders.manage')
+  @Header('Cache-Control', 'no-store')
   providers(): ProvidersStatus {
     return this.orders.providers();
   }

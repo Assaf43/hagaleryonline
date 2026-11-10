@@ -196,6 +196,9 @@ export class ProductsAdminService {
   async saveInTx(tx: Prisma.TransactionClient, id: number | null, input: AdminProductInput, meta: Meta) {
     // Lock the row so two saves of the same product run one after the other.
     if (id) await tx.$queryRaw`SELECT id FROM products WHERE id = ${id} FOR UPDATE`;
+    // Then its variants in ascending id: checkout and payments lock variants in that order, so a save that
+    // rewrites them cannot deadlock with an order being placed (lock order: cart → orders → variants).
+    if (id) await tx.$queryRaw`SELECT id FROM variants WHERE product_id = ${id} ORDER BY id FOR UPDATE`;
     const existing = id ? await tx.product.findUnique({ where: { id }, include: productInclude }) : null;
     if (id && !existing) throw notFound();
     if (existing && existing.updatedAt.toISOString() !== input.expectedUpdatedAt) throw conflict();

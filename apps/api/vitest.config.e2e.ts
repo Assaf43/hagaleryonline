@@ -30,6 +30,10 @@ export default defineConfig({
       // Uploaded test photos go to a temp folder, never to the dev storage.
       MEDIA_DIR: join(tmpdir(), 'hagalery-e2e-media'),
       // Sandbox payments (Phase 4c): the tests sign webhooks themselves with this secret.
+      // Public-write throttles (checkout, retry, sandbox) relaxed; the 429 test lowers one itself.
+      THROTTLE_CHECKOUT_LIMIT: '100000',
+      THROTTLE_RETRY_LIMIT: '100000',
+      THROTTLE_SANDBOX_LIMIT: '100000',
       PAYMENT_PROVIDER: 'sandbox',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
     },

@@ -176,20 +176,22 @@ export class PaymentsService {
           );
           return 'amount_mismatch';
         }
+        // A newer order of the same cart exists (this one was superseded, then paid anyway): both can be paid, so
+        // the payment is flagged for staff (shown as "needs attention"); nothing else changes.
+        const newer = order.cartId
+          ? await tx.order.count({ where: { cartId: order.cartId, number: { gt: order.number } } })
+          : 0;
         await tx.payment.update({
           where: { id: payment.id },
-          data: { status: next, installments, rawStatus: result.rawStatus },
+          data: { status: next, installments, rawStatus: newer > 0 ? 'superseded_paid' : result.rawStatus },
         });
         const ordered = order.items.flatMap((i) => (i.variantId === null ? [] : [{ ...i, variantId: i.variantId }]));
         // The cart is cleared only when this is its latest order: a newer pending order of the same cart (placed
         // after this one was superseded) still needs those lines.
-        if (order.cartId) {
-          const newer = await tx.order.count({ where: { cartId: order.cartId, number: { gt: order.number } } });
-          if (newer === 0)
-            await tx.cartItem.deleteMany({
-              where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
-            });
-        }
+        if (order.cartId && newer === 0)
+          await tx.cartItem.deleteMany({
+            where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
+          });
         const stockShortage = await this.takeStock(tx, ordered);
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);

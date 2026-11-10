@@ -15,7 +15,7 @@ import { CatalogService } from '../catalog/catalog.service.js';
 import { OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { lockOrder, lockVariants } from './locks.js';
+import { lockCart, lockOrder, lockVariants } from './locks.js';
 import { notRetryable, orderNotFound, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 
@@ -118,6 +118,8 @@ export class OrdersService {
     const snapshot = await this.catalog.snapshot();
     const order = await this.prisma.$transaction(
       async (tx) => {
+        // Same order as checkout: cart → order → variants.
+        if (found.cartId) await lockCart(tx, found.cartId);
         await lockOrder(tx, found.id);
         const current = await tx.order.findUniqueOrThrow({
           where: { id: found.id },

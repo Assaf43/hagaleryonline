@@ -25,7 +25,11 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
   const cleanup = () =>
     prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
 
-  const makeOrder = async (key: string, status: OrderStatus, opts: { reservedUntil?: Date; createdAt?: Date } = {}) => {
+  const makeOrder = async (
+    key: string,
+    status: OrderStatus,
+    opts: { reservedUntil?: Date; createdAt?: Date; stockShortage?: boolean; rawStatus?: string } = {},
+  ) => {
     const paid = status === OrderStatus.PAID;
     const order = await prisma.order.create({
       data: {
@@ -52,7 +56,7 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
         shippingProvider: 'manual',
         reservedUntil: opts.reservedUntil ?? new Date(Date.now() + 20 * MINUTE),
         createdAt: opts.createdAt,
-        stockShortage: paid,
+        stockShortage: opts.stockShortage ?? paid,
         items: {
           create: [
             {
@@ -74,6 +78,7 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
               status: paid ? PaymentStatus.SUCCEEDED : PaymentStatus.PENDING,
               installments: paid ? 3 : null,
               amount: 115_000,
+              rawStatus: opts.rawStatus,
             },
           ],
         },
@@ -139,7 +144,10 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
       total: 115_000,
       status: 'paid',
       itemCount: 2,
+      needsAttention: true,
+      attentionReasons: ['stock_shortage'],
     });
+    expect(mine.slice(0, 3).map((i) => i.needsAttention)).toEqual([false, false, false]);
   });
 
   it('filters by status; a pending order past its reservation counts as expired', async () => {
@@ -205,5 +213,58 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
     await viewer.get('/providers').expect(200);
     await seller.get('/providers').expect(403);
     await editor.get('/providers').expect(403);
+    expect((await owner.get('/providers').expect(200)).headers['cache-control']).toBe('no-store');
+  });
+
+  it('marks orders that need staff: stock shortage, paid twice, amount mismatch, superseded payment', async () => {
+    const created = {
+      twice: { rawStatus: 'paid_twice' },
+      mismatch: { rawStatus: 'amount_mismatch' },
+      superseded: { rawStatus: 'superseded_paid' },
+      quiet: { rawStatus: 'ok' },
+    };
+    for (const [key, opts] of Object.entries(created))
+      await makeOrder(key, OrderStatus.PAID, { ...opts, stockShortage: false });
+    const row = async (key: string) =>
+      ((await viewer.get('/orders').expect(200)).body as AdminOrderPage).items.find((i) => i.number === numbers[key]);
+    expect(await row('twice')).toMatchObject({ needsAttention: true, attentionReasons: ['paid_twice'] });
+    expect(await row('mismatch')).toMatchObject({ needsAttention: true, attentionReasons: ['amount_mismatch'] });
+    expect(await row('superseded')).toMatchObject({ needsAttention: true, attentionReasons: ['superseded_paid'] });
+    expect(await row('quiet')).toMatchObject({ needsAttention: false, attentionReasons: [] });
+    const detail = (await viewer.get(`/orders/${numbers.twice}`).expect(200)).body as AdminOrderDetail;
+    expect(detail).toMatchObject({ needsAttention: true, attentionReasons: ['paid_twice'] });
+    expect(detail.payments[0].rawStatus).toBe('paid_twice');
+
+    // The "needs attention" view: only those, together with a status filter.
+    const flagged = (await viewer.get('/orders?attention=true&status=paid').expect(200)).body as AdminOrderPage;
+    const names = flagged.items.map((i) => i.customerName).filter((n) => n.startsWith('ZZ'));
+    expect(names.sort()).toEqual(['ZZ mismatch', 'ZZ paid', 'ZZ superseded', 'ZZ twice']);
+    expect(flagged.items.every((i) => i.needsAttention)).toBe(true);
+    const none = (await viewer.get('/orders?attention=true&status=expired').expect(200)).body as AdminOrderPage;
+    expect(none.items.filter((i) => i.customerName.startsWith('ZZ'))).toEqual([]);
+    await viewer.get('/orders?attention=yes').expect(400);
+  });
+
+  it('pages 30 rows at a time without repeats, and refuses odd input', async () => {
+    for (let i = 0; i < 31; i++)
+      await makeOrder(`bulk${i}`, OrderStatus.PAYMENT_FAILED, { createdAt: new Date(Date.now() - (10 + i) * DAY) });
+    const first = (await viewer.get('/orders').expect(200)).body as AdminOrderPage;
+    const second = (await viewer.get('/orders?page=2').expect(200)).body as AdminOrderPage;
+    expect(first.total).toBeGreaterThanOrEqual(31 + 4);
+    expect(first.items).toHaveLength(30);
+    expect(second.items).toHaveLength(first.total - 30 > 30 ? 30 : first.total - 30);
+    const all = [...first.items, ...second.items].map((i) => i.number);
+    expect(new Set(all).size).toBe(all.length);
+    // Newest first across the page border.
+    const times = [...first.items, ...second.items].map((i) => i.createdAt);
+    expect([...times].sort().reverse()).toEqual(times);
+
+    await viewer.get('/orders?page=abc').expect(400);
+    await viewer.get('/orders?page=1234567').expect(400);
+    await viewer.get('/orders?status=paid&status=expired').expect(400);
+    const beyond = await viewer.get('/orders?page=999999').expect(200);
+    expect((beyond.body as AdminOrderPage).items).toEqual([]);
+    await viewer.get('/orders/100000').expect(404);
+    await viewer.get('/orders/99999').expect(404);
   });
 });

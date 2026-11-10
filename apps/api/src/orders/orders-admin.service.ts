@@ -5,6 +5,7 @@ import type {
   AdminOrderPayment,
   AdminPaymentStatus,
   OrderAddressView,
+  OrderAttentionReason,
   OrderStatus as OrderStatusView,
   OrderView,
   ProvidersStatus,
@@ -63,6 +64,31 @@ export function statusWhere(status: OrderStatusFilter | undefined, now: Date): P
   }
 }
 
+/** Payment `rawStatus` values the API itself writes when a payment needs a person. */
+const ATTENTION_RAW: Record<string, OrderAttentionReason> = {
+  paid_twice: 'paid_twice',
+  amount_mismatch: 'amount_mismatch',
+  superseded_paid: 'superseded_paid',
+};
+
+/** The reasons an order needs staff: a stock shortage or a flagged payment. */
+export function attentionReasons(order: {
+  stockShortage: boolean;
+  payments: { rawStatus: string | null }[];
+}): OrderAttentionReason[] {
+  const reasons = new Set<OrderAttentionReason>();
+  if (order.stockShortage) reasons.add('stock_shortage');
+  for (const p of order.payments) {
+    const reason = p.rawStatus ? ATTENTION_RAW[p.rawStatus] : undefined;
+    if (reason) reasons.add(reason);
+  }
+  return [...reasons];
+}
+
+const ATTENTION_WHERE: Prisma.OrderWhereInput = {
+  OR: [{ stockShortage: true }, { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } }],
+};
+
 /** Read-only orders for the admin (spec §5.5, ADM-13); status changes and refunds are Phase 5. */
 @Injectable()
 export class OrdersAdminService {
@@ -72,9 +98,11 @@ export class OrdersAdminService {
     @Inject(SHIPPING_PROVIDER) private readonly shipping: ShippingProvider,
   ) {}
 
-  async list(status: OrderStatusFilter | undefined, page: number): Promise<AdminOrderPage> {
+  async list(status: OrderStatusFilter | undefined, page: number, attention = false): Promise<AdminOrderPage> {
     const now = new Date();
-    const where = statusWhere(status, now);
+    const where: Prisma.OrderWhereInput = attention
+      ? { AND: [statusWhere(status, now), ATTENTION_WHERE] }
+      : statusWhere(status, now);
     const [total, rows] = await Promise.all([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
@@ -82,12 +110,13 @@ export class OrdersAdminService {
         orderBy: [{ createdAt: 'desc' }, { number: 'desc' }],
         skip: (page - 1) * ADMIN_ORDERS_PAGE_SIZE,
         take: ADMIN_ORDERS_PAGE_SIZE,
-        include: { items: { select: { quantity: true } } },
+        include: { items: { select: { quantity: true } }, payments: { select: { rawStatus: true } } },
       }),
     ]);
     return {
       items: rows.map((o) => {
         const contact = o.contact as { fullName: string; phone: string };
+        const reasons = attentionReasons(o);
         return {
           number: o.number,
           createdAt: o.createdAt.toISOString(),
@@ -96,6 +125,8 @@ export class OrdersAdminService {
           total: o.total,
           status: STATUS_VIEW[effectiveStatus(o, now)],
           itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
+          needsAttention: reasons.length > 0,
+          attentionReasons: reasons,
         };
       }),
       total,
@@ -121,6 +152,7 @@ export class OrdersAdminService {
       rawStatus: p.rawStatus,
       createdAt: p.createdAt.toISOString(),
     }));
+    const reasons = attentionReasons(order);
     return {
       number: order.number,
       status: STATUS_VIEW[effectiveStatus(order)],
@@ -147,6 +179,8 @@ export class OrdersAdminService {
         lineTotal: i.lineTotal,
       })),
       stockShortage: order.stockShortage,
+      needsAttention: reasons.length > 0,
+      attentionReasons: reasons,
       paymentProvider: order.paymentProvider,
       shippingProvider: order.shippingProvider,
       payments,
