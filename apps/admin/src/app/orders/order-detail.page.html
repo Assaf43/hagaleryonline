@@ -1,5 +1,11 @@
 <a class="back" routerLink="/orders">› לכל ההזמנות</a>
 
+<div [attr.aria-busy]="loading()">
+  @if (loading()) {
+    <p class="muted" role="status">טוען את ההזמנה…</p>
+  }
+</div>
+
 @if (error()) {
   <p class="form-error" role="alert">{{ error() }}</p>
 }
@@ -13,11 +19,24 @@
   </header>
   <p class="page-intro">נוצרה ב-{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</p>
 
-  @if (o.stockShortage) {
-    <p class="shortage" role="alert">
-      <strong>נדרש טיפול:</strong>
-      ההזמנה שולמה אחרי שהמלאי כבר לא הספיק לאחד הפריטים. צרו קשר עם הלקוח/ה כדי לתאם אספקה או החזר.
-    </p>
+  @if (o.needsAttention) {
+    <div class="shortage" role="alert">
+      <p>
+        <strong>נדרש טיפול:</strong>
+        @for (r of o.attentionReasons; track r; let last = $last) {
+          {{ attentionLabels[r] }}{{ last ? '.' : ',' }}
+        }
+      </p>
+      @if (o.stockShortage) {
+        <p>ההזמנה שולמה אחרי שהמלאי כבר לא הספיק לאחד הפריטים. צרו קשר עם הלקוח/ה כדי לתאם אספקה או החזר.</p>
+      }
+      @if (o.attentionReasons.includes('paid_twice') || o.attentionReasons.includes('superseded_paid')) {
+        <p>ייתכן שהלקוח/ה שילמו יותר מפעם אחת. בדקו את התשלומים וצרו קשר לתיאום החזר.</p>
+      }
+      @if (o.attentionReasons.includes('amount_mismatch')) {
+        <p>הספק דיווח על סכום שונה מסכום ההזמנה, וההזמנה לא סומנה כשולמה. בדקו מול ספק התשלום.</p>
+      }
+    </div>
   }
 
   <div class="grid">
@@ -107,7 +126,14 @@
             <span class="pay-status" [attr.data-status]="p.status">{{ paymentLabels[p.status] }}</span>
             <span>{{ formatPrice(p.amount) }}</span>
             @if (p.installments) {
-              <span>{{ p.installments }} תשלומים</span>
+              <span>{{ installmentsLabel(p.installments) }}</span>
+            }
+            @if (p.rawStatus && rawStatusLabels[p.rawStatus]; as raw) {
+              <span class="pay-flag">{{ raw }}</span>
+            } @else if (p.rawStatus) {
+              <span class="muted"
+                >סטטוס ספק: <bdi dir="ltr">{{ p.rawStatus }}</bdi></span
+              >
             }
             <span class="muted">
               <bdi dir="ltr">{{ p.provider }}</bdi> · <bdi dir="ltr">{{ p.transactionId }}</bdi> ·

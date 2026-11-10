@@ -55,6 +55,15 @@ p {
   background: var(--color-danger-soft);
 }
 
+.pay-flag {
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-radius: var(--radius-pill);
+}
+
 .shortage {
   margin-block-end: var(--space-4);
   padding: var(--space-3) var(--space-4);
@@ -68,7 +77,23 @@ p {
 // One column on phones and tablets; items next to customer and payments from desktop width.
 .grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
+}
+
+// Grid children and long unbroken text (e-mail, transaction ids) must never push the page wider than the screen.
+.grid > *,
+.panel,
+.line-name,
+.payment {
+  min-inline-size: 0;
+}
+
+.panel,
+.line-name,
+.payment,
+.totals {
+  overflow-wrap: anywhere;
 }
 
 .lines,

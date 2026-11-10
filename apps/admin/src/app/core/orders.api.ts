@@ -8,9 +8,10 @@ import type { AdminOrderDetail, AdminOrderPage, OrderStatus, ProvidersStatus } f
 export class OrdersApi {
   private readonly http = inject(HttpClient);
 
-  list(status: OrderStatus | null, page: number) {
+  list(status: OrderStatus | null, page: number, attention = false) {
     let params = new HttpParams().set('page', page);
     if (status) params = params.set('status', status);
+    if (attention) params = params.set('attention', 'true');
     return firstValueFrom(this.http.get<AdminOrderPage>('/api/admin/orders', { params }));
   }
 

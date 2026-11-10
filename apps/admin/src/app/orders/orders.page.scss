@@ -95,6 +95,32 @@
   background: var(--color-danger-soft);
 }
 
+.attention {
+  justify-self: start;
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  font-weight: 700;
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border: var(--border-width) solid var(--color-danger);
+  border-radius: var(--radius-pill);
+}
+
+.order.flagged {
+  border-color: var(--color-danger);
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
 .empty {
   padding: var(--space-5);
   color: var(--color-text-secondary);
@@ -110,7 +136,7 @@
 
 @media (width >= 768px) {
   .order-link {
-    grid-template-columns: 6rem 9rem minmax(0, 1fr) 6rem 7rem 9rem;
+    grid-template-columns: 6rem 9rem minmax(0, 1fr) 6rem 7rem 9rem auto;
     gap: var(--space-3);
   }
 
