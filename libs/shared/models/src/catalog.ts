@@ -141,6 +141,8 @@ export interface Dimensions {
 }
 
 export interface VariantDetail {
+  /** The id the cart API takes (`POST /api/cart/items`). */
+  id: number;
   sku: string;
   price: number;
   compareAtPrice: number | null;

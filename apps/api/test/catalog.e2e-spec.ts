@@ -81,6 +81,9 @@ describe('Catalog API (e2e)', () => {
     expect(product.optionAxes.map((a) => a.code)).toEqual(['color', 'fabric', 'size', 'chaise-side']);
     expect(product.variants).toHaveLength(3 * 4 * 2 * 2);
     const variant = product.variants.find((v) => v.sku === 'ALBA-300-BG-WV-R')!;
+    // The variant id is what the cart API takes (CRT-01).
+    expect(Number.isInteger(variant.id) && variant.id > 0).toBe(true);
+    expect(new Set(product.variants.map((v) => v.id)).size).toBe(product.variants.length);
     expect(variant.options).toEqual({ color: 'beige', fabric: 'woven', size: '300', 'chaise-side': 'right' });
     expect(variant.dimensions).toMatchObject({ widthCm: 300, depthCm: 95, seatDepthCm: 58, chaiseDepthCm: 165 });
     expect(product.specs.find((s) => s.code === 'style')?.valuesHe).toEqual(

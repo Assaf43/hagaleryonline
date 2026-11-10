@@ -13,17 +13,26 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { filter } from 'rxjs';
-import { LucideChevronDown, LucideChevronLeft, LucideHeart, LucideMenu, LucideX } from '@lucide/angular';
+import {
+  LucideChevronDown,
+  LucideChevronLeft,
+  LucideHeart,
+  LucideMenu,
+  LucideShoppingBag,
+  LucideX,
+} from '@lucide/angular';
 import { ThemeToggle } from '@hg/ui';
+import { MiniCart } from '../cart/mini-cart';
+import { CartStore } from '../core/cart.store';
 import { FavoritesStore } from '../core/favorites.store';
 import { MenuData } from './menu-data';
 import { SearchBox } from './search-box';
 
 /**
  * Sticky header (NAV-01, NAV-02, NAV-03): logo, "by room" menu, furniture types, search, theme switch and
- * favorites (CMP-01).
+ * favorites (CMP-01) and the cart (CRT-01), which opens the mini cart.
  * Desktop opens a mega-menu (room → furniture types); phones get a full-screen drawer built on
- * <dialog>, which traps focus and closes with Escape. The cart joins in Phase 4.
+ * <dialog>, which traps focus and closes with Escape.
  */
 @Component({
   selector: 'hg-site-header',
@@ -36,7 +45,9 @@ import { SearchBox } from './search-box';
     LucideChevronLeft,
     LucideHeart,
     LucideMenu,
+    LucideShoppingBag,
     LucideX,
+    MiniCart,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './site-header.html',
@@ -59,8 +70,16 @@ export class SiteHeader {
   protected readonly favoritesCount = computed(() => (this.hydrated() ? this.favorites.count() : 0));
   protected readonly favoritesLabel = computed(() => `המועדפים שלי (${this.favoritesCount()})`);
 
+  /** The cart belongs to a cookie: the server render never reads it, the browser loads it after hydration. */
+  private readonly cart = inject(CartStore);
+  protected readonly cartCount = computed(() => (this.hydrated() ? this.cart.count() : 0));
+  protected readonly cartLabel = computed(() => `סל הקניות (${this.cartCount()})`);
+
   constructor() {
-    afterNextRender(() => this.hydrated.set(true));
+    afterNextRender(() => {
+      this.hydrated.set(true);
+      void this.cart.load();
+    });
     this.router.events
       .pipe(
         filter((e) => e instanceof NavigationEnd),
@@ -82,6 +101,10 @@ export class SiteHeader {
   protected focusOut(event: FocusEvent) {
     const next = event.relatedTarget as Node | null;
     if (next && !(event.currentTarget as HTMLElement).contains(next)) this.megaOpen.set(false);
+  }
+
+  protected openCart() {
+    this.cart.miniCartOpen.set(true);
   }
 
   protected openDrawer() {

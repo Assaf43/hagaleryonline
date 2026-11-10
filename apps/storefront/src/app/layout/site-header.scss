@@ -312,9 +312,10 @@
   }
 }
 
-// ---------- Favorites link (CMP-01) ----------
+// ---------- Favorites link (CMP-01) and cart button (CRT-01) ----------
 
-.favorites .count {
+.favorites .count,
+.cart .count {
   position: absolute;
   inset-block-start: var(--space-1);
   inset-inline-end: var(--space-1);

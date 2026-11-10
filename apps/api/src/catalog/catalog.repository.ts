@@ -228,6 +228,7 @@ export class CatalogRepository {
       images: p.images.filter((i) => i.colorValueId === null).map((i) => imageRef(this.storage, i)),
       optionAxes,
       variants: p.variants.map((v, index) => ({
+        id: v.id,
         sku: v.sku,
         price: v.price,
         compareAtPrice: v.compareAtPrice,

@@ -32,6 +32,8 @@ describe('App', () => {
     expect(el.querySelector('a[href="/room/living-room"]')?.textContent).toContain('סלון');
     expect(el.querySelector('.nav-desktop a[href="/category/sofas"]')?.textContent).toContain('ספות');
     expect(el.querySelector('main#main')).toBeTruthy();
+    // The header reads the cart once it has rendered in the browser (CRT-01).
+    http.expectOne('/api/cart').flush({ lines: [], itemCount: 0, subtotal: 0, notices: [] });
     http.verify();
   });
 

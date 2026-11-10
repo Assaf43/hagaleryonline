@@ -1,0 +1,127 @@
+// Side dialog from the inline-end edge (the left in RTL), like the mobile menu drawer opens from the start.
+.mini-cart {
+  inline-size: 100%;
+  max-inline-size: 420px;
+  block-size: 100%;
+  max-block-size: none;
+  margin: 0;
+  margin-inline-start: auto;
+  padding: 0;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text);
+
+  &::backdrop {
+    background: var(--color-overlay);
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-h3);
+}
+
+.notices {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-info-soft);
+  font-size: var(--font-small);
+}
+
+.lines {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-4);
+  flex: 1;
+  overflow-y: auto;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding-block: var(--space-4);
+  border-block-end: var(--border-width) solid var(--color-border);
+
+  &.unavailable {
+    color: var(--color-text-secondary);
+  }
+}
+
+.media {
+  aspect-ratio: 1;
+  background: var(--color-surface-alt);
+  border-radius: var(--media-radius);
+  overflow: hidden;
+}
+
+.info {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--font-small);
+}
+
+.model {
+  font-size: var(--font-body);
+  font-weight: 800;
+  text-transform: uppercase;
+  text-decoration: none;
+  justify-self: start;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.name,
+.options,
+.qty {
+  color: var(--color-text-secondary);
+}
+
+.line-price {
+  font-weight: 700;
+}
+
+.foot {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  padding-block-end: calc(var(--space-4) + env(safe-area-inset-bottom));
+  border-block-start: var(--border-width) solid var(--color-border);
+}
+
+.subtotal {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-weight: 700;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-6) var(--space-4);
+  color: var(--color-text-secondary);
+}

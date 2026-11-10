@@ -35,6 +35,8 @@ const axes: OptionAxis[] = [
   },
 ];
 
+let nextVariantId = 1;
+
 function variant(
   sku: string,
   options: Record<string, string>,
@@ -42,6 +44,7 @@ function variant(
   price: number,
 ): VariantDetail {
   return {
+    id: nextVariantId++,
     sku,
     price,
     compareAtPrice: null,

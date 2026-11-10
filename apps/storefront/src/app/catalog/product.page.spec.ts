@@ -8,6 +8,8 @@ import { PageMeta } from '../core/page-meta';
 import { ProductPage } from './product.page';
 import { adjustmentNotice } from './variant-selection';
 
+let nextVariantId = 1;
+
 function variant(
   sku: string,
   options: Record<string, string>,
@@ -16,6 +18,7 @@ function variant(
   compareAtPrice: number | null = null,
 ): VariantDetail {
   return {
+    id: nextVariantId++,
     sku,
     price,
     compareAtPrice,
@@ -109,6 +112,7 @@ function alba(): ProductDetail {
       for (const [fabric, f] of Object.entries(fabrics))
         for (const [side, d] of Object.entries(sides))
           variants.push({
+            id: nextVariantId++,
             sku: `ALBA-${s.width}-${c}-${f}-${d}`,
             price: s.price[fabric as keyof typeof fabrics],
             compareAtPrice: null,
@@ -459,5 +463,35 @@ describe('ProductPage', () => {
     expect(el(h).querySelector('h1')?.textContent).toContain('ספה אחרת');
     expect(rowModels(rows(h)[0])).toEqual(['MODEL30']);
     expect(el(h).textContent).not.toContain('MODEL99');
+  });
+  it('has the add-to-cart block for the chosen variant', async () => {
+    const h = await open('/product/alba?color=green&size=240', three());
+    const add = el(h).querySelector<HTMLButtonElement>('hg-add-to-cart button.add')!;
+    expect(add.textContent?.trim()).toBe('הוספה לסל');
+    expect(add.disabled).toBe(false);
+    add.click();
+    const req = http.expectOne({ method: 'POST', url: '/api/cart/items' });
+    expect(req.request.body).toEqual({ variantId: green240.id, quantity: 1 });
+    req.flush({});
+    expect(el(h).querySelector('hg-sticky-buy-bar')).not.toBeNull();
+  });
+
+  it('an out-of-stock variant shows a disabled "אזל מהמלאי"', async () => {
+    const soldOut = { ...variant('IS0', {}, 100000), inStock: false };
+    for (const v of [variant('X', {}, 100000, 'out_of_stock'), soldOut]) {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([{ path: 'product/:slug', component: ProductPage }], withComponentInputBinding()),
+        ],
+      });
+      http = TestBed.inject(HttpTestingController);
+      const h = await open('/product/alba', product([v], false));
+      const add = el(h).querySelector<HTMLButtonElement>('hg-add-to-cart button.add')!;
+      expect(add.textContent?.trim()).toBe('אזל מהמלאי');
+      expect(add.disabled).toBe(true);
+    }
   });
 });
