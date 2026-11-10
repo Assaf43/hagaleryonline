@@ -186,6 +186,7 @@ model Variant {
   product         Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
   attributeValues VariantAttributeValue[]
   cartItems       CartItem[]
+  orderItems      OrderItem[]
 
   @@index([productId])
   @@map("variants")
@@ -433,7 +434,8 @@ model Cart {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  items CartItem[]
+  items  CartItem[]
+  orders Order[]
 
   @@index([updatedAt])
   @@map("carts")
@@ -515,4 +517,119 @@ model ZoneLocality {
 
   @@id([zoneId, localityId])
   @@map("zone_localities")
+}
+
+/// Order status (spec §5.2). A pending order past `reservedUntil` reads as expired (and is written so on its next update).
+enum OrderStatus {
+  PENDING_PAYMENT @map("pending_payment")
+  PAID            @map("paid")
+  PAYMENT_FAILED  @map("payment_failed")
+  EXPIRED         @map("expired")
+
+  @@map("order_status")
+}
+
+/// Shipping method of an order (spec §4.1).
+enum OrderShippingMethod {
+  CURBSIDE     @map("curbside")
+  FULL_SERVICE @map("full_service")
+
+  @@map("order_shipping_method")
+}
+
+/// Order (spec §5.2, decision 69). Contact, address, lines and prices are a snapshot taken at checkout; money in agorot.
+/// While `PENDING_PAYMENT` and before `reservedUntil` its items hold stock (cart/available-stock.ts).
+model Order {
+  id               String              @id @default(uuid()) @db.Uuid
+  /// Public order number; the sequence starts at 100001 (migration orders).
+  number           Int                 @unique @default(autoincrement())
+  /// Random token of the confirmation URL (/order/:number?t=).
+  publicToken      String              @unique @map("public_token")
+  status           OrderStatus         @default(PENDING_PAYMENT)
+  /// { fullName, phone, email }.
+  contact          Json
+  /// { localityId, localityNameHe, street, houseNumber, apartment, floor, hasElevator, notes }.
+  address          Json
+  method           OrderShippingMethod
+  shippingTotal    Int                 @map("shipping_total")
+  /// The quote's breakdown for the chosen method: [{ labelHe, amount }].
+  shippingLines    Json                @map("shipping_lines")
+  subtotal         Int
+  /// Phase 4d.
+  discount         Int                 @default(0)
+  discountInfo     Json?               @map("discount_info")
+  total            Int
+  /// { fulfillment, leadTimeDays } of the slowest line (CRT-04).
+  deliveryEstimate Json                @map("delivery_estimate")
+  /// Codes of the providers that handle this order (CLAUDE.md §4.2).
+  paymentProvider  String              @map("payment_provider")
+  shippingProvider String              @map("shipping_provider")
+  /// The cart the order came from: its lines are removed when the order is paid.
+  cartId           String?             @map("cart_id") @db.Uuid
+  reservedUntil    DateTime            @map("reserved_until")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  cart     Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+  payments Payment[]
+
+  @@index([status, reservedUntil])
+  @@index([cartId])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+/// One order line: a snapshot of what was bought. The variant link is cleared if the variant is ever deleted.
+model OrderItem {
+  id           Int    @id @default(autoincrement())
+  orderId      String @map("order_id") @db.Uuid
+  variantId    Int?   @map("variant_id")
+  sku          String
+  modelName    String @map("model_name")
+  nameHe       String @map("name_he")
+  /// Hebrew option labels in axis order.
+  optionLabels Json   @map("option_labels")
+  /// Agorot, VAT included: the price actually charged.
+  unitPrice    Int    @map("unit_price")
+  quantity     Int
+  lineTotal    Int    @map("line_total")
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+enum PaymentStatus {
+  PENDING   @map("pending")
+  SUCCEEDED @map("succeeded")
+  FAILED    @map("failed")
+  CANCELLED @map("cancelled")
+
+  @@map("payment_status")
+}
+
+/// One payment attempt (spec §5.3). Never card data (NFR-10): only the provider's transaction id, status and amount.
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  orderId       String        @map("order_id") @db.Uuid
+  /// Code of the provider that handled it.
+  provider      String
+  transactionId String        @unique @map("transaction_id")
+  status        PaymentStatus @default(PENDING)
+  installments  Int?
+  /// Agorot: the amount asked for (the order total).
+  amount        Int
+  /// The provider's own status, or a flag such as `amount_mismatch`.
+  rawStatus     String?       @map("raw_status")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payments")
 }

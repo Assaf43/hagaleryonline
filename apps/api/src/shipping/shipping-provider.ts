@@ -13,11 +13,24 @@ export interface ProviderQuoteRequest extends ShippingQuoteRequest {
   items: ShipmentItem[];
 }
 
-/** The order to ship (Phase 4c fills in more as orders exist). */
+/** The order to ship, from the order's snapshot (spec §5.2): what a carrier needs to deliver it. */
 export interface ShipmentOrder {
   orderId: string;
+  orderNumber: number;
   method: ShippingMethod;
   localityId: number;
+  address: {
+    localityId: number;
+    localityNameHe: string;
+    street: string;
+    houseNumber: string;
+    apartment: string | null;
+    floor: number;
+    hasElevator: boolean;
+    /** Notes to the courier. */
+    notes: string | null;
+  };
+  contact: { fullName: string; phone: string; email: string };
   items: ShipmentItem[];
 }
 

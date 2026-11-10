@@ -29,6 +29,9 @@ export default defineConfig({
       AUTH_IP_ATTEMPT_LIMIT: '1000',
       // Uploaded test photos go to a temp folder, never to the dev storage.
       MEDIA_DIR: join(tmpdir(), 'hagalery-e2e-media'),
+      // Sandbox payments (Phase 4c): the tests sign webhooks themselves with this secret.
+      PAYMENT_PROVIDER: 'sandbox',
+      PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
     },
   },
 });

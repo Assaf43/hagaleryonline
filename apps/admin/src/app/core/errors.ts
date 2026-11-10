@@ -106,6 +106,7 @@ function catalogMessage(body: {
   field?: string;
   value?: string;
   reasons?: ActivationProblem[];
+  messageHe?: string;
 }): string | null {
   switch (body.code) {
     case 'conflict':
@@ -117,7 +118,8 @@ function catalogMessage(body: {
         return IMAGE_PROBLEMS[body.value as ImageUploadProblem];
       return `יש לבדוק את השדה: ${fieldLabel(body.field ?? '')}.`;
     case 'in_use':
-      return 'אי אפשר למחוק, כי יש מוצרים או תמונות שמשתמשים בזה.';
+      // The API names the reason itself when it is not the usual one (a product that was ordered).
+      return body.messageHe ?? 'אי אפשר למחוק, כי יש מוצרים או תמונות שמשתמשים בזה.';
     case 'incomplete':
       return `אי אפשר להציג את המוצר באתר עדיין: ${(body.reasons ?? []).map((r) => ACTIVATION[r]).join(', ')}.`;
     case 'not_found':

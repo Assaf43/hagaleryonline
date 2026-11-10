@@ -1,13 +1,12 @@
 import { HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import type { CartErrorCode, CartLine, CartNotice, CartView, FulfillmentMode, OptionAxis } from '@hg/models';
+import type { CartErrorCode, CartLine, CartNotice, CartView, FulfillmentMode } from '@hg/models';
 import { FULFILLMENT } from '../catalog/catalog.repository.js';
-import type { CatalogSnapshot, SnapshotProduct, SnapshotVariant } from '../catalog/catalog-snapshot.js';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { insertSizeAxis, SIZE_AXIS, sizeAxis } from '../catalog/size-axis.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingService } from '../shipping/shipping.service.js';
 import { availableStock } from './available-stock.js';
+import { computeCartLines, findShown, shipmentItems } from './cart-lines.js';
 import { clampQuantity, deliveryEstimate, lineLimit } from './cart-rules.js';
 import { CART_TTL_MS, hashToken, newToken } from './cart-token.js';
 
@@ -146,33 +145,11 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   async shippableItems(token: string | undefined): Promise<ShipmentItem[]> {
     const cart = await this.resolve(token);
     if (!cart) return [];
-    const [snapshot, items] = await Promise.all([
-      this.catalog.snapshot(),
-      this.prisma.cartItem.findMany({
-        where: { cartId: cart.id },
-        orderBy: [{ addedAt: 'asc' }, { variantId: 'asc' }],
-        select: { variantId: true, quantity: true, variant: { select: { active: true, fulfillment: true } } },
-      }),
-    ]);
-    const stock = await availableStock(
-      this.prisma,
-      items.map((i) => i.variantId),
-    );
-    return items.flatMap((item) => {
-      const { shown, limit } = availability(snapshot, item.variantId, item.variant, stock);
-      if (!shown || limit < 1) return [];
-      return [
-        {
-          variantId: item.variantId,
-          topCategoryId: topCategoryId(snapshot, shown.product),
-          quantity: Math.min(item.quantity, limit),
-        },
-      ];
-    });
+    return shipmentItems(await computeCartLines(this.prisma, cart.id, await this.catalog.snapshot()));
   }
 
   /** The cart of a cookie token, marked as used; an expired cart is deleted and reads as none. */
-  private async resolve(token: string | undefined): Promise<{ id: string } | null> {
+  async resolve(token: string | undefined): Promise<{ id: string } | null> {
     if (!token) return null;
     const now = new Date();
     const cart = await this.prisma.cart.findUnique({
@@ -204,86 +181,51 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
 
   /** Recomputes every line (spec §3.1): price changes, limits (clamped and saved) and visibility. */
   private async buildView(cartId: string, requestNotices: CartNotice[]): Promise<CartView> {
-    const [snapshot, items] = await Promise.all([
-      this.catalog.snapshot(),
-      this.prisma.cartItem.findMany({
-        where: { cartId },
-        orderBy: [{ addedAt: 'asc' }, { variantId: 'asc' }],
-        include: {
-          variant: {
-            select: {
-              price: true,
-              compareAtPrice: true,
-              fulfillment: true,
-              leadTimeDays: true,
-              active: true,
-              product: { select: { slug: true, modelName: true, nameHe: true } },
-            },
-          },
-        },
-      }),
-    ]);
-    const stock = await availableStock(
-      this.prisma,
-      items.map((i) => i.variantId),
-    );
+    const computed = await computeCartLines(this.prisma, cartId, await this.catalog.snapshot());
 
     const lines: CartLine[] = [];
-    const shippable: ShipmentItem[] = [];
     const notices: CartNotice[] = [...requestNotices];
-    for (const item of items) {
-      const v = item.variant;
-      const fulfillment = FULFILLMENT[v.fulfillment];
-      const { shown, limit } = availability(snapshot, item.variantId, v, stock);
-      const available = limit >= 1;
-      let quantity = item.quantity;
+    for (const line of computed) {
+      const { variantId, available, shown, limit, fulfillment } = line;
+      // An unavailable line keeps its saved quantity (shown, but left out of totals and checkout).
+      const quantity = available ? line.quantity : line.storedQuantity;
 
       if (!available) {
         // Shown but nothing left to sell → sold out; no longer shown → unavailable.
         notices.push({
-          variantId: item.variantId,
+          variantId,
           kind: 'unavailable',
-          messageHe: shown ? `${v.product.modelName} אזל מהמלאי` : `${v.product.modelName} לא זמין יותר`,
+          messageHe: shown ? `${line.modelName} אזל מהמלאי` : `${line.modelName} לא זמין יותר`,
         });
       } else {
         const fix: { quantity?: number; unitPriceAtAdd?: number } = {};
-        if (quantity > limit) {
-          quantity = fix.quantity = limit;
-          notices.push(clampedNotice(item.variantId, fulfillment, limit));
+        if (line.storedQuantity > limit) {
+          fix.quantity = limit;
+          notices.push(clampedNotice(variantId, fulfillment, limit));
         }
-        if (v.price !== item.unitPriceAtAdd) {
+        if (line.unitPrice !== line.unitPriceAtAdd) {
           // Shown once: from now on the new price is the line's reference price.
-          fix.unitPriceAtAdd = v.price;
-          notices.push({
-            variantId: item.variantId,
-            kind: 'price_changed',
-            messageHe: `המחיר של ${v.product.modelName} עודכן`,
-          });
+          fix.unitPriceAtAdd = line.unitPrice;
+          notices.push({ variantId, kind: 'price_changed', messageHe: `המחיר של ${line.modelName} עודכן` });
         }
         if (Object.keys(fix).length > 0)
-          await this.prisma.cartItem.update({
-            where: { cartId_variantId: { cartId, variantId: item.variantId } },
-            data: fix,
-          });
+          await this.prisma.cartItem.update({ where: { cartId_variantId: { cartId, variantId } }, data: fix });
       }
 
-      if (available && shown)
-        shippable.push({ variantId: item.variantId, topCategoryId: topCategoryId(snapshot, shown.product), quantity });
-
       lines.push({
-        variantId: item.variantId,
-        productSlug: v.product.slug,
-        modelName: v.product.modelName,
-        nameHe: v.product.nameHe,
-        optionLabels: shown ? optionLabels(snapshot, shown.product, shown.variant) : [],
-        image: shown ? lineImage(shown.product, shown.variant) : null,
-        unitPrice: v.price,
-        compareAtPrice: v.compareAtPrice,
+        variantId,
+        productSlug: line.productSlug,
+        modelName: line.modelName,
+        nameHe: line.nameHe,
+        optionLabels: line.optionLabels,
+        image: line.image,
+        unitPrice: line.unitPrice,
+        compareAtPrice: line.compareAtPrice,
         quantity,
-        lineTotal: v.price * quantity,
+        lineTotal: line.unitPrice * quantity,
         maxQuantity: limit,
         fulfillment,
-        leadTimeDays: v.leadTimeDays,
+        leadTimeDays: line.leadTimeDays,
         available,
         // Shown but nothing left to sell → sold out; no longer shown → hidden.
         unavailableReason: available ? null : shown ? 'sold_out' : 'hidden',
@@ -297,15 +239,10 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       subtotal: counted.reduce((sum, l) => sum + l.lineTotal, 0),
       deliveryEstimate: deliveryEstimate(lines),
       notices,
-      shippingFrom: await this.shipping.shippingFrom(shippable),
+      shippingFrom: await this.shipping.shippingFrom(shipmentItems(computed)),
       discount: null,
     };
   }
-}
-
-/** The top-level category of a product: shipping rates are per top-level category (spec §4.1). */
-function topCategoryId(snapshot: CatalogSnapshot, product: SnapshotProduct): number {
-  return snapshot.categoriesById.get(product.categoryId)?.pathIds[0] ?? product.categoryId;
 }
 
 function staleBefore(now: Date): Date {
@@ -318,67 +255,4 @@ function clampedNotice(variantId: number, fulfillment: FulfillmentMode, limit: n
     kind: 'quantity_clamped',
     messageHe: fulfillment === 'in_stock' ? `נשארו רק ${limit} במלאי` : `אפשר להזמין עד ${limit} יחידות`,
   };
-}
-
-/**
- * Whether a cart line can be bought now: the variant and product as shown on the site (none when the variant is
- * inactive or no longer in the active-only snapshot), and how many units the line may hold (0 when not shown).
- */
-function availability(
-  snapshot: CatalogSnapshot,
-  variantId: number,
-  variant: { active: boolean; fulfillment: keyof typeof FULFILLMENT },
-  stock: Map<number, number>,
-): { shown: ReturnType<typeof findShown>; limit: number } {
-  const shown = variant.active ? findShown(snapshot, variantId) : undefined;
-  const limit = shown ? lineLimit(FULFILLMENT[variant.fulfillment], stock.get(variantId) ?? 0) : 0;
-  return { shown, limit };
-}
-
-/** The variant and its product when both are shown on the site (in the active-only snapshot). */
-function findShown(
-  snapshot: CatalogSnapshot,
-  variantId: number,
-): { product: SnapshotProduct; variant: SnapshotVariant } | undefined {
-  for (const product of snapshot.products) {
-    const variant = product.variants.find((v) => v.id === variantId);
-    if (variant) return { product, variant };
-  }
-  return undefined;
-}
-
-/**
- * Hebrew labels of the variant's options in the product page's axis order: variant attributes in
- * attribute order, with the synthetic size axis placed like the product page does (size-axis.ts).
- */
-function optionLabels(snapshot: CatalogSnapshot, product: SnapshotProduct, variant: SnapshotVariant): string[] {
-  const order = (code: string) => snapshot.attributes.get(code)?.sortOrder ?? Number.MAX_SAFE_INTEGER;
-  const codes = [...new Set(product.variants.flatMap((v) => [...v.options.keys()]))].sort(
-    (a, b) => order(a) - order(b),
-  );
-  const size = codes.includes(SIZE_AXIS) ? null : sizeAxis(product.variants);
-  const axes: OptionAxis[] = codes.map((code) => ({ code, nameHe: '', values: [] }));
-  const ordered = size
-    ? insertSizeAxis(axes, size.axis, { fabricOrder: snapshot.attributes.get('fabric')?.sortOrder, axisOrder: order })
-    : axes;
-
-  const labels: string[] = [];
-  for (const { code } of ordered) {
-    if (size && code === SIZE_AXIS) {
-      const sizeCode = size.codes[product.variants.indexOf(variant)];
-      const label = size.axis.values.find((v) => v.code === sizeCode)?.labelHe;
-      if (label) labels.push(label);
-      continue;
-    }
-    const value = variant.options.get(code);
-    const label = value && snapshot.attributes.get(code)?.values.get(value)?.labelHe;
-    if (label) labels.push(label);
-  }
-  return labels;
-}
-
-/** The photo of the variant's color, else the product's main photo (decision 62). */
-function lineImage(product: SnapshotProduct, variant: SnapshotVariant) {
-  const color = variant.options.get('color');
-  return (color && product.colorImages.get(color)) || product.image;
 }

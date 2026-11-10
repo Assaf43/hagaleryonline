@@ -17,7 +17,7 @@ import { imageFiles, thumbUrl, toAdminImage } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { changedFields } from './catalog-input.js';
-import { conflict, duplicate, incomplete, invalid, notFound } from './catalog-errors.js';
+import { conflict, duplicate, hasOrders, incomplete, invalid, notFound } from './catalog-errors.js';
 
 export const PRODUCTS_PAGE_SIZE = 30;
 
@@ -154,6 +154,10 @@ export class ProductsAdminService {
     const row = await this.prisma.product.findUnique({ where: { id }, include: productInclude });
     if (!row) throw notFound();
     await this.prisma.$transaction(async (tx) => {
+      // An ordered product stays: orders link to its variants (CHK-09). Staff hide it instead. The variant rows are
+      // locked first (like checkout does), so an order placed at this moment is either counted or never created.
+      await tx.$queryRaw`SELECT id FROM variants WHERE product_id = ${id} ORDER BY id FOR UPDATE`;
+      if ((await tx.orderItem.count({ where: { variant: { productId: id } } })) > 0) throw hasOrders();
       await tx.product.delete({ where: { id } });
       await this.audit.record(
         {
