@@ -41,6 +41,10 @@ const ACTIONS: Record<string, string> = {
   'synonym.create': 'הוספת מילים נרדפות',
   'synonym.update': 'עדכון מילים נרדפות',
   'synonym.delete': 'מחיקת מילים נרדפות',
+  'shipping.rates.update': 'עדכון מחירון המשלוחים',
+  'shipping_zone.create': 'יצירת אזור משלוח',
+  'shipping_zone.update': 'עדכון אזור משלוח',
+  'shipping_zone.delete': 'מחיקת אזור משלוח',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -52,10 +56,12 @@ const ENTITIES: Record<string, string> = {
   attribute: 'רשימה',
   attribute_value: 'ערך',
   synonym: 'מילים נרדפות',
+  shipping: 'מחירון משלוחים',
+  shipping_zone: 'אזור משלוח',
 };
 
 /** Prices are stored in agorot; show them in shekels. */
-const MONEY = new Set(['price', 'compareAtPrice']);
+const MONEY = new Set(['price', 'compareAtPrice', 'surcharge']);
 const ILS = new Intl.NumberFormat('he-IL', {
   style: 'currency',
   currency: 'ILS',
@@ -65,6 +71,10 @@ const ILS = new Intl.NumberFormat('he-IL', {
 
 const FIELDS: Record<string, string> = {
   name: 'שם',
+  rates: 'מחירון',
+  settings: 'הגדרות משלוח',
+  surcharge: 'תוספת',
+  localityIds: 'יישובים (קודי למ״ס)',
   email: 'אימייל',
   status: 'מצב',
   template: 'תבנית',

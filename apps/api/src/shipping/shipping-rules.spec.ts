@@ -106,6 +106,13 @@ describe('quoteShipping (spec §4.1, SHP-01–03)', () => {
     expect(method(options, 'full_service').total).toBe(30_000 + 5_000 + 20_000 + 25_000);
   });
 
+  it('labels the zone line without a colon when the zone has no name', () => {
+    const options = quoteShipping([unit(30_000)], SETTINGS, { ...GROUND, zoneSurcharge: 5_000 });
+    expect(method(options, 'curbside').lines).toContainEqual({ labelHe: 'תוספת אזור', amount: 5_000 });
+    const named = quoteShipping([unit(30_000)], SETTINGS, { ...GROUND, zoneSurcharge: 5_000, zoneName: '  ' });
+    expect(method(named, 'curbside').lines).toContainEqual({ labelHe: 'תוספת אזור', amount: 5_000 });
+  });
+
   it('totals always equal the sum of the lines', () => {
     const options = quoteShipping([unit(30_000, 20_000), unit(12_345, 999), unit(7_777, 1)], SETTINGS, {
       floor: 4,

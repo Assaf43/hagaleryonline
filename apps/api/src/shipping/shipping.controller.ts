@@ -4,10 +4,8 @@ import type { ShippingQuote, ShippingQuoteRequest } from '@hg/models';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { cartTokenOf } from '../cart/cart-token.js';
 import { CartService } from '../cart/cart.service.js';
+import { MAX_FLOOR } from './shipping-admin-input.js';
 import { ShippingError, ShippingService } from './shipping.service.js';
-
-/** Highest floor a quote accepts. */
-const MAX_FLOOR = 60;
 
 /** Public shipping API (spec §4.3). POSTs go through StorefrontOriginGuard (storefront origin only). */
 @Controller('shipping')

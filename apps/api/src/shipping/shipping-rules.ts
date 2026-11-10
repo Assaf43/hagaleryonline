@@ -35,7 +35,9 @@ export const LABEL_DELIVERY = 'הובלה';
 export const LABEL_DISCOUNT = 'הנחה על פריטים נוספים';
 export const LABEL_ASSEMBLY = 'הרכבה';
 export const LABEL_FLOOR = 'תוספת קומה ללא מעלית';
-export const zoneLabel = (zone: string) => `תוספת אזור: ${zone}`;
+export const LABEL_ZONE = 'תוספת אזור';
+/** "תוספת אזור: אילת והערבה"; without a zone name just "תוספת אזור". */
+export const zoneLabel = (zone?: string) => (zone?.trim() ? `${LABEL_ZONE}: ${zone.trim()}` : LABEL_ZONE);
 
 /**
  * One unit per piece: quantity N of a variant is N units. Each uses its top-level category's rate, else the
@@ -62,7 +64,7 @@ export function quoteShipping(
 ): ShippingOption[] {
   const delivery = deliveryLines(units, settings);
   const zone: ShippingQuoteLine[] =
-    ctx.zoneSurcharge > 0 ? [{ labelHe: zoneLabel(ctx.zoneName ?? ''), amount: ctx.zoneSurcharge }] : [];
+    ctx.zoneSurcharge > 0 ? [{ labelHe: zoneLabel(ctx.zoneName), amount: ctx.zoneSurcharge }] : [];
 
   const assembly = units.reduce((sum, u) => sum + u.assemblyPrice, 0);
   const floors =

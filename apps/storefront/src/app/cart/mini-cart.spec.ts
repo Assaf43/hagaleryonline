@@ -58,6 +58,18 @@ describe('MiniCart', () => {
     document.body.innerHTML = '';
   });
 
+  it('shows the lowest shipping price under the subtotal once the cart has one', async () => {
+    const without = await setup();
+    expect(without.dialog.querySelector('.shipping-from')).toBeNull();
+    document.body.innerHTML = '';
+    TestBed.resetTestingModule();
+    const view = cartView([cartLine(1, 2, 150000)]);
+    view.shippingFrom = 25000;
+    const { dialog } = await setup(view);
+    const line = dialog.querySelector('.foot .subtotal + .shipping-from');
+    expect(line?.textContent?.replace(/\s+/g, ' ').trim()).toBe('משלוח החל מ־250 ₪');
+  });
+
   it('opens with the title, the lines and the subtotal', async () => {
     const { dialog } = await setup();
     expect(dialog.hasAttribute('open')).toBe(true);

@@ -11,7 +11,11 @@ export class ShippingError extends HttpException {
 }
 
 /** Used until staff save the settings in the admin. */
-const DEFAULT_SETTINGS: ShippingPriceSettings = { additionalItemPercent: 50, floorSurcharge: 0, floorSurchargeFrom: 2 };
+export const DEFAULT_SETTINGS: ShippingPriceSettings = {
+  additionalItemPercent: 50,
+  floorSurcharge: 0,
+  floorSurchargeFrom: 2,
+};
 
 /** The price list managed in the admin (spec §4.1, §4.4): rates, settings and remote zones. */
 @Injectable()

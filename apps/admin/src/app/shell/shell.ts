@@ -17,6 +17,7 @@ import {
   LucideMenu,
   LucideScrollText,
   LucideSofa,
+  LucideTruck,
   LucideUserRound,
   LucideUsers,
 } from '@lucide/angular';
@@ -46,6 +47,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
     LucideMenu,
     LucideScrollText,
     LucideSofa,
+    LucideTruck,
     LucideUserRound,
     LucideUsers,
   ],

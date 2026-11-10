@@ -468,7 +468,8 @@ model Locality {
 }
 
 /// Shipping price list (spec §4.1, SHP-01): one row per top-level category, plus the default row
-/// (`categoryId` null) for categories without one. Amounts in agorot.
+/// (`categoryId` null) for categories without one. Amounts in agorot. Exactly one default row is enforced by a
+/// partial unique index (migration shipping_single_default_rate).
 model ShippingRate {
   id            Int  @id @default(autoincrement())
   categoryId    Int? @unique @map("category_id")

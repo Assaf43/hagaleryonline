@@ -188,7 +188,8 @@ describe('CartPage', () => {
     view.shippingFrom = 25000;
     view.discount = { labelHe: 'קופון', amount: 10000, source: 'coupon', code: 'X' };
     await setup(view);
-    expect(el().querySelector('.shipping-row')?.textContent).toContain('250 ₪');
+    const shipping = el().querySelector('.shipping-row')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(shipping).toBe('משלוח החל מ־250 ₪');
     expect(el().querySelector('.discount-row')?.textContent).toContain('100 ₪');
   });
 

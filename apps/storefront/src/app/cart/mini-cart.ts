@@ -51,6 +51,11 @@ export class MiniCart {
   /** Same rule as the cart page: checkout needs at least one available unit. */
   protected readonly canCheckout = computed(() => (this.cart.view()?.itemCount ?? 0) > 0);
   protected readonly subtotal = computed(() => formatPrice(this.cart.view()?.subtotal ?? 0));
+  /** "משלוח החל מ־X ₪" under the subtotal (CRT-05); null until the cart has a shipping price. */
+  protected readonly shippingFrom = computed(() => {
+    const from = this.cart.view()?.shippingFrom;
+    return from === null || from === undefined ? null : formatPrice(from);
+  });
   protected readonly price = formatPrice;
 
   /** The element focused before opening, to hand focus back. */

@@ -62,6 +62,12 @@ export const routes: Routes = [
         title: 'מבנה הקטלוג',
       },
       {
+        path: 'shipping',
+        canMatch: [hasPermission('shipping.manage')],
+        loadComponent: () => import('./shipping/shipping.page').then((m) => m.ShippingPage),
+        title: 'משלוחים',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),

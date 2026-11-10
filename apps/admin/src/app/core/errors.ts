@@ -1,5 +1,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import type { ActivationProblem, AuthErrorCode, CatalogErrorCode, ImageUploadProblem } from '@hg/models';
+import type {
+  ActivationProblem,
+  AuthErrorCode,
+  CatalogErrorCode,
+  ImageUploadProblem,
+  ShippingAdminErrorCode,
+} from '@hg/models';
 
 const MESSAGES: Record<AuthErrorCode, string> = {
   invalid_credentials: 'האימייל או הסיסמה שגויים.',
@@ -62,6 +68,15 @@ const FIELDS: Record<string, string> = {
   kind: 'סוג תמונה',
   altHe: 'תיאור התמונה',
   ids: 'סדר התמונות',
+  rates: 'מחירון המשלוחים',
+  deliveryPrice: 'מחיר הובלה',
+  assemblyPrice: 'מחיר הרכבה',
+  additionalItemPercent: 'אחוז לכל פריט נוסף',
+  floorSurcharge: 'תוספת לכל קומה',
+  floorSurchargeFrom: 'החל מקומה',
+  name: 'שם',
+  surcharge: 'תוספת',
+  localityIds: 'יישובים',
 };
 
 /** Why a photo upload was refused (Phase 2d). */
@@ -79,9 +94,9 @@ const ACTIVATION: Record<ActivationProblem, string> = {
   category_hidden: 'הקטגוריה מוסתרת',
 };
 
-/** "variants.3.price" → "מחיר בשורה 4"; "slug" → "כתובת באתר". */
+/** "variants.3.price" → "מחיר בשורה 4" (also "rates.<row>.<field>"); "slug" → "כתובת באתר". */
 export function fieldLabel(field: string): string {
-  const variant = /^variants\.(\d+)\.(\w+)$/.exec(field);
+  const variant = /^(?:variants|rates)\.(\d+)\.(\w+)$/.exec(field);
   if (variant) return `${FIELDS[variant[2]] ?? variant[2]} בשורה ${Number(variant[1]) + 1}`;
   return FIELDS[field] ?? field;
 }
@@ -112,6 +127,14 @@ function catalogMessage(body: {
   }
 }
 
+/** 409 of the shipping zones: a locality is in one zone only (spec §4.1). */
+function shippingMessage(body: { code?: ShippingAdminErrorCode; localityNameHe?: string; zoneName?: string }) {
+  if (body.code !== 'locality_taken') return null;
+  return body.localityNameHe && body.zoneName
+    ? `היישוב ${body.localityNameHe} כבר שייך לאזור "${body.zoneName}". הסירו אותו משם קודם.`
+    : 'אחד היישובים כבר שייך לאזור אחר. טענו את המסך מחדש ונסו שוב.';
+}
+
 /** Why a row of an Excel import was refused by the product checks (short, for the issues table). */
 export function catalogIssueText(code: CatalogErrorCode): string {
   const text: Record<CatalogErrorCode, string> = {
@@ -130,6 +153,8 @@ export function errorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'משהו השתבש. נסו שוב.';
   if (error.status === 0) return 'אין חיבור לשרת. בדקו את החיבור לאינטרנט.';
   if (error.status === 413) return IMAGE_PROBLEMS.too_large;
+  const shipping = shippingMessage(error.error ?? {});
+  if (shipping) return shipping;
   const catalog = catalogMessage(error.error ?? {});
   if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };

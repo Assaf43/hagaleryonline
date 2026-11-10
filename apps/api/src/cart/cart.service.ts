@@ -159,8 +159,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       items.map((i) => i.variantId),
     );
     return items.flatMap((item) => {
-      const shown = item.variant.active ? findShown(snapshot, item.variantId) : undefined;
-      const limit = shown ? lineLimit(FULFILLMENT[item.variant.fulfillment], stock.get(item.variantId) ?? 0) : 0;
+      const { shown, limit } = availability(snapshot, item.variantId, item.variant, stock);
       if (!shown || limit < 1) return [];
       return [
         {
@@ -235,8 +234,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     for (const item of items) {
       const v = item.variant;
       const fulfillment = FULFILLMENT[v.fulfillment];
-      const shown = v.active ? findShown(snapshot, item.variantId) : undefined;
-      const limit = shown ? lineLimit(fulfillment, stock.get(item.variantId) ?? 0) : 0;
+      const { shown, limit } = availability(snapshot, item.variantId, v, stock);
       const available = limit >= 1;
       let quantity = item.quantity;
 
@@ -320,6 +318,21 @@ function clampedNotice(variantId: number, fulfillment: FulfillmentMode, limit: n
     kind: 'quantity_clamped',
     messageHe: fulfillment === 'in_stock' ? `נשארו רק ${limit} במלאי` : `אפשר להזמין עד ${limit} יחידות`,
   };
+}
+
+/**
+ * Whether a cart line can be bought now: the variant and product as shown on the site (none when the variant is
+ * inactive or no longer in the active-only snapshot), and how many units the line may hold (0 when not shown).
+ */
+function availability(
+  snapshot: CatalogSnapshot,
+  variantId: number,
+  variant: { active: boolean; fulfillment: keyof typeof FULFILLMENT },
+  stock: Map<number, number>,
+): { shown: ReturnType<typeof findShown>; limit: number } {
+  const shown = variant.active ? findShown(snapshot, variantId) : undefined;
+  const limit = shown ? lineLimit(FULFILLMENT[variant.fulfillment], stock.get(variantId) ?? 0) : 0;
+  return { shown, limit };
 }
 
 /** The variant and its product when both are shown on the site (in the active-only snapshot). */
