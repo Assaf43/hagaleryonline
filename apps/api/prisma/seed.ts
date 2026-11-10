@@ -5,6 +5,7 @@ import { config } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { AttributeScope, FulfillmentMode, ImageKind, PrismaClient } from '../src/generated/prisma/client.js';
 import { buildProductSearchText } from '../src/catalog/search/search-text.js';
+import { seedLocalities } from './seed-localities.js';
 import {
   ATTRIBUTES,
   CARE_HE,
@@ -68,6 +69,9 @@ const SKU_CODE: Record<string, string> = {
 const DAY = 24 * 60 * 60 * 1000;
 
 async function main() {
+  // Localities are reference data: never truncated, only upserted.
+  await seedLocalities(prisma);
+
   await prisma.$executeRawUnsafe(
     'TRUNCATE products, categories, rooms, attributes, search_synonyms RESTART IDENTITY CASCADE',
   );

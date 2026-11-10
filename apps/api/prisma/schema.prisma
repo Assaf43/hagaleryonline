@@ -453,3 +453,12 @@ model CartItem {
   @@index([variantId])
   @@map("cart_items")
 }
+
+/// Israeli localities (CBS list), reference data also used in production. `id` is the CBS locality code.
+model Locality {
+  id     Int    @id
+  nameHe String @map("name_he")
+
+  @@index([nameHe])
+  @@map("localities")
+}
