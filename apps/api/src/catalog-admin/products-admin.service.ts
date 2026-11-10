@@ -17,7 +17,7 @@ import { imageFiles, thumbUrl, toAdminImage } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { changedFields } from './catalog-input.js';
-import { conflict, duplicate, incomplete, invalid, notFound } from './catalog-errors.js';
+import { conflict, duplicate, hasOrders, incomplete, invalid, notFound, variantHasOrders } from './catalog-errors.js';
 
 export const PRODUCTS_PAGE_SIZE = 30;
 
@@ -154,6 +154,10 @@ export class ProductsAdminService {
     const row = await this.prisma.product.findUnique({ where: { id }, include: productInclude });
     if (!row) throw notFound();
     await this.prisma.$transaction(async (tx) => {
+      // An ordered product stays: orders link to its variants (CHK-09). Staff hide it instead. The variant rows are
+      // locked first (like checkout does), so an order placed at this moment is either counted or never created.
+      await tx.$queryRaw`SELECT id FROM variants WHERE product_id = ${id} ORDER BY id FOR UPDATE`;
+      if ((await tx.orderItem.count({ where: { variant: { productId: id } } })) > 0) throw hasOrders();
       await tx.product.delete({ where: { id } });
       await this.audit.record(
         {
@@ -192,6 +196,9 @@ export class ProductsAdminService {
   async saveInTx(tx: Prisma.TransactionClient, id: number | null, input: AdminProductInput, meta: Meta) {
     // Lock the row so two saves of the same product run one after the other.
     if (id) await tx.$queryRaw`SELECT id FROM products WHERE id = ${id} FOR UPDATE`;
+    // Then its variants in ascending id: checkout and payments lock variants in that order, so a save that
+    // rewrites them cannot deadlock with an order being placed (lock order: cart → orders → variants).
+    if (id) await tx.$queryRaw`SELECT id FROM variants WHERE product_id = ${id} ORDER BY id FOR UPDATE`;
     const existing = id ? await tx.product.findUnique({ where: { id }, include: productInclude }) : null;
     if (id && !existing) throw notFound();
     if (existing && existing.updatedAt.toISOString() !== input.expectedUpdatedAt) throw conflict();
@@ -283,6 +290,13 @@ export class ProductsAdminService {
     // Variants: removed first, so a SKU can move to another row in the same save.
     const kept = new Set(input.variants.map((v) => v.id).filter((v) => v !== undefined));
     const removed = [...existingVariants.values()].filter((v) => !kept.has(v.id));
+    if (removed.length > 0) {
+      // An ordered variant stays (CHK-09): staff turn it off instead. Locked first, like remove() and checkout.
+      const ids = removed.map((v) => v.id).sort((a, b) => a - b);
+      await tx.$queryRaw`SELECT id FROM variants WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+      const ordered = await tx.orderItem.findFirst({ where: { variantId: { in: ids } }, select: { variantId: true } });
+      if (ordered) throw variantHasOrders(existing!.variants.findIndex((v) => v.id === ordered.variantId));
+    }
     await tx.variant.deleteMany({ where: { id: { in: removed.map((v) => v.id) } } });
     for (const v of removed) {
       await this.audit.record(

@@ -4,7 +4,8 @@ import { AppModule } from './app.module.js';
 import { configureApp } from './configure-app.js';
 
 async function bootstrap() {
-  const app = configureApp(await NestFactory.create<NestExpressApplication>(AppModule));
+  // rawBody: the payment webhook verifies its signature over the exact bytes received (spec §5.4).
+  const app = configureApp(await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true }));
   app.enableShutdownHooks();
   await app.listen(process.env.API_PORT ?? 3000);
 }

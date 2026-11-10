@@ -7,12 +7,15 @@ import {
 import express from 'express';
 import { join } from 'node:path';
 import { registerSeoRoutes } from './seo-routes';
+import { securityHeaders } from './security-headers';
 import { readServerEnv } from './server-env';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+
+app.use(securityHeaders);
 
 /**
  * sitemap.xml and robots.txt (NFR-06), before the static files and the Angular handler.

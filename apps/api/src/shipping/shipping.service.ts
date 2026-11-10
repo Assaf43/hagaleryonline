@@ -66,6 +66,11 @@ export class ShippingService {
     @Inject(SHIPPING_PROVIDER) private readonly provider: ShippingProvider,
   ) {}
 
+  /** Code of the active provider, stored with each order (CLAUDE.md §4.2). */
+  get providerCode(): string {
+    return this.provider.code;
+  }
+
   /** Both methods for the available cart lines; 400 for an unknown locality, 409 when nothing can be shipped, throws ShippingNotConfiguredError without a default rate. */
   async quote(items: ShipmentItem[], req: ShippingQuoteRequest): Promise<ShippingQuote> {
     const locality = await this.prisma.locality.findUnique({ where: { id: req.localityId }, select: { id: true } });

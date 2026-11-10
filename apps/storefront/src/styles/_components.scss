@@ -210,6 +210,22 @@
   inline-size: 100%;
 }
 
+.input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+
+// Form fields (checkout): a label over its control and an inline error the control points at (aria-describedby).
+.field-label {
+  font-size: var(--font-small);
+  font-weight: 600;
+}
+
+.field-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
 // Keeps rtl-flipped icons (arrows, chevrons) pointing the reading direction.
 [dir='rtl'] .flip-rtl {
   transform: scaleX(-1);

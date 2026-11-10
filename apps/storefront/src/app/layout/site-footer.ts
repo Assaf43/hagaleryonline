@@ -4,8 +4,8 @@ import { RouterLink } from '@angular/router';
 import { MenuData } from './menu-data';
 
 /**
- * Footer: rooms and furniture types. Service and policy pages (shipping, returns, terms, privacy,
- * accessibility statement) are added with the content pages in Phase 8.
+ * Footer: rooms and furniture types. The sizing guide and the interim terms are linked; the other service
+ * and policy pages (shipping, returns, privacy, accessibility statement) come with the content pages in Phase 8.
  */
 @Component({
   selector: 'hg-site-footer',
@@ -44,7 +44,10 @@ import { MenuData } from './menu-data';
             </nav>
           }
         </div>
-        <p class="guide-link"><a routerLink="/sizing-guide">מדריך מידות</a></p>
+        <ul class="links">
+          <li><a routerLink="/sizing-guide">מדריך מידות</a></li>
+          <li><a routerLink="/terms">תנאי שימוש</a></li>
+        </ul>
         <p class="bottom">© {{ year }} {{ brand }}</p>
       </div>
     </footer>
@@ -106,9 +109,11 @@ import { MenuData } from './menu-data';
       text-decoration: underline;
     }
 
-    .guide-link {
+    .links {
       margin-block-start: var(--space-4);
-      font-size: var(--font-small);
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2) var(--space-5);
     }
 
     .bottom {

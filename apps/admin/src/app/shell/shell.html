@@ -73,6 +73,23 @@
           משלוחים
         </a>
       }
+      @if (can('orders.view')) {
+        <a class="nav-link" routerLink="/orders" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideReceipt></svg>
+          הזמנות
+        </a>
+      }
+      @if (can('orders.manage')) {
+        <a
+          class="nav-link"
+          routerLink="/settings/providers"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucidePlugZap></svg>
+          ספקים
+        </a>
+      }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>

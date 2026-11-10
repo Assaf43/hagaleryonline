@@ -31,8 +31,8 @@ export interface ShippingContext {
   zoneName?: string;
 }
 
-/** Highest floor a quote accepts; the floor surcharge cannot start above it. */
-export const MAX_FLOOR = 60;
+/** Highest floor a quote accepts; the floor surcharge cannot start above it. Shared with the storefront. */
+export { MAX_FLOOR } from '@hg/models';
 
 export const LABEL_DELIVERY = 'הובלה';
 export const LABEL_DISCOUNT = 'הנחה על פריטים נוספים';

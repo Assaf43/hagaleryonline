@@ -17,3 +17,15 @@ export const inUse = (field: string) => new CatalogError(HttpStatus.CONFLICT, 'i
 export const notFound = () => new CatalogError(HttpStatus.NOT_FOUND, 'not_found');
 export const incomplete = (reasons: ActivationProblem[]) =>
   new CatalogError(HttpStatus.BAD_REQUEST, 'incomplete', { reasons });
+/** A product that was ordered cannot be deleted, only hidden. */
+export const hasOrders = () =>
+  new CatalogError(HttpStatus.CONFLICT, 'in_use', {
+    field: 'orders',
+    messageHe: 'למוצר יש הזמנות. אפשר רק להסתיר אותו.',
+  });
+/** A variant that was ordered cannot be removed from the product, only turned off. `index` is its row in the saved product. */
+export const variantHasOrders = (index: number) =>
+  new CatalogError(HttpStatus.CONFLICT, 'in_use', {
+    field: `variants.${index}`,
+    messageHe: 'לווריאנט יש הזמנות. אפשר רק לכבות אותו.',
+  });

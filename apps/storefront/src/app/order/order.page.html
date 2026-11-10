@@ -1,0 +1,121 @@
+<section class="container page">
+  @switch (state()) {
+    @case ('loading') {
+      <h1>פרטי ההזמנה</h1>
+      <p class="state">טוען…</p>
+    }
+    @case ('not_found') {
+      <h1>ההזמנה לא נמצאה</h1>
+      <p class="muted">בדקו שהקישור הועתק במלואו.</p>
+      <a routerLink="/" class="btn btn-secondary">לדף הבית</a>
+    }
+    @case ('error') {
+      <h1>פרטי ההזמנה</h1>
+      <div class="state" role="alert">
+        <p>לא הצלחנו לטעון את ההזמנה.</p>
+        <button type="button" class="btn btn-secondary" (click)="reload()">נסו שוב</button>
+      </div>
+    }
+    @case ('ready') {
+      @if (order(); as o) {
+        <div class="status" [attr.data-status]="o.status">
+          <!-- Only the status is announced as it changes; the retry error has its own alert below. -->
+          <div class="status-text" aria-live="polite">
+            <h1>{{ title() }}</h1>
+            @if (o.status === 'pending_payment' && pollingStopped()) {
+              <p>עדיין לא קיבלנו אישור על התשלום. אפשר לבדוק שוב בעוד רגע.</p>
+            }
+          </div>
+          @if (o.status === 'pending_payment' && pollingStopped()) {
+            <button type="button" class="btn btn-secondary check-again" (click)="checkAgain()">בדיקה שוב</button>
+          }
+          @if (failed()) {
+            @if (o.canRetryPayment) {
+              <button type="button" class="btn btn-primary retry" [disabled]="retrying()" (click)="retryPayment()">
+                נסו לשלם שוב
+              </button>
+            } @else {
+              <p>אי אפשר לשלם שוב על ההזמנה הזאת. אפשר לחזור לסל ולהזמין מחדש.</p>
+              <a routerLink="/cart" class="btn btn-primary">לסל הקניות</a>
+            }
+          }
+          <p class="retry-error" role="alert">{{ retryError() }}</p>
+        </div>
+
+        <p class="keep">
+          שמרו את מספר ההזמנה: <bdi class="num">{{ o.number }}</bdi>
+        </p>
+
+        <div class="layout">
+          <section aria-labelledby="order-lines">
+            <h2 id="order-lines">המוצרים</h2>
+            <ul class="lines">
+              @for (l of o.lines; track $index) {
+                <li class="line">
+                  <span class="line-info">
+                    <bdi dir="ltr" class="model">{{ l.modelName }}</bdi>
+                    <span class="muted small">{{ l.nameHe }}</span>
+                    @if (l.optionLabels.length) {
+                      <span class="muted small">{{ l.optionLabels.join(' · ') }}</span>
+                    }
+                    <span class="muted small"
+                      >כמות: <span class="num">{{ l.quantity }}</span> ·
+                      <span class="num">{{ price(l.unitPrice) }}</span> ליחידה</span
+                    >
+                  </span>
+                  <span class="num">{{ price(l.lineTotal) }}</span>
+                </li>
+              }
+            </ul>
+          </section>
+
+          <div class="side">
+            <section aria-labelledby="order-delivery">
+              <h2 id="order-delivery">משלוח</h2>
+              <p>
+                {{ addressLine() }}
+              </p>
+              <p class="muted small">
+                קומה <span class="num">{{ o.address.floor }}</span> ·
+                {{ o.address.hasElevator ? 'יש מעלית' : 'אין מעלית' }}
+              </p>
+              @if (o.address.notes) {
+                <p class="muted small">הערות לשליח: {{ o.address.notes }}</p>
+              }
+              <p>{{ methodLabels[o.method] }}</p>
+              @if (estimate()) {
+                <p class="muted small">{{ estimate() }}</p>
+              }
+            </section>
+
+            <section class="totals" aria-labelledby="order-totals">
+              <h2 id="order-totals">סיכום</h2>
+              <p class="row">
+                <span>סכום ביניים</span><span class="num">{{ price(o.subtotal) }}</span>
+              </p>
+              @if (o.discount > 0) {
+                <p class="row">
+                  <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}</span
+                  ><span class="num">-{{ price(o.discount) }}</span>
+                </p>
+              }
+              @for (l of o.shippingLines; track $index) {
+                <p class="row muted small">
+                  <span>{{ l.labelHe }}</span
+                  ><span class="num">{{ price(l.amount) }}</span>
+                </p>
+              }
+              <p class="row">
+                <span>משלוח</span><span class="num">{{ price(o.shippingTotal) }}</span>
+              </p>
+              <p class="row total">
+                <span>סה״כ</span><span class="num">{{ price(o.total) }}</span>
+              </p>
+              <p class="muted small">המחיר כולל מע״מ</p>
+            </section>
+          </div>
+        </div>
+      }
+    }
+  }
+</section>

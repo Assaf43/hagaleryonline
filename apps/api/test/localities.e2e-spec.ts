@@ -72,6 +72,12 @@ describe('Localities API (e2e, decision 71)', () => {
     expect(await search('ג׳ת')).toEqual(geresh);
   });
 
+  it('treats a dash, maqaf or en dash and the spaces around it like a space', async () => {
+    for (const q of ['תל אביב יפו', 'תל אביב-יפו', 'תל אביב - יפו', 'תל אביב־יפו', 'תל אביב – יפו']) {
+      expect((await search(q)).map((r) => r.nameHe)).toContain('תל אביב - יפו');
+    }
+  });
+
   it('returns [] for an empty or missing q, and for no match', async () => {
     expect(await search('')).toEqual([]);
     expect(await search('   ')).toEqual([]);

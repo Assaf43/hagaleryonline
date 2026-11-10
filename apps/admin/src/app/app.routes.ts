@@ -69,6 +69,24 @@ export const routes: Routes = [
         title: 'משלוחים',
       },
       {
+        path: 'orders',
+        canMatch: [hasPermission('orders.view')],
+        loadComponent: () => import('./orders/orders.page').then((m) => m.OrdersPage),
+        title: 'הזמנות',
+      },
+      {
+        path: 'orders/:number',
+        canMatch: [hasPermission('orders.view')],
+        loadComponent: () => import('./orders/order-detail.page').then((m) => m.OrderDetailPage),
+        title: 'הזמנה',
+      },
+      {
+        path: 'settings/providers',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/providers.page').then((m) => m.ProvidersPage),
+        title: 'ספקים',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),
