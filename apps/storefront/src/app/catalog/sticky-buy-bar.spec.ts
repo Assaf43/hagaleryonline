@@ -105,6 +105,28 @@ describe('StickyBuyBar', () => {
     expect(bar()).toBeNull();
   });
 
+  it('reserves the bar height at the page bottom only while the bar is shown', async () => {
+    mockMedia(true);
+    const { fixture, bar } = await setup();
+    const reserved = () => document.body.classList.contains('has-sticky-buy-bar');
+    expect(reserved()).toBe(false);
+    FakeObserver.last!.fire(false, -50);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(bar()).not.toBeNull();
+    expect(reserved()).toBe(true);
+    FakeObserver.last!.fire(true, 100);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(reserved()).toBe(false);
+    FakeObserver.last!.fire(false, -50);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(reserved()).toBe(true);
+    fixture.destroy();
+    expect(reserved()).toBe(false);
+  });
+
   it('shows the error of a failed add', async () => {
     mockMedia(true);
     const { fixture, bar } = await setup();

@@ -5,6 +5,7 @@ import {
   PLATFORM_ID,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -15,6 +16,8 @@ import { formatPrice } from '../core/format';
 
 /** Below the desktop breakpoint (BRAND §6). */
 const MOBILE_QUERY = '(width < 1024px)';
+/** On `<body>` while the bar is shown. */
+const RESERVE_CLASS = 'has-sticky-buy-bar';
 
 /**
  * Sticky add-to-cart bar (BRAND §9.4, built in Phase 4): phones only, shown once the page's main
@@ -53,6 +56,7 @@ const MOBILE_QUERY = '(width < 1024px)';
       flex-wrap: wrap;
       justify-content: space-between;
       gap: var(--space-2) var(--space-4);
+      min-block-size: var(--sticky-bar-height);
       padding-block: var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
       padding-inline: var(--gutter);
       background: var(--color-surface);
@@ -107,6 +111,9 @@ export class StickyBuyBar {
     if (!isPlatformBrowser(inject(PLATFORM_ID))) return;
     const destroyRef = inject(DestroyRef);
     const doc = inject(DOCUMENT);
+    // While the bar is up, the page keeps room for it at the bottom (`body.has-sticky-buy-bar`, styles/_components.scss).
+    effect(() => doc.body.classList.toggle(RESERVE_CLASS, this.shown()));
+    destroyRef.onDestroy(() => doc.body.classList.remove(RESERVE_CLASS));
     afterNextRender(() => {
       const el = this.target();
       if (!el || typeof IntersectionObserver === 'undefined' || typeof matchMedia === 'undefined') return;

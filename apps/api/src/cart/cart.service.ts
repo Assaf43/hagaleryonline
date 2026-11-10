@@ -247,6 +247,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
         fulfillment,
         leadTimeDays: v.leadTimeDays,
         available,
+        // Shown but nothing left to sell → sold out; no longer shown → hidden.
+        unavailableReason: available ? null : shown ? 'sold_out' : 'hidden',
       });
     }
 

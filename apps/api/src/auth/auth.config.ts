@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SecretBox } from './crypto.js';
 
@@ -28,7 +28,12 @@ export class AuthConfig {
 
   constructor(config: ConfigService) {
     this.adminUrl = config.get<string>('ADMIN_URL', 'http://localhost:4300').replace(/\/$/, '');
-    this.storefrontUrl = config.get<string>('STOREFRONT_URL', 'http://localhost:4200').replace(/\/$/, '');
+    const storefrontUrl = config.get<string>('STOREFRONT_URL');
+    if (!storefrontUrl && config.get<string>('NODE_ENV') === 'production')
+      new Logger(AuthConfig.name).warn(
+        'STOREFRONT_URL is not set: cart writes are accepted only from http://localhost:4200 and the storefront will be refused',
+      );
+    this.storefrontUrl = (storefrontUrl || 'http://localhost:4200').replace(/\/$/, '');
     this.cookieSecure = config.get<string>('COOKIE_SECURE', 'false') === 'true';
     this.secretBox = new SecretBox(config.getOrThrow<string>('TOTP_ENCRYPTION_KEY'));
     this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', '30'));

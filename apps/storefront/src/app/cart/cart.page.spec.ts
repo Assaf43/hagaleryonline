@@ -109,19 +109,65 @@ describe('CartPage', () => {
   it('greys an unavailable line, keeps it out of the total and disables checkout when nothing is available', async () => {
     const view = cartView([cartLine(1, 1)]);
     view.lines[0].available = false;
+    view.lines[0].unavailableReason = 'hidden';
     view.itemCount = 0;
     view.subtotal = 0;
     view.deliveryEstimate = null;
     await setup(view);
     const line = el().querySelector('li.line')!;
     expect(line.classList).toContain('unavailable');
-    expect(line.textContent).toContain('לא זמין יותר');
+    expect(line.querySelector('.unavailable-label')?.textContent?.trim()).toBe('לא זמין יותר');
     expect(line.querySelector('hg-quantity-stepper')).toBeNull();
     expect(line.querySelector('button.remove')).not.toBeNull();
     expect(text()).not.toContain('זמן אספקה משוער');
     const checkout = el().querySelector<HTMLElement>('.checkout')!;
     expect(checkout.getAttribute('aria-disabled')).toBe('true');
     expect(checkout.getAttribute('href')).toBeNull();
+  });
+
+  it('labels a sold-out line "אזל מהמלאי"', async () => {
+    const view = cartView([cartLine(1, 1), { ...cartLine(2, 1), available: false, unavailableReason: 'sold_out' }]);
+    await setup(view);
+    const line = el().querySelectorAll('li.line')[1];
+    expect(line.querySelector('.unavailable-label')?.textContent?.trim()).toBe('אזל מהמלאי');
+  });
+
+  it('gives each "הסרה" button the model name as its accessible name', async () => {
+    await setup(cartView([cartLine(1, 1), cartLine(2, 1)]));
+    const labels = Array.from(el().querySelectorAll('button.remove')).map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(['הסרת MODEL1', 'הסרת MODEL2']);
+  });
+
+  it('the polite notices region is there before the cart arrives', async () => {
+    await setup(null);
+    expect(text()).toContain('טוען…');
+    expect(el().querySelector('ul.notices')?.getAttribute('aria-live')).toBe('polite');
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+  });
+
+  for (const status of [404, 409]) {
+    it(`reloads the cart after a write fails with ${status}`, async () => {
+      await setup(cartView([cartLine(1, 2), cartLine(2, 1)]));
+      el().querySelector<HTMLButtonElement>('button[aria-label="הגדלת הכמות"]')!.click();
+      http.expectOne({ method: 'PATCH', url: '/api/cart/items/1' }).flush({}, { status, statusText: 'Error' });
+      await settle();
+      fixture.detectChanges();
+      expect(el().querySelector('.error')?.textContent).toContain('לא הצלחנו לעדכן את הסל. נסו שוב.');
+      http
+        .expectOne({ method: 'GET', url: '/api/cart' })
+        .flush(cartView([{ ...cartLine(1, 2), available: false, unavailableReason: 'hidden' }, cartLine(2, 1)]));
+      await settle();
+      fixture.detectChanges();
+      expect(el().querySelector('li.line')?.classList).toContain('unavailable');
+    });
+  }
+
+  it('does not reload after a write fails for another reason', async () => {
+    await setup();
+    el().querySelector<HTMLButtonElement>('button[aria-label="הגדלת הכמות"]')!.click();
+    http.expectOne('/api/cart/items/1').flush({}, { status: 500, statusText: 'Server Error' });
+    await settle();
+    http.expectNone('/api/cart');
   });
 
   it('announces notices politely', async () => {

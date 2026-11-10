@@ -22,7 +22,11 @@ export interface CartLine {
   leadTimeDays: number;
   /** False when the product or variant is no longer shown or cannot be ordered: left out of totals and checkout. */
   available: boolean;
+  /** Why an unavailable line cannot be ordered: still shown but nothing left (`sold_out`) or no longer shown (`hidden`); null when available. */
+  unavailableReason: CartUnavailableReason | null;
 }
+
+export type CartUnavailableReason = 'sold_out' | 'hidden';
 
 export type CartNoticeKind = 'price_changed' | 'quantity_clamped' | 'unavailable' | 'coupon';
 

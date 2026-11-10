@@ -1,6 +1,13 @@
 <section class="container page">
   <h1>סל הקניות</h1>
 
+  <!-- Outside the branches below, so the live region exists before the notices arrive. -->
+  <ul class="notices" aria-live="polite">
+    @for (n of notices(); track $index) {
+      <li>{{ n.messageHe }}</li>
+    }
+  </ul>
+
   @if (loading()) {
     <p class="state">טוען…</p>
   } @else if (failed()) {
@@ -9,11 +16,6 @@
       <button type="button" class="btn btn-secondary retry" (click)="retry()">נסו שוב</button>
     </div>
   } @else if (cart.view(); as view) {
-    <ul class="notices" aria-live="polite">
-      @for (n of view.notices; track $index) {
-        <li>{{ n.messageHe }}</li>
-      }
-    </ul>
     <p class="error" role="alert">{{ error() }}</p>
 
     @if (lines().length) {
@@ -44,7 +46,9 @@
                     }
                   </span>
                 } @else {
-                  <span class="unavailable-label">לא זמין יותר</span>
+                  <span class="unavailable-label">{{
+                    l.unavailableReason === 'sold_out' ? 'אזל מהמלאי' : 'לא זמין יותר'
+                  }}</span>
                 }
                 <div class="controls">
                   @if (l.available) {
@@ -55,7 +59,14 @@
                       (changed)="setQuantity(l.variantId, $event)"
                     />
                   }
-                  <button type="button" class="link-btn remove" (click)="remove(l.variantId)">הסרה</button>
+                  <button
+                    type="button"
+                    class="link-btn remove"
+                    [attr.aria-label]="'הסרת ' + l.modelName"
+                    (click)="remove(l.variantId)"
+                  >
+                    הסרה
+                  </button>
                 </div>
               </div>
               @if (l.available) {

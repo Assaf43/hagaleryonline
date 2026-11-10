@@ -17,6 +17,7 @@ export function cartLine(variantId: number, quantity: number, unitPrice = 100000
     fulfillment: 'in_stock',
     leadTimeDays: 14,
     available: true,
+    unavailableReason: null,
   };
 }
 

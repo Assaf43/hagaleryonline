@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, afterNextRender, computed, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
@@ -24,6 +25,7 @@ export class CartPage {
   protected readonly loading = computed(() => this.cart.view() === null && !this.cart.loadFailed());
   protected readonly failed = computed(() => this.cart.view() === null && this.cart.loadFailed());
   protected readonly lines = computed(() => this.cart.view()?.lines ?? []);
+  protected readonly notices = computed(() => this.cart.view()?.notices ?? []);
   protected readonly canCheckout = computed(() => (this.cart.view()?.itemCount ?? 0) > 0);
   protected readonly estimate = computed(() => {
     const e = this.cart.view()?.deliveryEstimate;
@@ -57,8 +59,10 @@ export class CartPage {
     this.error.set('');
     try {
       await call();
-    } catch {
+    } catch (error) {
       this.error.set('לא הצלחנו לעדכן את הסל. נסו שוב.');
+      // The cart expired (404) or the line can no longer be changed (409): show what the server has now.
+      if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 409)) void this.cart.load();
     } finally {
       this.busy.set(null);
     }

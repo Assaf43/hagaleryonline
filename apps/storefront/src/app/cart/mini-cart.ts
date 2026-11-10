@@ -48,6 +48,8 @@ export class MiniCart {
   protected readonly failed = computed(() => this.cart.view() === null && this.cart.loadFailed());
   protected readonly lines = computed(() => this.cart.view()?.lines ?? []);
   protected readonly notices = computed(() => this.cart.view()?.notices ?? []);
+  /** Same rule as the cart page: checkout needs at least one available unit. */
+  protected readonly canCheckout = computed(() => (this.cart.view()?.itemCount ?? 0) > 0);
   protected readonly subtotal = computed(() => formatPrice(this.cart.view()?.subtotal ?? 0));
   protected readonly price = formatPrice;
 

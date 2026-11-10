@@ -104,6 +104,75 @@ describe('CartStore', () => {
     expect(store.view()?.lines).toEqual([]);
   });
 
+  it('two concurrent load() calls share one request', async () => {
+    const { store, http } = setup();
+    const a = store.load();
+    const b = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+    await Promise.all([a, b]);
+    http.verify();
+    expect(store.count()).toBe(1);
+    // Once it answered, the next load() is a new request.
+    const c = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2)]));
+    await c;
+    expect(store.count()).toBe(2);
+  });
+
+  it('keeps one-time notices from an earlier load that a later load lacks, while their line exists', async () => {
+    const { store, http } = setup();
+    const price = { variantId: 1, kind: 'price_changed' as const, messageHe: 'המחיר של MODEL1 עודכן' };
+    const clamped = { variantId: 2, kind: 'quantity_clamped' as const, messageHe: 'נשארו רק 1 במלאי' };
+    const unavailable = { variantId: 3, kind: 'unavailable' as const, messageHe: 'MODEL3 אזל מהמלאי' };
+    const a = store.load();
+    http
+      .expectOne('/api/cart')
+      .flush(cartView([cartLine(1, 1), cartLine(2, 1), cartLine(3, 1)], [price, clamped, unavailable]));
+    await a;
+
+    // A background load (e.g. the header's) no longer sees them: they stay; line 2 is gone, so its notice goes.
+    const b = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1), cartLine(3, 1)]));
+    await b;
+    expect(store.view()?.notices).toEqual([price]);
+  });
+
+  it('a write clears carried notices', async () => {
+    const { store, http } = setup();
+    const price = { variantId: 1, kind: 'price_changed' as const, messageHe: 'המחיר של MODEL1 עודכן' };
+    const a = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)], [price]));
+    await a;
+    const b = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+    await b;
+    expect(store.view()?.notices).toEqual([price]);
+
+    const set = store.setQuantity(1, 2);
+    http.expectOne('/api/cart/items/1').flush(cartView([cartLine(1, 2)]));
+    await set;
+    expect(store.view()?.notices).toEqual([]);
+    const c = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2)]));
+    await c;
+    expect(store.view()?.notices).toEqual([]);
+  });
+
+  it('a load() after a write does not reuse a read that started before it', async () => {
+    const { store, http } = setup();
+    const stale = store.load();
+    const adding = store.add(7, 1);
+    http.expectOne('/api/cart/items').flush(cartView([cartLine(7, 1)]));
+    await adding;
+    const fresh = store.load();
+    const reqs = http.match('/api/cart');
+    expect(reqs).toHaveLength(2);
+    reqs[0].flush(cartView());
+    reqs[1].flush(cartView([cartLine(7, 3)]));
+    await Promise.all([stale, fresh]);
+    expect(store.count()).toBe(3);
+  });
+
   it('never calls the API on the server', async () => {
     const { store, http } = setup('server');
     await store.load();

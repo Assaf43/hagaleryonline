@@ -139,3 +139,10 @@
 .empty p {
   margin: 0 0 var(--space-3);
 }
+
+.checkout[aria-disabled='true'] {
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  border: var(--border-width) solid var(--color-border);
+  cursor: not-allowed;
+}

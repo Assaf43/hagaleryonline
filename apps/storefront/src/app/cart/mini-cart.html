@@ -45,13 +45,17 @@
                 <span class="options">{{ l.optionLabels.join(' · ') }}</span>
               }
               @if (!l.available) {
-                <span class="unavailable-label">לא זמין</span>
+                <span class="unavailable-label">{{
+                  l.unavailableReason === 'sold_out' ? 'אזל מהמלאי' : 'לא זמין'
+                }}</span>
               }
               <span class="qty"
                 >כמות: <span class="num">{{ l.quantity }}</span></span
               >
             </div>
-            <span class="line-price num">{{ price(l.lineTotal) }}</span>
+            @if (l.available) {
+              <span class="line-price num">{{ price(l.lineTotal) }}</span>
+            }
           </li>
         }
       </ul>
@@ -62,7 +66,11 @@
         </p>
         <div class="actions">
           <a routerLink="/cart" class="btn btn-secondary">לסל</a>
-          <a routerLink="/checkout" class="btn btn-primary">למעבר לתשלום</a>
+          @if (canCheckout()) {
+            <a routerLink="/checkout" class="btn btn-primary checkout">למעבר לתשלום</a>
+          } @else {
+            <a class="btn btn-primary checkout" role="link" aria-disabled="true">למעבר לתשלום</a>
+          }
         </div>
       </div>
     } @else {

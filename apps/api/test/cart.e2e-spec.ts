@@ -143,6 +143,7 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
       fulfillment: 'in_stock',
       leadTimeDays: 14,
       available: true,
+      unavailableReason: null,
     });
     expect(cart).toMatchObject({ itemCount: 1, subtotal: 100_000, notices: [] });
     expect(cart.deliveryEstimate).toEqual({ fulfillment: 'in_stock', leadTimeDays: 14 });
@@ -205,6 +206,7 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
       const cart = view(await b.get().expect(200));
       expect(cart.lines.find((l) => l.variantId === inStock)).toMatchObject({
         available: false,
+        unavailableReason: 'sold_out',
         quantity: 2,
         maxQuantity: 0,
       });
@@ -314,7 +316,11 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
     await invalidateCatalog();
     try {
       const cart = view(await b.get().expect(200));
-      expect(cart.lines.find((l) => l.variantId === inStock)).toMatchObject({ available: false, modelName: 'ZZCART' });
+      expect(cart.lines.find((l) => l.variantId === inStock)).toMatchObject({
+        available: false,
+        unavailableReason: 'hidden',
+        modelName: 'ZZCART',
+      });
       expect(cart.subtotal).toBe(albaVariant.price);
       expect(cart.itemCount).toBe(1);
       expect(cart.notices).toEqual([{ variantId: inStock, kind: 'unavailable', messageHe: 'ZZCART לא זמין יותר' }]);

@@ -114,9 +114,30 @@ describe('MiniCart', () => {
     expect(dialog.querySelector('.notices')?.textContent).toContain('נשארו במלאי רק 3 יחידות');
   });
 
-  it('marks unavailable lines with text, not only colour', async () => {
-    const { dialog } = await setup(cartView([{ ...cartLine(1, 1), available: false }]));
-    expect(dialog.querySelector('.line')?.textContent).toContain('לא זמין');
+  it('marks unavailable lines with text, not only colour, and without a line total', async () => {
+    const view = cartView([
+      { ...cartLine(1, 1), available: false, unavailableReason: 'sold_out' },
+      { ...cartLine(2, 1), available: false, unavailableReason: 'hidden' },
+    ]);
+    view.itemCount = 0;
+    view.subtotal = 0;
+    const { dialog } = await setup(view);
+    const lines = dialog.querySelectorAll('.line');
+    expect(lines[0].querySelector('.unavailable-label')?.textContent?.trim()).toBe('אזל מהמלאי');
+    expect(lines[1].querySelector('.unavailable-label')?.textContent?.trim()).toBe('לא זמין');
+    expect(dialog.querySelector('.line-price')).toBeNull();
+  });
+
+  it('checkout is aria-disabled and not a link when no line is available', async () => {
+    const view = cartView([{ ...cartLine(1, 1), available: false, unavailableReason: 'sold_out' }]);
+    view.itemCount = 0;
+    view.subtotal = 0;
+    const { dialog } = await setup(view);
+    const checkout = dialog.querySelector<HTMLElement>('.checkout')!;
+    expect(checkout.textContent?.trim()).toBe('למעבר לתשלום');
+    expect(checkout.getAttribute('aria-disabled')).toBe('true');
+    expect(checkout.getAttribute('href')).toBeNull();
+    expect(dialog.querySelector('a[href="/cart"]')).not.toBeNull();
   });
 
   it('keeps the polite notices region in the DOM even without notices', async () => {
