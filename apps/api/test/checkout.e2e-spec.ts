@@ -3,6 +3,8 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import type {
+  AdminProduct,
+  AdminProductInput,
   CartView,
   CheckoutRequest,
   CheckoutResponse,
@@ -16,7 +18,7 @@ import { AppModule } from './../src/app.module.js';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
-import { OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
+import { FulfillmentMode, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, type AdminBrowser } from './admin-session.js';
@@ -46,6 +48,12 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
   let race: number;
   /** Becomes hidden between cart and checkout. */
   let soonHidden: number;
+  /** One unit, sold twice by a late payment. */
+  let oversell: number;
+  /** Made to order: no stock count. */
+  let madeToOrder: number;
+  /** Never ordered. */
+  let spare: number;
   let savedSettings: { additionalItemPercent: number; floorSurcharge: number; floorSurchargeFrom: number } | null;
   let localityName: string;
 
@@ -167,13 +175,23 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
             { sku: 'ZZCHK-FEW', price: 70_000, stock: 2, sortOrder: 2, ...size },
             { sku: 'ZZCHK-RACE', price: 80_000, stock: 1, sortOrder: 3, ...size },
             { sku: 'ZZCHK-HIDE', price: 60_000, stock: 5, sortOrder: 4, ...size },
+            { sku: 'ZZCHK-OVER', price: 90_000, stock: 1, sortOrder: 5, ...size },
+            {
+              sku: 'ZZCHK-MTO',
+              price: 120_000,
+              stock: 0,
+              fulfillment: FulfillmentMode.MADE_TO_ORDER,
+              sortOrder: 6,
+              ...size,
+            },
+            { sku: 'ZZCHK-SPARE', price: 10_000, stock: 3, sortOrder: 7, ...size },
           ],
         },
       },
       include: { variants: { orderBy: { sortOrder: 'asc' } } },
     });
     productId = product.id;
-    [last, plenty, few, race, soonHidden] = product.variants.map((v) => v.id);
+    [last, plenty, few, race, soonHidden, oversell, madeToOrder, spare] = product.variants.map((v) => v.id);
 
     savedSettings = await prisma.shippingSettings.findUnique({ where: { id: 1 } });
     const settings = { additionalItemPercent: 50, floorSurcharge: 5_000, floorSurchargeFrom: 2 };
@@ -510,7 +528,62 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(second.order.id).not.toBe(first.order.id);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: first.order.id } })).status).toBe(OrderStatus.EXPIRED);
     expect(await limitOf(few)).toBe(0);
+
+    // The replaced order cannot be retried: the newer one is the one to pay.
+    expect((await viewOf(first.order.number, first.order.publicToken)).canRetryPayment).toBe(false);
+    const retry = await http()
+      .post(`/api/orders/${first.order.number}/retry-payment?t=${first.order.publicToken}`)
+      .set('Origin', ORIGIN)
+      .expect(409);
+    expect(retry.body.code).toBe('superseded');
+
+    // If its old page is paid anyway, it is honored, but the cart keeps the lines the newer order needs.
+    await complete(first.tx, 'success').expect(200);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: first.order.id } })).status).toBe(OrderStatus.PAID);
+    expect((await b.cart()).lines.map((l) => l.variantId)).toEqual([few]);
     await complete(second.tx, 'cancel').expect(200);
+  });
+
+  it('concurrent duplicate webhooks take the stock once', async () => {
+    const b = browser();
+    await b.add(plenty, 2);
+    const stock = await stockOf(plenty);
+    const { tx, order } = await placeOrder(b);
+    const payload = { transactionId: tx, status: 'succeeded', amount: order.total, installments: 1 };
+    const results = await Promise.all([signed(payload), signed(payload), signed(payload)]);
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(await stockOf(plenty)).toBe(stock - 2);
+  });
+
+  it('a late success after the unit was sold to someone else: paid, stock floored at 0, order flagged', async () => {
+    const a = browser();
+    await a.add(oversell, 1);
+    const late = await placeOrder(a);
+    await prisma.order.update({ where: { id: late.order.id }, data: { reservedUntil: new Date(Date.now() - 1_000) } });
+    const c = browser();
+    await c.add(oversell, 1);
+    const other = await placeOrder(c);
+    await complete(other.tx, 'success').expect(200);
+    expect(await stockOf(oversell)).toBe(0);
+
+    await complete(late.tx, 'success').expect(200);
+    const paid = await prisma.order.findUniqueOrThrow({ where: { id: late.order.id } });
+    expect(paid).toMatchObject({ status: OrderStatus.PAID, stockShortage: true });
+    expect(await stockOf(oversell)).toBe(0);
+    expect((await viewOf(late.order.number, late.order.publicToken)).stockShortage).toBe(true);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: other.order.id } })).stockShortage).toBe(false);
+  });
+
+  it('a made-to-order line does not touch the stock column', async () => {
+    const b = browser();
+    await b.add(madeToOrder, 2);
+    const { tx, order } = await placeOrder(b);
+    await complete(tx, 'success').expect(200);
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+      status: OrderStatus.PAID,
+      stockShortage: false,
+    });
+    expect(await stockOf(madeToOrder)).toBe(0);
   });
 
   it('refuses invalid input, a missing origin and an empty cart', async () => {
@@ -552,6 +625,44 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     await http().get(`/api/orders/${order.number}`).expect(404);
     await http().get(`/api/orders/999999?t=${order.publicToken}`).expect(404);
     await http().get(`/api/orders/abc?t=${order.publicToken}`).expect(404);
+  });
+
+  it('saving a product cannot remove a variant that was ordered (409); an unordered one can go', async () => {
+    const forSave = (p: AdminProduct, variants: AdminProduct['variants']): AdminProductInput => {
+      const { id: _id, images: _i, createdAt: _c, updatedAt, relations: _r, ...rest } = p;
+      // Distinct widths: the test variants share their options, and two identical rows cannot be saved.
+      const distinct = variants.map((v, i) => ({ ...v, widthCm: 150 + i }));
+      return { ...rest, active: false, variants: distinct, expectedUpdatedAt: updatedAt };
+    };
+    let current = (await owner.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    const lastIndex = current.variants.findIndex((v) => v.id === last);
+    const res = await owner
+      .put(
+        `/catalog/products/${productId}`,
+        forSave(
+          current,
+          current.variants.filter((v) => v.id !== last),
+        ),
+      )
+      .expect(409);
+    expect(res.body).toMatchObject({
+      code: 'in_use',
+      field: `variants.${lastIndex}`,
+      messageHe: 'לווריאנט יש הזמנות. אפשר רק לכבות אותו.',
+    });
+    expect(await prisma.variant.count({ where: { id: last } })).toBe(1);
+
+    current = (await owner.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    await owner
+      .put(
+        `/catalog/products/${productId}`,
+        forSave(
+          current,
+          current.variants.filter((v) => v.id !== spare),
+        ),
+      )
+      .expect(200);
+    expect(await prisma.variant.count({ where: { id: spare } })).toBe(0);
   });
 
   it('the Super Admin cannot delete a product that was ordered (409)', async () => {

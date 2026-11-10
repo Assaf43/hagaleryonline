@@ -17,7 +17,7 @@ import { imageFiles, thumbUrl, toAdminImage } from '../media/image-urls.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { changedFields } from './catalog-input.js';
-import { conflict, duplicate, hasOrders, incomplete, invalid, notFound } from './catalog-errors.js';
+import { conflict, duplicate, hasOrders, incomplete, invalid, notFound, variantHasOrders } from './catalog-errors.js';
 
 export const PRODUCTS_PAGE_SIZE = 30;
 
@@ -287,6 +287,13 @@ export class ProductsAdminService {
     // Variants: removed first, so a SKU can move to another row in the same save.
     const kept = new Set(input.variants.map((v) => v.id).filter((v) => v !== undefined));
     const removed = [...existingVariants.values()].filter((v) => !kept.has(v.id));
+    if (removed.length > 0) {
+      // An ordered variant stays (CHK-09): staff turn it off instead. Locked first, like remove() and checkout.
+      const ids = removed.map((v) => v.id).sort((a, b) => a - b);
+      await tx.$queryRaw`SELECT id FROM variants WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`;
+      const ordered = await tx.orderItem.findFirst({ where: { variantId: { in: ids } }, select: { variantId: true } });
+      if (ordered) throw variantHasOrders(existing!.variants.findIndex((v) => v.id === ordered.variantId));
+    }
     await tx.variant.deleteMany({ where: { id: { in: removed.map((v) => v.id) } } });
     for (const v of removed) {
       await this.audit.record(

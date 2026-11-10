@@ -51,6 +51,7 @@ export interface CheckoutResponse {
  * - `shipping_unavailable` (503): the shipping price list is not configured;
  * - `payment_unavailable` (502): the payment provider did not answer;
  * - `not_retryable` (409): the order is paid or still waiting for its payment;
+ * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
  * - `not_found` (404): unknown order or transaction, or the token does not match;
  * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook.
  */
@@ -65,6 +66,7 @@ export type CheckoutErrorCode =
   | 'shipping_unavailable'
   | 'payment_unavailable'
   | 'not_retryable'
+  | 'superseded'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */
@@ -121,8 +123,10 @@ export interface OrderView {
   discountInfo: Pick<CartDiscount, 'labelHe' | 'source' | 'code'> | null;
   total: number;
   deliveryEstimate: { fulfillment: FulfillmentMode; leadTimeDays: number } | null;
-  /** Failed or expired, and every line can still be bought: "נסו לשלם שוב" makes a new payment page. */
+  /** Failed or expired, not replaced by a newer order of the same cart, and every line can still be bought: "נסו לשלם שוב" makes a new payment page. */
   canRetryPayment: boolean;
+  /** Paid although an in-stock line no longer had enough stock (late payment): staff must contact the customer. */
+  stockShortage: boolean;
 }
 
 // ---------- Sandbox payment page (development only, CHK-10) ----------

@@ -16,7 +16,7 @@ import { OrderShippingMethod, OrderStatus, type Prisma } from '../generated/pris
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { lockOrder, lockVariants } from './locks.js';
-import { notRetryable, orderNotFound, shortage } from './order-errors.js';
+import { notRetryable, orderNotFound, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 
 const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
@@ -67,6 +67,7 @@ export class OrdersService {
     const status = effectiveStatus(order, now);
     const canRetryPayment =
       retryable(order, now) &&
+      !(await this.superseded(this.prisma, order)) &&
       (await this.retryBlocker(this.prisma, order.items, await this.catalog.snapshot())) === null;
     const address = order.address as unknown as OrderAddressView;
     return {
@@ -103,6 +104,7 @@ export class OrdersService {
       total: order.total,
       deliveryEstimate: (order.deliveryEstimate as OrderView['deliveryEstimate']) ?? null,
       canRetryPayment,
+      stockShortage: order.stockShortage,
     };
   }
 
@@ -122,6 +124,7 @@ export class OrdersService {
           include: { items: { select: { variantId: true, quantity: true } } },
         });
         if (!retryable(current)) throw notRetryable();
+        if (await this.superseded(tx, current)) throw superseded();
         if (current.items.some((i) => i.variantId === null)) throw notRetryable();
         await lockVariants(
           tx,
@@ -149,6 +152,15 @@ export class OrdersService {
     });
     if (!order || !tokenMatches(token, order.publicToken)) throw orderNotFound();
     return order;
+  }
+
+  /** A newer order was placed from the same cart (it replaced this one): pay that one, not this. */
+  private async superseded(
+    db: Prisma.TransactionClient | PrismaService,
+    order: { cartId: string | null; number: number },
+  ): Promise<boolean> {
+    if (!order.cartId) return false;
+    return (await db.order.count({ where: { cartId: order.cartId, number: { gt: order.number } } })) > 0;
   }
 
   /** The first line that cannot be bought again in its quantity (its variant shown and enough available), or null. */

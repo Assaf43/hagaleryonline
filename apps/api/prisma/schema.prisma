@@ -567,6 +567,9 @@ model Order {
   /// The cart the order came from: its lines are removed when the order is paid.
   cartId           String?             @map("cart_id") @db.Uuid
   reservedUntil    DateTime            @map("reserved_until")
+  /// Paid while an in-stock line no longer had enough stock (a late payment after its reservation expired):
+  /// stock was floored at 0 and staff must sort it out.
+  stockShortage    Boolean             @default(false) @map("stock_shortage")
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 

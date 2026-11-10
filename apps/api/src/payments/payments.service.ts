@@ -1,8 +1,8 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { SandboxCompleteRequest, SandboxCompleteResponse, SandboxPaymentView } from '@hg/models';
-import { OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
-import { lockOrder } from '../orders/locks.js';
+import { FulfillmentMode, OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
+import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -80,21 +80,35 @@ export class PaymentsService {
       });
     } catch (error) {
       this.logger.error(`Payment page for order ${order.number} failed`, error);
-      await this.prisma.order.updateMany({
-        where: { id: order.id, status: OrderStatus.PENDING_PAYMENT },
-        data: { status: OrderStatus.PAYMENT_FAILED },
-      });
+      await this.failPending(order.id);
       throw paymentUnavailable();
     }
-    await this.prisma.payment.create({
-      data: {
-        orderId: order.id,
-        provider: this.provider.code,
-        transactionId: page.transactionId,
-        amount: order.total,
-      },
-    });
+    try {
+      await this.prisma.payment.create({
+        data: {
+          orderId: order.id,
+          provider: this.provider.code,
+          transactionId: page.transactionId,
+          amount: order.total,
+        },
+      });
+    } catch (error) {
+      // Without the payment row its webhook could not be matched: never send the customer to that page.
+      this.logger.error(`Recording payment ${page.transactionId} of order ${order.number} failed`, error);
+      await this.failPending(order.id);
+      throw paymentUnavailable();
+    }
     return page.redirectUrl;
+  }
+
+  /** Marks a pending order failed, which releases its reservation (best effort: the caller reports the failure). */
+  private async failPending(orderId: string): Promise<void> {
+    await this.prisma.order
+      .updateMany({
+        where: { id: orderId, status: OrderStatus.PENDING_PAYMENT },
+        data: { status: OrderStatus.PAYMENT_FAILED },
+      })
+      .catch((error: unknown) => this.logger.error(`Could not release order ${orderId}`, error));
   }
 
   /** POST /api/payments/webhook: verify the signature over the raw body, then apply (401 / 400 otherwise). */
@@ -116,7 +130,8 @@ export class PaymentsService {
    * - the same status again → no-op;
    * - a paid order never changes (a later failure is ignored);
    * - success with an amount other than the one asked → payment flagged `amount_mismatch`, order stays as it is;
-   * - success → payment succeeded, order paid, stock taken, the order's lines removed from its cart;
+   * - success → payment succeeded, order paid, in-stock stock taken (never below 0; a shortfall flags the order
+   *   `stockShortage`), the order's lines removed from its cart unless a newer order of that cart exists;
    * - failure / cancel → payment failed / cancelled; the order fails (releasing its reservation) only when this is
    *   its latest payment, so a late failure of an earlier attempt does not disturb a retry in progress.
    */
@@ -165,15 +180,20 @@ export class PaymentsService {
           where: { id: payment.id },
           data: { status: next, installments, rawStatus: result.rawStatus },
         });
-        await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID } });
-        const ordered = order.items.flatMap((i) => (i.variantId === null ? [] : [i]));
-        if (order.cartId)
-          await tx.cartItem.deleteMany({
-            where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId!) } },
-          });
-        // Stock is taken for good now; ascending id order like every other variant lock.
-        for (const item of [...ordered].sort((a, b) => a.variantId! - b.variantId!))
-          await tx.variant.update({ where: { id: item.variantId! }, data: { stock: { decrement: item.quantity } } });
+        const ordered = order.items.flatMap((i) => (i.variantId === null ? [] : [{ ...i, variantId: i.variantId }]));
+        // The cart is cleared only when this is its latest order: a newer pending order of the same cart (placed
+        // after this one was superseded) still needs those lines.
+        if (order.cartId) {
+          const newer = await tx.order.count({ where: { cartId: order.cartId, number: { gt: order.number } } });
+          if (newer === 0)
+            await tx.cartItem.deleteMany({
+              where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
+            });
+        }
+        const stockShortage = await this.takeStock(tx, ordered);
+        if (stockShortage)
+          this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
+        await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
         await this.onPaid(tx, order.id);
         return 'paid';
       }
@@ -192,6 +212,36 @@ export class PaymentsService {
       return 'failed';
     });
     return outcome;
+  }
+
+  /**
+   * Takes the paid quantities from stock, under the variant locks (after the payment and order locks). Only in-stock
+   * variants keep a stock count — made-to-order and pre-order are not limited by it (the cart limit rule) — and
+   * stock never goes below 0. True when an in-stock variant had less than the order needs (a late payment after
+   * the reservation expired and the units were sold): the order is flagged for staff.
+   */
+  private async takeStock(
+    tx: Prisma.TransactionClient,
+    items: { variantId: number; quantity: number }[],
+  ): Promise<boolean> {
+    // All the order's variants are locked (a superset of the in-stock ones), so the fulfillment read below is the
+    // one in force until commit.
+    await lockVariants(
+      tx,
+      items.map((i) => i.variantId),
+    );
+    const variants = await tx.variant.findMany({
+      where: { id: { in: items.map((i) => i.variantId) }, fulfillment: FulfillmentMode.IN_STOCK },
+      select: { id: true, stock: true },
+      orderBy: { id: 'asc' },
+    });
+    let shortage = false;
+    for (const variant of variants) {
+      const quantity = items.find((i) => i.variantId === variant.id)!.quantity;
+      if (variant.stock < quantity) shortage = true;
+      await tx.variant.update({ where: { id: variant.id }, data: { stock: Math.max(0, variant.stock - quantity) } });
+    }
+    return shortage;
   }
 
   /** Runs inside the webhook transaction when an order becomes paid. Coupon usage +1 comes here in Phase 4d. */

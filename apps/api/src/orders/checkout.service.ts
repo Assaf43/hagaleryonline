@@ -81,10 +81,17 @@ export class CheckoutService {
         await lockVariants(tx, variantIds);
 
         const lines = orderable(await computeCartLines(tx, cart.id, snapshot));
+        // Every validated line must be under its lock: a line added to the cart after the ids were read is not,
+        // so the cart changed under us (fail closed rather than validate it unlocked).
+        const locked = new Set(variantIds);
+        if (lines.some((l) => !locked.has(l.variantId))) throw cartChanged();
         if (!sameShipment(toShipment(lines), toShipment(quoted))) throw cartChanged();
         const short = lines.find((l) => l.storedQuantity > l.limit);
         if (short) throw shortage(short.variantId, short.limit);
 
+        // Never null: there is at least one line.
+        const estimate = deliveryEstimate(lines.map((l) => ({ ...l, available: true })));
+        if (!estimate) throw emptyCart();
         const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.storedQuantity, 0);
         // Phase 4d: the one discount of the order (decision 70) is computed and re-checked here.
         const discount = 0;
@@ -100,7 +107,7 @@ export class CheckoutService {
             subtotal,
             discount,
             total: subtotal - discount + option.total,
-            deliveryEstimate: deliveryEstimate(lines.map((l) => ({ ...l, available: true }))) ?? {},
+            deliveryEstimate: estimate,
             paymentProvider: this.payments.providerCode,
             shippingProvider: this.shipping.providerCode,
             cartId: cart.id,

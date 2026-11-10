@@ -23,3 +23,9 @@ export const hasOrders = () =>
     field: 'orders',
     messageHe: 'למוצר יש הזמנות. אפשר רק להסתיר אותו.',
   });
+/** A variant that was ordered cannot be removed from the product, only turned off. `index` is its row in the saved product. */
+export const variantHasOrders = (index: number) =>
+  new CatalogError(HttpStatus.CONFLICT, 'in_use', {
+    field: `variants.${index}`,
+    messageHe: 'לווריאנט יש הזמנות. אפשר רק לכבות אותו.',
+  });

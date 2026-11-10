@@ -18,5 +18,7 @@ export const cartChanged = () => new CheckoutError(HttpStatus.CONFLICT, 'cart_ch
 export const shippingUnavailable = () => new CheckoutError(HttpStatus.SERVICE_UNAVAILABLE, 'shipping_unavailable');
 export const paymentUnavailable = () => new CheckoutError(HttpStatus.BAD_GATEWAY, 'payment_unavailable');
 export const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'not_retryable');
+/** A newer order of the same cart replaced this one. */
+export const superseded = () => new CheckoutError(HttpStatus.CONFLICT, 'superseded');
 export const orderNotFound = () => new CheckoutError(HttpStatus.NOT_FOUND, 'not_found');
 export const invalidInput = () => new CheckoutError(HttpStatus.BAD_REQUEST, 'invalid_input');
