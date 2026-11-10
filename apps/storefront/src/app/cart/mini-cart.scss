@@ -37,6 +37,11 @@
 
 .notices {
   list-style: none;
+
+  &:empty {
+    display: none;
+  }
+
   margin: 0;
   padding: var(--space-3) var(--space-4);
   background: var(--color-info-soft);
@@ -93,6 +98,11 @@
 .options,
 .qty {
   color: var(--color-text-secondary);
+}
+
+.unavailable-label {
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .line-price {

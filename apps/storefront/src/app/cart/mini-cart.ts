@@ -43,6 +43,8 @@ export class MiniCart {
   private readonly closeBtn = viewChild<ElementRef<HTMLButtonElement>>('closeBtn');
   protected readonly titleId = `hg-mini-cart-title-${nextId++}`;
 
+  /** No answer from the server yet: show "טוען…" rather than an empty cart. */
+  protected readonly loading = computed(() => this.cart.view() === null);
   protected readonly lines = computed(() => this.cart.view()?.lines ?? []);
   protected readonly notices = computed(() => this.cart.view()?.notices ?? []);
   protected readonly subtotal = computed(() => formatPrice(this.cart.view()?.subtotal ?? 0));
@@ -85,16 +87,16 @@ export class MiniCart {
     if (dialog.open) return;
     const active = this.doc.activeElement;
     this.opener = active instanceof HTMLElement && active !== this.doc.body ? active : null;
-    if (typeof dialog.showModal === 'function') dialog.showModal();
-    else dialog.setAttribute('open', '');
+    dialog.showModal();
+    // Opened before the header's load answered (or it failed): read the cart now.
+    if (this.cart.view() === null) void this.cart.load();
     afterNextRender(() => this.closeBtn()?.nativeElement.focus(), { injector: this.injector });
   }
 
   private hide(): void {
     const dialog = this.dialog()?.nativeElement;
     if (!dialog?.open) return;
-    if (typeof dialog.close === 'function') dialog.close();
-    else dialog.removeAttribute('open');
+    dialog.close();
     const opener = this.opener;
     this.opener = null;
     if (opener?.isConnected) opener.focus();

@@ -36,6 +36,7 @@ describe('AddToCart', () => {
       plus: () => el.querySelector<HTMLButtonElement>('button[aria-label="הגדלת הכמות"]')!,
       minus: () => el.querySelector<HTMLButtonElement>('button[aria-label="הקטנת הכמות"]')!,
       qty: () => el.querySelector('.qty')?.textContent?.trim(),
+      status: () => el.querySelector('[role="status"]')?.textContent?.trim(),
     };
   }
 
@@ -64,12 +65,15 @@ describe('AddToCart', () => {
   it('the stepper stays between 1 and maxQuantity', () => {
     const { fixture, host, plus, minus, qty } = setup();
     expect(qty()).toBe('1');
-    expect(minus().disabled).toBe(true);
+    expect(minus().getAttribute('aria-disabled')).toBe('true');
+    minus().click();
+    fixture.detectChanges();
+    expect(qty()).toBe('1');
     plus().click();
     plus().click();
     fixture.detectChanges();
     expect(qty()).toBe('3');
-    expect(plus().disabled).toBe(true);
+    expect(plus().getAttribute('aria-disabled')).toBe('true');
     plus().click();
     fixture.detectChanges();
     expect(qty()).toBe('3');
@@ -81,11 +85,27 @@ describe('AddToCart', () => {
     host.max.set(1);
     fixture.detectChanges();
     expect(qty()).toBe('1');
-    expect(plus().disabled).toBe(true);
+    expect(plus().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('a stepper button keeps keyboard focus at its bound', () => {
+    const { fixture, el, plus, qty } = setup();
+    document.body.appendChild(el);
+    plus().focus();
+    for (let i = 0; i < 4; i++) {
+      plus().click();
+      fixture.detectChanges();
+    }
+    expect(qty()).toBe('3');
+    expect(plus().disabled).toBe(false);
+    expect(document.activeElement).toBe(plus());
+    el.remove();
   });
 
   it('adds the chosen quantity and opens the mini cart', async () => {
-    const { fixture, http, store, main, plus } = setup();
+    const { fixture, el, http, store, main, plus, status } = setup();
+    // Always rendered, so screen readers pick up the first message too.
+    expect(el.querySelector('[role="status"]')).not.toBeNull();
     plus().click();
     fixture.detectChanges();
     main().click();
@@ -100,6 +120,16 @@ describe('AddToCart', () => {
     expect(store.count()).toBe(2);
     expect(store.miniCartOpen()).toBe(true);
     expect(main().getAttribute('aria-busy')).toBeNull();
+    expect(status()).toBe('נוסף לסל');
+
+    // Each success is announced again: the status is cleared while the next add runs.
+    main().click();
+    fixture.detectChanges();
+    expect(status()).toBe('');
+    http.expectOne('/api/cart/items').flush(cartView([cartLine(7, 4)]));
+    await settle();
+    fixture.detectChanges();
+    expect(status()).toBe('נוסף לסל');
   });
 
   it('shows an inline error when adding fails', async () => {
@@ -117,6 +147,6 @@ describe('AddToCart', () => {
     fixture.detectChanges();
     expect(el.querySelector('[role="alert"]')?.textContent?.trim() ?? '').toBe('');
     http.expectOne('/api/cart/items').flush(cartView([cartLine(7, 1)]));
-    await fixture.whenStable();
+    await settle();
   });
 });

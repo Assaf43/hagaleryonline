@@ -134,6 +134,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
                 [target]="buy.button().nativeElement"
                 [price]="v.price"
                 [disabled]="!buy.canAdd()"
+                [error]="buy.errorMessage()"
                 (buy)="buy.add()"
               />
 

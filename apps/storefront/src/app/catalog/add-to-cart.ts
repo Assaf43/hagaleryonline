@@ -25,7 +25,13 @@ import { CartStore } from '../core/cart.store';
     <div class="row">
       @if (canAdd()) {
         <div class="stepper" role="group" aria-label="כמות">
-          <button type="button" class="step" aria-label="הקטנת הכמות" [disabled]="quantity() <= 1" (click)="step(-1)">
+          <button
+            type="button"
+            class="step"
+            aria-label="הקטנת הכמות"
+            [attr.aria-disabled]="quantity() <= 1"
+            (click)="step(-1)"
+          >
             <svg lucideMinus aria-hidden="true"></svg>
           </button>
           <span class="qty num" aria-live="polite">{{ quantity() }}</span>
@@ -33,7 +39,7 @@ import { CartStore } from '../core/cart.store';
             type="button"
             class="step"
             aria-label="הגדלת הכמות"
-            [disabled]="quantity() >= max()"
+            [attr.aria-disabled]="quantity() >= max()"
             (click)="step(1)"
           >
             <svg lucidePlus aria-hidden="true"></svg>
@@ -51,7 +57,8 @@ import { CartStore } from '../core/cart.store';
         {{ canAdd() ? 'הוספה לסל' : 'אזל מהמלאי' }}
       </button>
     </div>
-    <p class="error" role="alert">{{ error() ? 'לא הצלחנו להוסיף לסל. נסו שוב.' : '' }}</p>
+    <p class="error" role="alert">{{ errorMessage() }}</p>
+    <span class="visually-hidden" role="status">{{ status() }}</span>
   `,
   styles: `
     :host {
@@ -65,9 +72,9 @@ import { CartStore } from '../core/cart.store';
 
     .stepper {
       display: inline-flex;
-      align-items: center;
+      align-items: stretch;
       flex: none;
-      min-block-size: var(--control-height);
+      block-size: var(--control-height);
       border: var(--border-width) solid var(--color-border-strong);
       border-radius: var(--radius-md);
     }
@@ -76,13 +83,14 @@ import { CartStore } from '../core/cart.store';
       display: inline-grid;
       place-items: center;
       inline-size: var(--icon-button-size);
-      block-size: 100%;
+      block-size: var(--control-height);
       background: none;
       border: none;
       color: var(--color-text);
 
-      &:disabled {
+      &[aria-disabled='true'] {
         color: var(--color-text-muted);
+        cursor: default;
       }
 
       svg {
@@ -92,6 +100,7 @@ import { CartStore } from '../core/cart.store';
     }
 
     .qty {
+      align-self: center;
       min-inline-size: var(--space-6);
       text-align: center;
       font-weight: 600;
@@ -138,22 +147,31 @@ export class AddToCart {
   protected readonly quantity = computed(() => Math.min(this.wanted(), this.max()));
   readonly canAdd = computed(() => this.variantId() !== null && this.fulfillment() !== 'out_of_stock');
   protected readonly busy = signal(false);
-  protected readonly error = signal(false);
+  private readonly failed = signal(false);
+  /** Empty unless the last add failed; the sticky bar shows it too. */
+  readonly errorMessage = computed(() => (this.failed() ? 'לא הצלחנו להוסיף לסל. נסו שוב.' : ''));
+  /** Polite status, cleared at each try so every success is announced again. */
+  protected readonly status = signal('');
 
+  /** The buttons stay focusable at a bound (aria-disabled), so a keyboard user keeps their place. */
   protected step(delta: 1 | -1): void {
-    this.wanted.set(Math.min(Math.max(this.quantity() + delta, 1), this.max()));
+    const next = this.quantity() + delta;
+    if (next < 1 || next > this.max()) return;
+    this.wanted.set(next);
   }
 
   async add(): Promise<void> {
     const id = this.variantId();
     if (id === null || !this.canAdd() || this.busy()) return;
     this.busy.set(true);
-    this.error.set(false);
+    this.failed.set(false);
+    this.status.set('');
     try {
       await this.cart.add(id, this.quantity());
+      this.status.set('נוסף לסל');
       this.cart.miniCartOpen.set(true);
     } catch {
-      this.error.set(true);
+      this.failed.set(true);
     } finally {
       this.busy.set(false);
     }

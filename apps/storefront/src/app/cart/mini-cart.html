@@ -14,14 +14,15 @@
       </button>
     </div>
 
-    @if (lines().length) {
-      @if (notices().length) {
-        <ul class="notices" aria-live="polite">
-          @for (n of notices(); track $index) {
-            <li>{{ n.messageHe }}</li>
-          }
-        </ul>
+    <ul class="notices" aria-live="polite">
+      @for (n of notices(); track $index) {
+        <li>{{ n.messageHe }}</li>
       }
+    </ul>
+
+    @if (loading()) {
+      <p class="empty">טוען…</p>
+    } @else if (lines().length) {
       <ul class="lines">
         @for (l of lines(); track l.variantId) {
           <li class="line" [class.unavailable]="!l.available">
@@ -37,6 +38,9 @@
               <span class="name">{{ l.nameHe }}</span>
               @if (l.optionLabels.length) {
                 <span class="options">{{ l.optionLabels.join(' · ') }}</span>
+              }
+              @if (!l.available) {
+                <span class="unavailable-label">לא זמין</span>
               }
               <span class="qty"
                 >כמות: <span class="num">{{ l.quantity }}</span></span

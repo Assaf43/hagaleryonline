@@ -8,7 +8,10 @@ class FakeObserver {
   static last: FakeObserver | null = null;
   readonly observed: Element[] = [];
   disconnected = false;
-  constructor(readonly callback: Callback) {
+  constructor(
+    readonly callback: Callback,
+    readonly options?: IntersectionObserverInit,
+  ) {
     FakeObserver.last = this;
   }
   observe(el: Element) {
@@ -18,8 +21,10 @@ class FakeObserver {
   disconnect() {
     this.disconnected = true;
   }
-  fire(isIntersecting: boolean) {
-    this.callback([{ isIntersecting, target: this.observed[0] }]);
+  /** `top`: the button's top edge relative to the viewport (negative = scrolled above it). */
+  fire(isIntersecting: boolean, top: number) {
+    const boundingClientRect = { top } as DOMRectReadOnly;
+    this.callback([{ isIntersecting, boundingClientRect, target: this.observed[0] }]);
   }
 }
 
@@ -27,11 +32,18 @@ class FakeObserver {
   imports: [StickyBuyBar],
   template: `
     <button #main type="button">main</button>
-    <hg-sticky-buy-bar [target]="main" [price]="459000" [disabled]="disabled()" (buy)="bought = bought + 1" />
+    <hg-sticky-buy-bar
+      [target]="main"
+      [price]="459000"
+      [disabled]="disabled()"
+      [error]="error()"
+      (buy)="bought = bought + 1"
+    />
   `,
 })
 class Host {
   readonly disabled = signal(false);
+  readonly error = signal('');
   bought = 0;
 }
 
@@ -63,13 +75,19 @@ describe('StickyBuyBar', () => {
     return { fixture, el, bar: () => el.querySelector('.sticky-bar') };
   }
 
-  it('on phones it shows when the main button leaves the view, and hides when it comes back', async () => {
+  it('on phones it shows only after the main button scrolled above the view', async () => {
     mockMedia(true);
     const { fixture, el, bar } = await setup();
     expect(FakeObserver.last?.observed[0]).toBe(el.querySelector('button'));
+    expect(FakeObserver.last?.options?.rootMargin).toMatch(/^-\d+px 0px 0px 0px$/);
     expect(bar()).toBeNull();
 
-    FakeObserver.last!.fire(false);
+    // Still below the fold: the main button is ahead, no bar.
+    FakeObserver.last!.fire(false, 900);
+    fixture.detectChanges();
+    expect(bar()).toBeNull();
+
+    FakeObserver.last!.fire(false, -50);
     fixture.detectChanges();
     expect(bar()).not.toBeNull();
     expect(bar()!.textContent).toContain('4,590 ₪');
@@ -78,15 +96,30 @@ describe('StickyBuyBar', () => {
     btn.click();
     expect(fixture.componentInstance.bought).toBe(1);
 
-    FakeObserver.last!.fire(true);
+    FakeObserver.last!.fire(true, 100);
     fixture.detectChanges();
     expect(bar()).toBeNull();
+
+    FakeObserver.last!.fire(false, 900);
+    fixture.detectChanges();
+    expect(bar()).toBeNull();
+  });
+
+  it('shows the error of a failed add', async () => {
+    mockMedia(true);
+    const { fixture, bar } = await setup();
+    FakeObserver.last!.fire(false, -50);
+    fixture.detectChanges();
+    expect(bar()!.querySelector('[role="alert"]')).toBeNull();
+    fixture.componentInstance.error.set('לא הצלחנו להוסיף לסל. נסו שוב.');
+    fixture.detectChanges();
+    expect(bar()!.querySelector('[role="alert"]')?.textContent?.trim()).toBe('לא הצלחנו להוסיף לסל. נסו שוב.');
   });
 
   it('is never shown on desktop', async () => {
     mockMedia(false);
     const { fixture, bar } = await setup();
-    FakeObserver.last?.fire(false);
+    FakeObserver.last?.fire(false, -50);
     fixture.detectChanges();
     expect(bar()).toBeNull();
   });
@@ -95,7 +128,7 @@ describe('StickyBuyBar', () => {
     mockMedia(true);
     const { fixture, bar } = await setup();
     fixture.componentInstance.disabled.set(true);
-    FakeObserver.last!.fire(false);
+    FakeObserver.last!.fire(false, -50);
     fixture.detectChanges();
     const btn = bar()!.querySelector<HTMLButtonElement>('button')!;
     expect(btn.disabled).toBe(true);

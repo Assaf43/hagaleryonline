@@ -30,6 +30,19 @@ describe('CartStore', () => {
     expect(store.count()).toBe(2);
   });
 
+  it('a load that started before a write does not overwrite the newer cart', async () => {
+    const { store, http } = setup();
+    const loading = store.load();
+    const adding = store.add(7, 2);
+    http.expectOne('/api/cart/items').flush(cartView([cartLine(7, 2)]));
+    await adding;
+    // The older read (without the new line) answers last.
+    http.expectOne('/api/cart').flush(cartView());
+    await loading;
+    expect(store.count()).toBe(2);
+    expect(store.view()?.lines.map((l) => l.variantId)).toEqual([7]);
+  });
+
   it('a failed load keeps the cart empty', async () => {
     const { store, http } = setup();
     const done = store.load();

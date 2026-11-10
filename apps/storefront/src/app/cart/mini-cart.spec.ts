@@ -39,7 +39,22 @@ describe('MiniCart', () => {
     return { fixture, el, store, opener, dialog: el.querySelector('dialog')! };
   }
 
+  // jsdom has no modal dialog: a minimal stand-in that keeps the `open` attribute and the close event.
+  const proto = HTMLDialogElement.prototype as Partial<HTMLDialogElement>;
+  const native = { showModal: proto.showModal, close: proto.close };
+  beforeEach(() => {
+    proto.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    proto.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open');
+      this.dispatchEvent(new Event('close'));
+    };
+  });
+
   afterEach(() => {
+    proto.showModal = native.showModal;
+    proto.close = native.close;
     document.body.innerHTML = '';
   });
 
@@ -97,6 +112,38 @@ describe('MiniCart', () => {
     );
     const { dialog } = await setup(view);
     expect(dialog.querySelector('.notices')?.textContent).toContain('נשארו במלאי רק 3 יחידות');
+  });
+
+  it('marks unavailable lines with text, not only colour', async () => {
+    const { dialog } = await setup(cartView([{ ...cartLine(1, 1), available: false }]));
+    expect(dialog.querySelector('.line')?.textContent).toContain('לא זמין');
+  });
+
+  it('keeps the polite notices region in the DOM even without notices', async () => {
+    const { dialog } = await setup();
+    const region = dialog.querySelector('.notices');
+    expect(region?.getAttribute('aria-live')).toBe('polite');
+    expect(region?.children.length).toBe(0);
+  });
+
+  it('opened before the cart arrived: shows "טוען…", loads it, then the lines', async () => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+    const store = TestBed.inject(CartStore);
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(Host);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    store.miniCartOpen.set(true);
+    fixture.detectChanges();
+    const dialog = (fixture.nativeElement as HTMLElement).querySelector('dialog')!;
+    expect(dialog.textContent).toContain('טוען…');
+    expect(dialog.textContent).not.toContain('הסל ריק');
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+    await fixture.whenStable();
+    await new Promise((resolve) => setTimeout(resolve));
+    fixture.detectChanges();
+    expect(dialog.textContent).not.toContain('טוען…');
+    expect(dialog.querySelectorAll('.line')).toHaveLength(1);
   });
 
   it('shows "הסל ריק" when empty', async () => {

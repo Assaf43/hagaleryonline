@@ -14,6 +14,8 @@ export class CartStore {
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly api = inject(CartApi);
   private readonly state = signal<CartView | null>(null);
+  /** Bumped by every write, so a slower load that started earlier cannot overwrite a newer cart. */
+  private writes = 0;
 
   readonly view = this.state.asReadonly();
   /** Units in available lines (the header badge). */
@@ -24,8 +26,10 @@ export class CartStore {
   /** Reads the cart; a failure keeps the last view (the header simply shows no count). */
   async load(): Promise<void> {
     if (!this.browser) return;
+    const writesBefore = this.writes;
     try {
-      this.state.set(await this.api.get());
+      const view = await this.api.get();
+      if (this.writes === writesBefore) this.state.set(view);
     } catch {
       // Keep what we had.
     }
@@ -46,6 +50,7 @@ export class CartStore {
   /** Errors reach the caller, which shows its own message; the last view stays. */
   private async write(call: () => Promise<CartView>): Promise<CartView> {
     if (!this.browser) throw new Error('The cart is not available in the server render');
+    this.writes++;
     const view = await call();
     this.state.set(view);
     return view;

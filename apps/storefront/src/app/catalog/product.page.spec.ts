@@ -4,6 +4,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import type { FulfillmentMode, ProductCard, ProductDetail, RelatedProducts, VariantDetail } from '@hg/models';
+import { CartStore } from '../core/cart.store';
+import { cartLine, cartView } from '../core/cart.testing';
 import { PageMeta } from '../core/page-meta';
 import { ProductPage } from './product.page';
 import { adjustmentNotice } from './variant-selection';
@@ -472,7 +474,11 @@ describe('ProductPage', () => {
     add.click();
     const req = http.expectOne({ method: 'POST', url: '/api/cart/items' });
     expect(req.request.body).toEqual({ variantId: green240.id, quantity: 1 });
-    req.flush({});
+    req.flush(cartView([cartLine(green240.id, 1)]));
+    await new Promise((resolve) => setTimeout(resolve));
+    const cart = TestBed.inject(CartStore);
+    expect(cart.count()).toBe(1);
+    expect(cart.miniCartOpen()).toBe(true);
     expect(el(h).querySelector('hg-sticky-buy-bar')).not.toBeNull();
   });
 
