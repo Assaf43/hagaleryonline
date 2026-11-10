@@ -19,7 +19,7 @@ export const RESET_TTL_MS = 24 * 60 * 60_000;
 @Injectable()
 export class AuthConfig {
   readonly adminUrl: string;
-  /** Where the storefront runs; its origin may send public writes (cart). */
+  /** Where the storefront runs; only its origin may send public writes (cart). */
   readonly storefrontUrl: string;
   readonly cookieSecure: boolean;
   readonly secretBox: SecretBox;
@@ -39,12 +39,8 @@ export class AuthConfig {
     return [new URL(this.adminUrl).origin];
   }
 
-  /**
-   * Origins allowed to send a state-changing request to `path`: the admin app for the admin API,
-   * the storefront for public writes (cart, checkout). Neither app may write to the other's endpoints.
-   */
-  allowedOriginsFor(path: string): string[] {
-    const isAdmin = path === ADMIN_API_PATH || path.startsWith(`${ADMIN_API_PATH}/`);
-    return isAdmin ? this.allowedOrigins : [new URL(this.storefrontUrl).origin];
+  /** Origins allowed to send state-changing public requests, e.g. the cart (CSRF defence). */
+  get storefrontOrigins(): string[] {
+    return [new URL(this.storefrontUrl).origin];
   }
 }

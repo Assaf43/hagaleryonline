@@ -13,6 +13,7 @@ import { FulfillmentMode } from './../src/generated/prisma/client.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 
 const ORIGIN = 'http://localhost:4200';
+const ADMIN_ORIGIN = 'http://localhost:4300';
 const DAY_MS = 24 * 60 * 60_000;
 
 // Runs against the e2e test database, migrated and seeded by test/e2e-global-setup.ts (needs `npm run db:up`).
@@ -41,6 +42,7 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
   const cartCookie = (res: request.Response) =>
     ([res.headers['set-cookie'] ?? []].flat() as string[]).find((c) => c.startsWith('hg_cart='));
   const tokenOf = (cookie: string) => decodeURIComponent(cookie.split(';')[0].slice('hg_cart='.length));
+  const hashOf = (cookie: string) => createHash('sha256').update(tokenOf(cookie)).digest('hex');
   const invalidateCatalog = () => app.get(CacheStore).invalidate('catalog:');
 
   beforeAll(async () => {
@@ -194,6 +196,39 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
     }
   });
 
+  it('marks an in-stock line with nothing left as sold out', async () => {
+    const b = browser();
+    await b.add(inStock, 2).expect(200);
+    await b.add(madeToOrder, 1).expect(200);
+    await prisma.variant.update({ where: { id: inStock }, data: { stock: 0 } });
+    try {
+      const cart = view(await b.get().expect(200));
+      expect(cart.lines.find((l) => l.variantId === inStock)).toMatchObject({
+        available: false,
+        quantity: 2,
+        maxQuantity: 0,
+      });
+      expect(cart.notices).toEqual([{ variantId: inStock, kind: 'unavailable', messageHe: 'ZZCART אזל מהמלאי' }]);
+      expect(cart.subtotal).toBe(250_000);
+      expect(cart.itemCount).toBe(1);
+      expect(cart.deliveryEstimate).toEqual({ fulfillment: 'made_to_order', leadTimeDays: 45 });
+    } finally {
+      await prisma.variant.update({ where: { id: inStock }, data: { stock: 3 } });
+    }
+  });
+
+  it('does not lose quantity when two adds arrive together', async () => {
+    const b = browser();
+    const tokenHash = hashOf(cartCookie(await b.add(madeToOrder, 1).expect(200))!);
+    await Promise.all([b.add(inStock, 1).expect(200), b.add(inStock, 1).expect(200)]);
+    const cart = view(await b.get().expect(200));
+    expect(cart.lines.find((l) => l.variantId === inStock)?.quantity).toBe(2);
+    expect(
+      await prisma.cartItem.findMany({ where: { cart: { tokenHash } }, select: { variantId: true, quantity: true } }),
+    ).toEqual(expect.arrayContaining([{ variantId: inStock, quantity: 2 }]));
+    expect(await prisma.cartItem.count({ where: { cart: { tokenHash } } })).toBe(2);
+  });
+
   it('PATCH sets the quantity and DELETE removes the line', async () => {
     const b = browser();
     await b.add(inStock, 1).expect(200);
@@ -219,6 +254,13 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
     await b.add(inStock, 1.5).expect(400);
     await b.agent.post('/api/cart/items').set('Origin', ORIGIN).send({ variantId: 'x', quantity: 1 }).expect(400);
     await b.add(999_999_999, 1).expect(404);
+    for (const id of ['12abc', '1e3', '-1', '0x10', ' 5'])
+      await b.agent
+        .patch(`/api/cart/items/${encodeURIComponent(id)}`)
+        .set('Origin', ORIGIN)
+        .send({ quantity: 1 })
+        .expect(400);
+    await b.agent.delete('/api/cart/items/abc').set('Origin', ORIGIN).expect(400);
     const res = await b.add(outOfStock, 1).expect(409);
     expect(res.body.code).toBe('unavailable');
     // Nothing was added, so no cart exists yet.
@@ -227,13 +269,20 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
 
   it('shows a price change since the line was added', async () => {
     const b = browser();
-    await b.add(inStock, 1).expect(200);
+    const tokenHash = hashOf(cartCookie(await b.add(inStock, 1).expect(200))!);
     await prisma.variant.update({ where: { id: inStock }, data: { price: 120_000 } });
     try {
       const cart = view(await b.get().expect(200));
       expect(cart.lines[0]).toMatchObject({ unitPrice: 120_000, lineTotal: 120_000 });
       expect(cart.subtotal).toBe(120_000);
       expect(cart.notices).toEqual([{ variantId: inStock, kind: 'price_changed', messageHe: 'המחיר של ZZCART עודכן' }]);
+      // Shown once: the read takes the new price as the line's reference price.
+      const again = view(await b.get().expect(200));
+      expect(again.notices).toEqual([]);
+      expect(again.lines[0].unitPrice).toBe(120_000);
+      expect(
+        (await prisma.cartItem.findFirstOrThrow({ where: { variantId: inStock, cart: { tokenHash } } })).unitPriceAtAdd,
+      ).toBe(120_000);
     } finally {
       await prisma.variant.update({ where: { id: inStock }, data: { price: 100_000 } });
     }
@@ -280,7 +329,32 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
     }
   });
 
-  it('refuses cart writes from a foreign origin or without one (SameOriginGuard)', async () => {
+  it('keeps the storefront and the admin app out of the other app write endpoints', async () => {
+    const server = app.getHttpServer();
+    const before = await prisma.cart.count();
+    // The admin app's origin cannot write to the cart.
+    await request(server)
+      .post('/api/cart/items')
+      .set('Origin', ADMIN_ORIGIN)
+      .send({ variantId: inStock, quantity: 1 })
+      .expect(403);
+    expect(await prisma.cart.count()).toBe(before);
+    // The storefront's origin cannot write to the admin API, whatever the path's case.
+    const login = { email: 'nobody@example.test', password: 'x' };
+    expect(
+      (await request(server).post('/api/admin/auth/login').set('Origin', ORIGIN).send(login).expect(403)).body.code,
+    ).toBe('forbidden');
+    await request(server).post('/API/ADMIN/auth/login').set('Origin', ORIGIN).send(login).expect(403);
+    await request(server).post('/Api/Admin/auth/login').set('Origin', ORIGIN).send(login).expect(403);
+    // The storefront's origin can.
+    await request(server)
+      .post('/api/cart/items')
+      .set('Origin', ORIGIN)
+      .send({ variantId: inStock, quantity: 1 })
+      .expect(200);
+  });
+
+  it('refuses cart writes from a foreign origin or without one (StorefrontOriginGuard)', async () => {
     const server = app.getHttpServer();
     const before = await prisma.cart.count();
     const foreign = await request(server)

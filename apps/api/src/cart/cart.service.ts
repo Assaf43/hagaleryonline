@@ -26,15 +26,17 @@ export class CartError extends HttpException {
 const notFound = () => new CartError(HttpStatus.NOT_FOUND, 'not_found');
 const unavailable = () => new CartError(HttpStatus.CONFLICT, 'unavailable');
 
-const EMPTY_VIEW: CartView = {
-  lines: [],
-  itemCount: 0,
-  subtotal: 0,
-  deliveryEstimate: null,
-  notices: [],
-  shippingFrom: null,
-  discount: null,
-};
+function emptyView(): CartView {
+  return {
+    lines: [],
+    itemCount: 0,
+    subtotal: 0,
+    deliveryEstimate: null,
+    notices: [],
+    shippingFrom: null,
+    discount: null,
+  };
+}
 
 /**
  * Server-side cart (spec §3.1, decision 68, CRT-02, CRT-04). Shown data and visibility come from the catalog
@@ -70,7 +72,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   /** Never creates a cart. */
   async read(token: string | undefined): Promise<CartResult> {
     const cart = await this.resolve(token);
-    if (!cart) return { view: EMPTY_VIEW, token: null };
+    if (!cart) return { view: emptyView(), token: null };
     return { view: await this.buildView(cart.id, []), token: token! };
   }
 
@@ -81,24 +83,30 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     const { price, limit, fulfillment } = orderable;
     if (limit < 1) throw unavailable();
 
-    let cart = await this.resolve(token);
-    let liveToken = token;
-    if (!cart || !liveToken) {
-      liveToken = newToken();
-      cart = await this.prisma.cart.create({ data: { tokenHash: hashToken(liveToken) } });
-    }
-    const key = { cartId: cart.id, variantId };
-    const existing = await this.prisma.cartItem.findUnique({ where: { cartId_variantId: key } });
-    const wanted = (existing?.quantity ?? 0) + quantity;
-    const next = clampQuantity(wanted, limit);
-    // Adding again means the customer saw the current price: it becomes the line's reference price.
-    await this.prisma.cartItem.upsert({
-      where: { cartId_variantId: key },
-      create: { ...key, quantity: next, unitPriceAtAdd: price },
-      update: { quantity: next, unitPriceAtAdd: price },
+    const existing = token ? await this.resolve(token) : null;
+    // One transaction: create the cart if needed, then an atomic insert-or-increment (INSERT … ON CONFLICT),
+    // so adds that arrive together never lose quantity; the result is clamped to the line limit.
+    const { cartId, liveToken, wanted } = await this.prisma.$transaction(async (tx) => {
+      let cartId = existing?.id;
+      let liveToken = token;
+      if (!cartId || !liveToken) {
+        liveToken = newToken();
+        cartId = (await tx.cart.create({ data: { tokenHash: hashToken(liveToken) }, select: { id: true } })).id;
+      }
+      const key = { cartId_variantId: { cartId, variantId } };
+      // Adding again means the customer saw the current price: it becomes the line's reference price.
+      const item = await tx.cartItem.upsert({
+        where: key,
+        create: { cartId, variantId, quantity, unitPriceAtAdd: price },
+        update: { quantity: { increment: quantity }, unitPriceAtAdd: price },
+        select: { quantity: true },
+      });
+      const next = clampQuantity(item.quantity, limit);
+      if (next !== item.quantity) await tx.cartItem.update({ where: key, data: { quantity: next } });
+      return { cartId, liveToken, wanted: item.quantity };
     });
-    const notices = next < wanted ? [clampedNotice(variantId, fulfillment, limit)] : [];
-    return { view: await this.buildView(cart.id, notices), token: liveToken };
+    const notices = wanted > limit ? [clampedNotice(variantId, fulfillment, limit)] : [];
+    return { view: await this.buildView(cartId, notices), token: liveToken };
   }
 
   /** Sets the quantity of an existing line, clamped to the line limit. */
@@ -123,7 +131,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   /** Removes a line; removing a line that is not there is not an error. */
   async remove(token: string | undefined, variantId: number): Promise<CartResult> {
     const cart = await this.resolve(token);
-    if (!cart) return { view: EMPTY_VIEW, token: null };
+    if (!cart) return { view: emptyView(), token: null };
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, variantId } });
     return { view: await this.buildView(cart.id, []), token: token! };
   }
@@ -196,25 +204,31 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       let quantity = item.quantity;
 
       if (!available) {
+        // Shown but nothing left to sell → sold out; no longer shown → unavailable.
         notices.push({
           variantId: item.variantId,
           kind: 'unavailable',
-          messageHe: `${v.product.modelName} לא זמין יותר`,
+          messageHe: shown ? `${v.product.modelName} אזל מהמלאי` : `${v.product.modelName} לא זמין יותר`,
         });
       } else {
+        const fix: { quantity?: number; unitPriceAtAdd?: number } = {};
         if (quantity > limit) {
-          quantity = limit;
-          await this.prisma.cartItem.update({
-            where: { cartId_variantId: { cartId, variantId: item.variantId } },
-            data: { quantity },
-          });
+          quantity = fix.quantity = limit;
           notices.push(clampedNotice(item.variantId, fulfillment, limit));
         }
-        if (v.price !== item.unitPriceAtAdd)
+        if (v.price !== item.unitPriceAtAdd) {
+          // Shown once: from now on the new price is the line's reference price.
+          fix.unitPriceAtAdd = v.price;
           notices.push({
             variantId: item.variantId,
             kind: 'price_changed',
             messageHe: `המחיר של ${v.product.modelName} עודכן`,
+          });
+        }
+        if (Object.keys(fix).length > 0)
+          await this.prisma.cartItem.update({
+            where: { cartId_variantId: { cartId, variantId: item.variantId } },
+            data: fix,
           });
       }
 

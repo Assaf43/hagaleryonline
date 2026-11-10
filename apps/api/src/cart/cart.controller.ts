@@ -14,22 +14,26 @@ import {
 } from '@nestjs/common';
 import type { CookieOptions, Request, Response } from 'express';
 import type { CartView } from '@hg/models';
-import { SameOriginGuard } from '../auth/guards.js';
+import { AuthConfig } from '../auth/auth.config.js';
+import { StorefrontOriginGuard } from '../auth/guards.js';
 import { CART_COOKIE, CART_TTL_MS } from './cart-token.js';
 import { CartError, CartService, type CartResult } from './cart.service.js';
 
 /** Most units one request may ask for; the line limit clamps it further. */
 const MAX_REQUEST_QUANTITY = 999;
 
-/** Public cart API (spec §3.1). Every write goes through SameOriginGuard (storefront origin only). */
+/** Public cart API (spec §3.1). Every write goes through StorefrontOriginGuard (storefront origin only). */
 @Controller('cart')
-@UseGuards(SameOriginGuard)
+@UseGuards(StorefrontOriginGuard)
 export class CartController {
-  constructor(private readonly cart: CartService) {}
+  constructor(
+    private readonly cart: CartService,
+    private readonly config: AuthConfig,
+  ) {}
 
   @Get()
   async get(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<CartView> {
-    return respond(req, res, await this.cart.read(tokenOf(req)));
+    return this.respond(req, res, await this.cart.read(tokenOf(req)));
   }
 
   @Post('items')
@@ -37,7 +41,7 @@ export class CartController {
   async add(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<CartView> {
     const { variantId, quantity } = (body ?? {}) as Record<string, unknown>;
     const result = await this.cart.add(tokenOf(req), parseId(variantId), parseQuantity(quantity));
-    return respond(req, res, result);
+    return this.respond(req, res, result);
   }
 
   @Patch('items/:variantId')
@@ -48,8 +52,8 @@ export class CartController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<CartView> {
     const { quantity } = (body ?? {}) as Record<string, unknown>;
-    const result = await this.cart.update(tokenOf(req), parseId(Number(variantId)), parseQuantity(quantity));
-    return respond(req, res, result);
+    const result = await this.cart.update(tokenOf(req), parseIdParam(variantId), parseQuantity(quantity));
+    return this.respond(req, res, result);
   }
 
   @Delete('items/:variantId')
@@ -58,7 +62,15 @@ export class CartController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<CartView> {
-    return respond(req, res, await this.cart.remove(tokenOf(req), parseId(Number(variantId))));
+    return this.respond(req, res, await this.cart.remove(tokenOf(req), parseIdParam(variantId)));
+  }
+
+  /** Renews the cookie of a live cart; drops a cookie that no longer names one. */
+  private respond(req: Request, res: Response, { view, token }: CartResult): CartView {
+    const options: CookieOptions = { httpOnly: true, sameSite: 'lax', secure: this.config.cookieSecure, path: '/' };
+    if (token) res.cookie(CART_COOKIE, token, { ...options, maxAge: CART_TTL_MS });
+    else if (tokenOf(req)) res.clearCookie(CART_COOKIE, options);
+    return view;
   }
 }
 
@@ -67,20 +79,9 @@ function tokenOf(req: Request): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function cookieOptions(): CookieOptions {
-  return {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env['NODE_ENV'] === 'production',
-    path: '/',
-  };
-}
-
-/** Renews the cookie of a live cart; drops a cookie that no longer names one. */
-function respond(req: Request, res: Response, { view, token }: CartResult): CartView {
-  if (token) res.cookie(CART_COOKIE, token, { ...cookieOptions(), maxAge: CART_TTL_MS });
-  else if (tokenOf(req)) res.clearCookie(CART_COOKIE, cookieOptions());
-  return view;
+function parseIdParam(value: string): number {
+  if (!/^\d+$/.test(value)) throw invalidInput();
+  return parseId(Number(value));
 }
 
 function parseId(value: unknown): number {
