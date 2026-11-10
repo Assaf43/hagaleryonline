@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -68,10 +68,30 @@ export class ShippingPage implements OnInit {
     for (const [key, z] of this.saved()) for (const id of z.localityIds) map.set(id, { key, name: z.name });
     return map;
   });
+  /** Rates and settings as last loaded or saved; the screen is dirty when they differ. */
+  private readonly ratesBaseline = signal('');
+  /** Each zone (by key) as last loaded or saved; a zone with no entry is new and unsaved. */
+  private readonly zoneBaseline = signal(new Map<number, string>());
+  protected readonly dirty = computed(
+    () =>
+      this.loaded() &&
+      (ratesSnapshot(this.rows(), this.settings()) !== this.ratesBaseline() ||
+        this.zones().some((z) => this.zoneBaseline().get(z.key) !== zoneSnapshot(z))),
+  );
   private readonly matchers = new Map<string, ErrorStateMatcher>();
 
   ngOnInit() {
     void this.load();
+  }
+
+  /** Leaving with unsaved changes asks first (route guard and browser tab). */
+  canLeave(): boolean {
+    return !this.dirty() || confirm('יש שינויים שלא נשמרו. לצאת בלי לשמור?');
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  protected beforeUnload(event: BeforeUnloadEvent) {
+    if (this.dirty()) event.preventDefault();
   }
 
   /** Marks a field invalid while the last check found a problem with it (the fields use ngModel, no form). */
@@ -117,6 +137,7 @@ export class ShippingPage implements OnInit {
       this.rows.set(rateRows(saved));
       this.defaultRateSet.set(saved.defaultRateSet);
       this.settings.set(settingsForm(saved.settings));
+      this.ratesBaseline.set(ratesSnapshot(this.rows(), this.settings()));
       this.snack.open('המחירון נשמר', undefined, { duration: 2500 });
     } catch (e) {
       this.ratesProblem.set(errorMessage(e));
@@ -171,7 +192,9 @@ export class ShippingPage implements OnInit {
     this.busyZone.set(zone.key);
     try {
       const saved = zone.id === null ? await this.api.createZone(input) : await this.api.updateZone(zone.id, input);
-      this.updateZone(zone.key, () => zoneDraft(saved, zone.key));
+      const draft = zoneDraft(saved, zone.key);
+      this.updateZone(zone.key, () => draft);
+      this.zoneBaseline.update((map) => new Map(map).set(zone.key, zoneSnapshot(draft)));
       this.remember(zone.key, saved);
       this.snack.open('האזור נשמר', undefined, { duration: 2500 });
     } catch (e) {
@@ -189,6 +212,11 @@ export class ShippingPage implements OnInit {
       this.zones.update((zones) => zones.filter((z) => z.key !== zone.key));
       this.zoneErrors.update((all) => withoutZone(all, zone.key));
       this.saved.update((map) => {
+        const next = new Map(map);
+        next.delete(zone.key);
+        return next;
+      });
+      this.zoneBaseline.update((map) => {
         const next = new Map(map);
         next.delete(zone.key);
         return next;
@@ -223,6 +251,8 @@ export class ShippingPage implements OnInit {
       this.settings.set(settingsForm(config.settings));
       const drafts = config.zones.map((z) => zoneDraft(z, this.nextKey++));
       this.zones.set(drafts);
+      this.ratesBaseline.set(ratesSnapshot(this.rows(), this.settings()));
+      this.zoneBaseline.set(new Map(drafts.map((d) => [d.key, zoneSnapshot(d)])));
       config.zones.forEach((z, i) => this.remember(drafts[i].key, z));
       this.loaded.set(true);
     } catch (e) {
@@ -230,6 +260,11 @@ export class ShippingPage implements OnInit {
     }
   }
 }
+
+const ratesSnapshot = (rows: RateRow[], settings: SettingsForm) => JSON.stringify({ rows, settings });
+
+const zoneSnapshot = (z: ZoneDraft) =>
+  JSON.stringify({ name: z.name, surcharge: z.surcharge, localities: z.localities.map((l) => l.id).sort() });
 
 function withoutZone(errors: FormErrors, key: number): FormErrors {
   return Object.fromEntries(Object.entries(errors).filter(([k]) => !k.startsWith(`${key}.`)));

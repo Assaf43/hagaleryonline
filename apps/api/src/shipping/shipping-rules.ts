@@ -42,9 +42,12 @@ export const LABEL_ZONE = 'תוספת אזור';
 /** "תוספת אזור: אילת והערבה"; without a zone name just "תוספת אזור". */
 export const zoneLabel = (zone?: string) => (zone?.trim() ? `${LABEL_ZONE}: ${zone.trim()}` : LABEL_ZONE);
 
+/** Shipping is configured once the price list has its default row (the fallback of every category). */
+export const isShippingConfigured = (rates: ShippingRateRow[]) => rates.some((r) => r.categoryId === null);
+
 /**
  * One unit per piece: quantity N of a variant is N units. Each uses its top-level category's rate, else the
- * default row, else 0 (no price list yet).
+ * default row (callers check `isShippingConfigured` first; 0 is only a safe fallback).
  */
 export function shippingUnits(
   items: { topCategoryId: number; quantity: number }[],

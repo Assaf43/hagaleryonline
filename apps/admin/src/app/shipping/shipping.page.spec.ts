@@ -201,4 +201,68 @@ describe('ShippingPage', () => {
     expect(api.createZone).toHaveBeenCalledWith({ name: 'דרום', surcharge: 10_000, localityIds: [] });
     expect(el().querySelector(`${zone} [role=alert]`)?.textContent).toContain('אילת והערבה');
   });
+
+  describe('unsaved changes guard', () => {
+    let confirmSpy: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      confirmSpy = vi.spyOn(window, 'confirm');
+    });
+    afterEach(() => confirmSpy.mockRestore());
+
+    it('leaves without a prompt when nothing changed', () => {
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+      expect(confirmSpy).not.toHaveBeenCalled();
+    });
+
+    it('asks first after a rate is edited, and stays when declined', () => {
+      type('#rate-2-delivery', '120');
+      confirmSpy.mockReturnValue(false);
+      expect(fixture.componentInstance.canLeave()).toBe(false);
+      expect(confirmSpy).toHaveBeenCalledWith('יש שינויים שלא נשמרו. לצאת בלי לשמור?');
+      confirmSpy.mockReturnValue(true);
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+    });
+
+    it('asks after a setting is edited, and is clean again once the value is restored', () => {
+      type('#floor-surcharge', '60');
+      confirmSpy.mockReturnValue(false);
+      expect(fixture.componentInstance.canLeave()).toBe(false);
+      type('#floor-surcharge', '50');
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+    });
+
+    it('is clean again after saving', async () => {
+      type('#rate-2-delivery', '120');
+      type('#rate-2-assembly', '80');
+      click('button.save-rates');
+      await settle();
+      expect(api.saveRates).toHaveBeenCalled();
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+      expect(confirmSpy).not.toHaveBeenCalled();
+    });
+
+    it('asks while a new or edited zone is unsaved', async () => {
+      confirmSpy.mockReturnValue(false);
+      type('.zone .zone-name', 'אילת והערבה 2');
+      expect(fixture.componentInstance.canLeave()).toBe(false);
+      type('.zone .zone-name', 'אילת והערבה');
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+      click('button.add-zone');
+      expect(fixture.componentInstance.canLeave()).toBe(false);
+      click('.zone:last-of-type button.delete-zone');
+      await settle();
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+    });
+
+    it('warns the browser tab (beforeunload) only while dirty', () => {
+      const event = () => {
+        const e = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(e);
+        return e.defaultPrevented;
+      };
+      expect(event()).toBe(false);
+      type('#rate-2-delivery', '120');
+      expect(event()).toBe(true);
+    });
+  });
 });

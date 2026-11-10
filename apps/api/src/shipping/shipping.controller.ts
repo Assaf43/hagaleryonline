@@ -5,7 +5,7 @@ import { StorefrontOriginGuard } from '../auth/guards.js';
 import { cartTokenOf } from '../cart/cart-token.js';
 import { CartService } from '../cart/cart.service.js';
 import { MAX_FLOOR } from './shipping-rules.js';
-import { ShippingError, ShippingService } from './shipping.service.js';
+import { ShippingError, ShippingNotConfiguredError, ShippingService } from './shipping.service.js';
 
 /** Public shipping API (spec §4.3). POSTs go through StorefrontOriginGuard (storefront origin only). */
 @Controller('shipping')
@@ -22,7 +22,13 @@ export class ShippingController {
   async quote(@Body() body: unknown, @Req() req: Request): Promise<ShippingQuote> {
     const request = parseQuoteRequest(body);
     const items = await this.cart.shippableItems(cartTokenOf(req));
-    return this.shipping.quote(items, request);
+    try {
+      return await this.shipping.quote(items, request);
+    } catch (e) {
+      if (e instanceof ShippingNotConfiguredError)
+        throw new ShippingError(HttpStatus.SERVICE_UNAVAILABLE, 'shipping_unavailable');
+      throw e;
+    }
   }
 }
 

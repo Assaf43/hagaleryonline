@@ -1,5 +1,11 @@
 import type { ShippingOption } from '@hg/models';
-import { quoteShipping, shippingFrom, shippingUnits, type ShippingPriceSettings } from './shipping-rules.js';
+import {
+  isShippingConfigured,
+  quoteShipping,
+  shippingFrom,
+  shippingUnits,
+  type ShippingPriceSettings,
+} from './shipping-rules.js';
 
 const SETTINGS: ShippingPriceSettings = { additionalItemPercent: 50, floorSurcharge: 5_000, floorSurchargeFrom: 2 };
 const GROUND = { floor: 0, hasElevator: false, zoneSurcharge: 0 };
@@ -150,7 +156,9 @@ describe('shippingUnits', () => {
     expect(method(quoteShipping(units, SETTINGS, GROUND), 'curbside').total).toBe(30_000 + 15_000);
   });
 
-  it('prices a category without a rate at 0 when there is no default row either', () => {
-    expect(shippingUnits([{ topCategoryId: 7, quantity: 1 }], [rates[1]])).toEqual([unit(0, 0)]);
+  it('is not configured without a default row, even when a category has a rate', () => {
+    expect(isShippingConfigured([])).toBe(false);
+    expect(isShippingConfigured([rates[1]])).toBe(false);
+    expect(isShippingConfigured(rates)).toBe(true);
   });
 });

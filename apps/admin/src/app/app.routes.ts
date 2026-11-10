@@ -64,6 +64,7 @@ export const routes: Routes = [
       {
         path: 'shipping',
         canMatch: [hasPermission('shipping.manage')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
         loadComponent: () => import('./shipping/shipping.page').then((m) => m.ShippingPage),
         title: 'משלוחים',
       },

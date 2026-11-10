@@ -37,7 +37,7 @@ export interface ShippingQuote {
 }
 
 /** Error codes of the shipping API (`{ statusCode, code }`). */
-export type ShippingErrorCode = 'invalid_input' | 'unknown_locality' | 'empty_cart';
+export type ShippingErrorCode = 'invalid_input' | 'unknown_locality' | 'empty_cart' | 'shipping_unavailable';
 
 // ---------- Admin (spec §4.4, ADM-07) ----------
 

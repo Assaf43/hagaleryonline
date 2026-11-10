@@ -239,4 +239,18 @@ describe('Shipping quote API (e2e, SHP-01–03, SHP-06, CRT-05)', () => {
     }
     expect((await browser().cart()).shippingFrom).toBeNull();
   });
+
+  it('is unavailable (503, shippingFrom null) while there is no default rate row, even with category rates', async () => {
+    const b = await filledCart();
+    const saved = await prisma.shippingRate.findMany({ where: { categoryId: null } });
+    await prisma.shippingRate.deleteMany({ where: { categoryId: null } });
+    try {
+      expect((await b.quote(req()).expect(503)).body).toMatchObject({ code: 'shipping_unavailable' });
+      expect((await b.cart()).shippingFrom).toBeNull();
+    } finally {
+      await prisma.shippingRate.createMany({ data: saved });
+    }
+    await b.quote(req()).expect(200);
+    expect((await b.cart()).shippingFrom).not.toBeNull();
+  });
 });
