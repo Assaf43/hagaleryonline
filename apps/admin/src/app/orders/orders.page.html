@@ -1,0 +1,60 @@
+<h1>הזמנות</h1>
+<p class="page-intro">כל ההזמנות שנוצרו באתר, מהחדשה לישנה. המסך לצפייה בלבד.</p>
+
+<div class="filters" role="group" aria-label="סינון לפי מצב">
+  @for (f of filters; track f.label) {
+    <button
+      type="button"
+      class="filter"
+      [class.active]="status() === f.status"
+      [attr.aria-pressed]="status() === f.status"
+      (click)="filter(f.status)"
+    >
+      {{ f.label }}
+    </button>
+  }
+</div>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (data(); as d) {
+  <ul class="orders" [attr.aria-busy]="loading()">
+    @for (o of d.items; track o.number) {
+      <li class="order">
+        <a class="order-link" [routerLink]="['/orders', o.number]">
+          <span class="number"
+            ><bdi dir="ltr">{{ o.number }}</bdi></span
+          >
+          <span class="date">{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</span>
+          <span class="customer">
+            {{ o.customerName }}
+            <bdi dir="ltr" class="phone">{{ o.phone }}</bdi>
+          </span>
+          <span class="items">{{ o.itemCount }} פריטים</span>
+          <span class="total">{{ formatPrice(o.total) }}</span>
+          <span class="status" [attr.data-status]="o.status">{{ statusLabels[o.status] }}</span>
+        </a>
+      </li>
+    } @empty {
+      <li class="empty">אין הזמנות להצגה.</li>
+    }
+  </ul>
+  @if (d.total > d.pageSize) {
+    <div class="pager">
+      <button matButton="outlined" type="button" [disabled]="d.page === 1 || loading()" (click)="load(d.page - 1)">
+        הקודם
+      </button>
+      <span class="muted">עמוד {{ d.page }} מתוך {{ pages(d) }}</span>
+      <button
+        matButton="outlined"
+        type="button"
+        [disabled]="d.page >= pages(d) || loading()"
+        (click)="load(d.page + 1)"
+      >
+        הבא
+      </button>
+    </div>
+  }
+}

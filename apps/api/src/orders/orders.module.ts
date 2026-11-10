@@ -11,6 +11,8 @@ import { HttpWebhookDispatcher, WebhookDispatcher } from '../payments/webhook-di
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
+import { OrdersAdminController } from './orders-admin.controller.js';
+import { OrdersAdminService } from './orders-admin.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 
@@ -21,10 +23,11 @@ import { OrdersService } from './orders.service.js';
  */
 @Module({
   imports: [AuthModule, CatalogModule, CartModule, ShippingModule],
-  controllers: [CheckoutController, OrdersController, PaymentsController],
+  controllers: [CheckoutController, OrdersController, PaymentsController, OrdersAdminController],
   providers: [
     CheckoutService,
     OrdersService,
+    OrdersAdminService,
     PaymentsService,
     { provide: WebhookDispatcher, useClass: HttpWebhookDispatcher },
     {

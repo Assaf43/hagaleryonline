@@ -203,3 +203,78 @@ export interface SandboxPaymentView {
   amount: number;
   status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
 }
+
+// ---------- Admin: orders (read-only) and providers (Phase 4c, spec §5.5, ADM-13) ----------
+
+/** Hebrew label of each order status, as shown in the admin. */
+export const ORDER_STATUS_LABELS_HE: Record<OrderStatus, string> = {
+  pending_payment: 'ממתינה לתשלום',
+  paid: 'שולמה',
+  payment_failed: 'התשלום נכשל',
+  expired: 'פג תוקף',
+};
+
+/** One row of GET /api/admin/orders. */
+export interface AdminOrderRow {
+  number: number;
+  /** ISO time. */
+  createdAt: string;
+  customerName: string;
+  phone: string;
+  total: number;
+  /** A pending order past its reservation reads as expired. */
+  status: OrderStatus;
+  itemCount: number;
+}
+
+export interface AdminOrderPage {
+  items: AdminOrderRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type AdminPaymentStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled';
+
+/** A payment attempt: the provider's transaction, never card data (NFR-10). */
+export interface AdminOrderPayment {
+  provider: string;
+  transactionId: string;
+  status: AdminPaymentStatus;
+  installments: number | null;
+  /** Agorot. */
+  amount: number;
+  rawStatus: string | null;
+  /** ISO time. */
+  createdAt: string;
+}
+
+/** GET /api/admin/orders/:number */
+export interface AdminOrderDetail {
+  number: number;
+  status: OrderStatus;
+  createdAt: string;
+  reservedUntil: string;
+  contact: CheckoutContact;
+  address: OrderAddressView;
+  method: ShippingMethod;
+  shippingTotal: number;
+  shippingLines: ShippingQuoteLine[];
+  subtotal: number;
+  discount: number;
+  discountInfo: OrderView['discountInfo'];
+  total: number;
+  deliveryEstimate: OrderView['deliveryEstimate'];
+  lines: OrderLine[];
+  /** Paid with an in-stock line short of stock: staff must contact the customer. */
+  stockShortage: boolean;
+  paymentProvider: string;
+  shippingProvider: string;
+  payments: AdminOrderPayment[];
+}
+
+/** GET /api/admin/providers */
+export interface ProvidersStatus {
+  payment: { code: string; testMode: boolean };
+  shipping: { code: string };
+}

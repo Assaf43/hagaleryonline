@@ -1,0 +1,123 @@
+<a class="back" routerLink="/orders">› לכל ההזמנות</a>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (order(); as o) {
+  <header class="head">
+    <h1>
+      הזמנה <bdi dir="ltr">{{ o.number }}</bdi>
+    </h1>
+    <span class="status" [attr.data-status]="o.status">{{ statusLabels[o.status] }}</span>
+  </header>
+  <p class="page-intro">נוצרה ב-{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</p>
+
+  @if (o.stockShortage) {
+    <p class="shortage" role="alert">
+      <strong>נדרש טיפול:</strong>
+      ההזמנה שולמה אחרי שהמלאי כבר לא הספיק לאחד הפריטים. צרו קשר עם הלקוח/ה כדי לתאם אספקה או החזר.
+    </p>
+  }
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="lines-title">
+      <h2 id="lines-title">פריטים</h2>
+      <ul class="lines">
+        @for (line of o.lines; track line.sku) {
+          <li class="line">
+            <div class="line-name">
+              <strong
+                ><bdi dir="ltr">{{ line.modelName }}</bdi></strong
+              >
+              {{ line.nameHe }}
+              @if (line.optionLabels.length) {
+                <span class="muted">{{ line.optionLabels.join(' · ') }}</span>
+              }
+              <span class="muted"
+                >מק״ט <bdi dir="ltr">{{ line.sku }}</bdi></span
+              >
+            </div>
+            <span class="muted">{{ line.quantity }} × {{ formatPrice(line.unitPrice) }}</span>
+            <span class="line-total">{{ formatPrice(line.lineTotal) }}</span>
+          </li>
+        }
+      </ul>
+      <dl class="totals">
+        <div>
+          <dt>סכום ביניים</dt>
+          <dd>{{ formatPrice(o.subtotal) }}</dd>
+        </div>
+        @if (o.discount > 0) {
+          <div>
+            <dt>{{ o.discountInfo?.labelHe ?? 'הנחה' }}</dt>
+            <dd>−{{ formatPrice(o.discount) }}</dd>
+          </div>
+        }
+        <div>
+          <dt>משלוח ({{ methodLabels[o.method] }})</dt>
+          <dd>{{ formatPrice(o.shippingTotal) }}</dd>
+        </div>
+        @for (s of o.shippingLines; track s.labelHe) {
+          <div class="sub">
+            <dt>{{ s.labelHe }}</dt>
+            <dd>{{ formatPrice(s.amount) }}</dd>
+          </div>
+        }
+        <div class="grand">
+          <dt>סה״כ כולל מע״מ</dt>
+          <dd>{{ formatPrice(o.total) }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel" aria-labelledby="customer-title">
+      <h2 id="customer-title">לקוח וכתובת</h2>
+      <p>
+        {{ o.contact.fullName }}<br />
+        <bdi dir="ltr">{{ o.contact.phone }}</bdi
+        ><br />
+        <bdi dir="ltr">{{ o.contact.email }}</bdi>
+      </p>
+      <p>
+        {{ o.address.street }} {{ o.address.houseNumber }}
+        @if (o.address.apartment) {
+          , דירה {{ o.address.apartment }}
+        }
+        , {{ o.address.localityNameHe }}<br />
+        קומה {{ o.address.floor }}, {{ o.address.hasElevator ? 'יש מעלית' : 'אין מעלית' }}
+      </p>
+      @if (o.address.notes) {
+        <p class="muted">הערות לשליח: {{ o.address.notes }}</p>
+      }
+      @if (o.deliveryEstimate; as e) {
+        <p class="muted">אספקה: {{ fulfillmentLabels[e.fulfillment] }}, עד {{ e.leadTimeDays }} ימים</p>
+      }
+      <p class="muted">
+        ספק תשלום <bdi dir="ltr">{{ o.paymentProvider }}</bdi> · ספק משלוחים
+        <bdi dir="ltr">{{ o.shippingProvider }}</bdi>
+      </p>
+    </section>
+
+    <section class="panel" aria-labelledby="payments-title">
+      <h2 id="payments-title">תשלומים</h2>
+      <ul class="payments">
+        @for (p of o.payments; track p.transactionId) {
+          <li class="payment">
+            <span class="pay-status" [attr.data-status]="p.status">{{ paymentLabels[p.status] }}</span>
+            <span>{{ formatPrice(p.amount) }}</span>
+            @if (p.installments) {
+              <span>{{ p.installments }} תשלומים</span>
+            }
+            <span class="muted">
+              <bdi dir="ltr">{{ p.provider }}</bdi> · <bdi dir="ltr">{{ p.transactionId }}</bdi> ·
+              {{ p.createdAt | date: 'd.M.yyyy HH:mm' }}
+            </span>
+          </li>
+        } @empty {
+          <li class="muted">אין ניסיונות תשלום.</li>
+        }
+      </ul>
+    </section>
+  </div>
+}
