@@ -219,3 +219,9 @@
 .no-scroll {
   overflow: hidden;
 }
+
+// The sticky add-to-cart bar (catalog/sticky-buy-bar.ts) is fixed at the bottom; while it is shown the page
+// keeps that much room, so the footer and the end of the page are never hidden under it.
+body.has-sticky-buy-bar {
+  padding-block-end: calc(var(--sticky-bar-height) + env(safe-area-inset-bottom));
+}

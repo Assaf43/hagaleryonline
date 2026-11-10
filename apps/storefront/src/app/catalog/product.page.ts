@@ -20,6 +20,7 @@ import { CatalogApi } from '../core/catalog.api';
 import { PageMeta } from '../core/page-meta';
 import { SITE_ORIGIN } from '../core/server-tokens';
 import { breadcrumbJsonLd, productJsonLd } from '../core/structured-data';
+import { AddToCart } from './add-to-cart';
 import { DeliveryLine } from './delivery-line';
 import { FavoriteButton } from './favorite-button';
 import { galleryImages } from './gallery-images';
@@ -27,6 +28,7 @@ import { PriceBlock } from './price-block';
 import { ProductDetails } from './product-details';
 import { ProductGallery } from './product-gallery';
 import { ProductRow } from './product-row';
+import { StickyBuyBar } from './sticky-buy-bar';
 import { VariantPicker } from './variant-picker';
 import {
   adjustmentNotice,
@@ -38,6 +40,8 @@ import {
 } from './variant-selection';
 
 const NO_RELATED: RelatedProducts = { goesWith: [], similar: [] };
+/** The stepper's limit: made-to-order and pre-order take up to 10, and the server clamps in-stock lines to the stock. */
+const MAX_QUANTITY = 10;
 
 function toRecord(map: ParamMap): Record<string, string | undefined> {
   return Object.fromEntries(map.keys.map((k) => [k, map.get(k) ?? undefined]));
@@ -45,7 +49,8 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
 /**
  * Product page (PRD-01..05, PRD-09): the chosen variant lives in the URL (`?color=green&size=280`),
- * so a shared link opens the same variant, also in the server render. The details accordion (PRD-06, PRD-08, PRD-10) sits under the delivery line.
+ * so a shared link opens the same variant, also in the server render. Add to cart (CRT-01) and the sticky phone
+ * bar sit under the delivery line, then the details accordion (PRD-06, PRD-08, PRD-10).
  */
 @Component({
   selector: 'hg-product-page',
@@ -59,6 +64,8 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
     ProductDetails,
     ProductRow,
     FavoriteButton,
+    AddToCart,
+    StickyBuyBar,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -117,7 +124,19 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
 
               <hg-delivery-line [variant]="v" />
 
-              <!-- Reserved (Phase 4): the product's one primary "הוספה לסל" button and the sticky mobile bar. -->
+              <hg-add-to-cart
+                #buy
+                [variantId]="v.inStock ? v.id : null"
+                [fulfillment]="v.inStock ? v.fulfillment : 'out_of_stock'"
+                [maxQuantity]="maxQuantity"
+              />
+              <hg-sticky-buy-bar
+                [target]="buy.button().nativeElement"
+                [price]="v.price"
+                [disabled]="!buy.canAdd()"
+                [error]="buy.errorMessage()"
+                (buy)="buy.add()"
+              />
 
               <hg-product-details [product]="p" [variant]="v" />
             </div>
@@ -207,6 +226,7 @@ export class ProductPage {
   private readonly tasks = inject(PendingTasks);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  protected readonly maxQuantity = MAX_QUANTITY;
 
   readonly product = signal<ProductDetail | null>(null);
   /** The variant the URL (or the last pick) resolves to. */

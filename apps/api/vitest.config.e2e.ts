@@ -23,6 +23,7 @@ export default defineConfig({
       DATABASE_URL: testUrl.toString(),
       TOTP_ENCRYPTION_KEY: process.env.TOTP_ENCRYPTION_KEY || Buffer.alloc(32, 7).toString('base64'),
       ADMIN_URL: 'http://localhost:4300',
+      STOREFRONT_URL: 'http://localhost:4200',
       COOKIE_SECURE: 'false',
       // The suite logs in many times from one IP; the per-IP limit has its own unit test.
       AUTH_IP_ATTEMPT_LIMIT: '1000',

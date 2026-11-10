@@ -7,7 +7,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { CatalogSnapshot, SnapshotAttribute, SnapshotCategory, SnapshotProduct } from './catalog-snapshot.js';
 import { insertSizeAxis, SIZE_AXIS, sizeAxis } from './size-axis.js';
 
-const FULFILLMENT: Record<DbFulfillment, FulfillmentMode> = {
+/** Database enum → API fulfillment code. */
+export const FULFILLMENT: Record<DbFulfillment, FulfillmentMode> = {
   IN_STOCK: 'in_stock',
   PRE_ORDER: 'pre_order',
   MADE_TO_ORDER: 'made_to_order',
@@ -227,6 +228,7 @@ export class CatalogRepository {
       images: p.images.filter((i) => i.colorValueId === null).map((i) => imageRef(this.storage, i)),
       optionAxes,
       variants: p.variants.map((v, index) => ({
+        id: v.id,
         sku: v.sku,
         price: v.price,
         compareAtPrice: v.compareAtPrice,

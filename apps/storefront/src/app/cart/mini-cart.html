@@ -1,0 +1,80 @@
+<dialog
+  #dialog
+  class="mini-cart"
+  [attr.aria-labelledby]="titleId"
+  (click)="backdropClick($event)"
+  (keydown.escape)="escape($event)"
+  (close)="closed()"
+>
+  <div class="panel" cdkTrapFocus>
+    <div class="head">
+      <h2 class="title" [id]="titleId">סל הקניות</h2>
+      <button #closeBtn type="button" class="icon-btn" aria-label="סגירת סל הקניות" (click)="close()">
+        <svg lucideX aria-hidden="true"></svg>
+      </button>
+    </div>
+
+    <ul class="notices" aria-live="polite">
+      @for (n of notices(); track $index) {
+        <li>{{ n.messageHe }}</li>
+      }
+    </ul>
+
+    @if (loading()) {
+      <p class="empty">טוען…</p>
+    } @else if (failed()) {
+      <div class="empty" role="alert">
+        <p>לא הצלחנו לטעון את הסל.</p>
+        <button type="button" class="btn btn-secondary retry" (click)="retry()">נסו שוב</button>
+      </div>
+    } @else if (lines().length) {
+      <ul class="lines">
+        @for (l of lines(); track l.variantId) {
+          <li class="line" [class.unavailable]="!l.available">
+            <div class="media">
+              @if (l.image; as img) {
+                <hg-responsive-image [image]="img" sizes="80px" />
+              }
+            </div>
+            <div class="info">
+              <a class="model" [routerLink]="['/product', l.productSlug]"
+                ><bdi dir="ltr">{{ l.modelName }}</bdi></a
+              >
+              <span class="name">{{ l.nameHe }}</span>
+              @if (l.optionLabels.length) {
+                <span class="options">{{ l.optionLabels.join(' · ') }}</span>
+              }
+              @if (!l.available) {
+                <span class="unavailable-label">{{
+                  l.unavailableReason === 'sold_out' ? 'אזל מהמלאי' : 'לא זמין'
+                }}</span>
+              }
+              <span class="qty"
+                >כמות: <span class="num">{{ l.quantity }}</span></span
+              >
+            </div>
+            @if (l.available) {
+              <span class="line-price num">{{ price(l.lineTotal) }}</span>
+            }
+          </li>
+        }
+      </ul>
+      <div class="foot">
+        <p class="subtotal">
+          <span>סכום ביניים</span>
+          <span class="num">{{ subtotal() }}</span>
+        </p>
+        <div class="actions">
+          <a routerLink="/cart" class="btn btn-secondary">לסל</a>
+          @if (canCheckout()) {
+            <a routerLink="/checkout" class="btn btn-primary checkout">למעבר לתשלום</a>
+          } @else {
+            <a class="btn btn-primary checkout" role="link" aria-disabled="true">למעבר לתשלום</a>
+          }
+        </div>
+      </div>
+    } @else {
+      <p class="empty">הסל ריק</p>
+    }
+  </div>
+</dialog>

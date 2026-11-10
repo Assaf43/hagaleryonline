@@ -53,6 +53,23 @@ export class SameOriginGuard implements CanActivate {
   }
 }
 
+/**
+ * The same CSRF defence for public writes (cart, checkout): only the storefront's origin may send them.
+ * Bound per controller, never by URL, so the admin API keeps accepting the admin app alone.
+ */
+@Injectable()
+export class StorefrontOriginGuard implements CanActivate {
+  constructor(private readonly config: AuthConfig) {}
+
+  canActivate(ctx: ExecutionContext): boolean {
+    const req = ctx.switchToHttp().getRequest<Request>();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+    const origin = req.get('origin') ?? originOf(req.get('referer'));
+    if (!origin || !this.config.storefrontOrigins.includes(origin)) throw forbidden();
+    return true;
+  }
+}
+
 /** Resolves the session cookie and enforces 2FA, permissions and Super Admin–only routes. */
 @Injectable()
 export class AdminAuthGuard implements CanActivate {

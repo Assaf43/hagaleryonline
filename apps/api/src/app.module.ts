@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { AuditModule } from './audit/audit.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CacheModule } from './cache/cache.module.js';
+import { CartModule } from './cart/cart.module.js';
 import { CatalogAdminModule } from './catalog-admin/catalog-admin.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -21,6 +22,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     HealthModule,
     CatalogModule,
     CatalogAdminModule,
+    CartModule,
   ],
 })
 export class AppModule {}

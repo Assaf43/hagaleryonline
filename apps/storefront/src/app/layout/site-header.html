@@ -18,7 +18,12 @@
           <span class="count num" aria-hidden="true">{{ favoritesCount() }}</span>
         }
       </a>
-      <!-- Reserved (Phase 4): the cart icon goes here, after the favorites. -->
+      <button type="button" class="icon-btn cart" [attr.aria-label]="cartLabel()" (click)="openCart()">
+        <svg lucideShoppingBag aria-hidden="true"></svg>
+        @if (cartCount() > 0) {
+          <span class="count num" aria-hidden="true">{{ cartCount() }}</span>
+        }
+      </button>
     </div>
   </div>
 
@@ -127,3 +132,5 @@
     </nav>
   </div>
 </dialog>
+
+<hg-mini-cart />
