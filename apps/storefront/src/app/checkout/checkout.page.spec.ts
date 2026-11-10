@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
 import type { CartView, ShippingQuote } from '@hg/models';
+import { CartStore } from '../core/cart.store';
 import { cartLine, cartView } from '../core/cart.testing';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from './checkout.api';
@@ -244,6 +245,8 @@ describe('CheckoutPage', () => {
       },
       method: 'full_service',
       acceptTerms: true,
+      // 2 × 1,500 + full service 550, as shown in the summary.
+      expectedTotal: 355000,
     });
     expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(true);
     req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
@@ -309,6 +312,55 @@ describe('CheckoutPage', () => {
     await render();
     expect(q<HTMLElement>('.summary').textContent).toContain('MODEL2');
     expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+  });
+
+  it('on price_changed shows the new total, reloads the cart and sends nothing more', async () => {
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush({ statusCode: 409, code: 'price_changed', total: 370000 }, { status: 409, statusText: 'Conflict' });
+    await render();
+    const error = q<HTMLElement>('.form-error').textContent ?? '';
+    expect(error).toContain('המחיר השתנה');
+    expect(error).toContain('3,700 ₪');
+    expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 155000)]));
+    await render();
+    await vi.advanceTimersByTimeAsync(300);
+    http.expectOne('/api/shipping/quote').flush(QUOTE);
+    await render();
+    expect(q<HTMLElement>('.summary .total').textContent).toContain('3,650 ₪');
+  });
+
+  it('keeps the method cards (and the focus on a radio) while the cart reloads and requotes', async () => {
+    await setup();
+    await fillValid();
+    const radio = q<HTMLInputElement>('input[name="method"][value="full_service"]');
+    radio.focus();
+    expect(document.activeElement).toBe(radio);
+
+    void TestBed.inject(CartStore).load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000)]));
+    await render();
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    // The new quote is on its way: the cards are still there, the same elements, still focused.
+    expect(q('input[name="method"][value="full_service"]')).toBe(radio);
+    expect(document.activeElement).toBe(radio);
+    expect(el().textContent).toContain('מעדכנים את מחיר המשלוח');
+
+    // Submitting now would send a stale total: it waits.
+    await submit();
+    expect(q<HTMLElement>('.form-error').textContent).toContain('מחשבים מחדש');
+    http.expectNone('/api/checkout');
+
+    http.expectOne('/api/shipping/quote').flush(QUOTE);
+    await render();
+    expect(q('input[name="method"][value="full_service"]')).toBe(radio);
+    expect(document.activeElement).toBe(radio);
+    expect(el().textContent).not.toContain('מעדכנים את מחיר המשלוח');
   });
 
   it('focuses the method group when only the method is missing, and marks the radios invalid', async () => {

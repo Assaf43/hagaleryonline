@@ -83,7 +83,7 @@ export function validateCheckout(f: CheckoutForm): FieldErrors {
 }
 
 /** The request for a form that passed `validateCheckout`. */
-export function toCheckoutRequest(f: CheckoutForm): CheckoutRequest {
+export function toCheckoutRequest(f: CheckoutForm, expectedTotal?: number): CheckoutRequest {
   return {
     contact: { fullName: f.fullName.trim(), phone: f.phone.trim(), email: f.email.trim() },
     address: {
@@ -97,6 +97,7 @@ export function toCheckoutRequest(f: CheckoutForm): CheckoutRequest {
     },
     method: f.method!,
     acceptTerms: true,
+    ...(expectedTotal === undefined ? {} : { expectedTotal }),
   };
 }
 

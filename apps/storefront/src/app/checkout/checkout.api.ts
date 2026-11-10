@@ -105,6 +105,10 @@ export function checkoutErrorMessage(code: ApiErrorCode | null): string {
       return 'אין בסל מוצרים שאפשר להזמין.';
     case 'cart_changed':
       return 'הסל השתנה בזמן ההזמנה. בדקו את הסיכום ונסו שוב.';
+    case 'price_changed':
+      return 'המחיר השתנה מאז שהצגנו אותו. בדקו את הסיכום ונסו שוב.';
+    case 'too_many_requests':
+      return 'ביצעתם יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.';
     case 'shipping_unavailable':
       return 'המשלוח אינו זמין כרגע. נסו שוב מאוחר יותר.';
     case 'payment_unavailable':

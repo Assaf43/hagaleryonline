@@ -201,6 +201,11 @@
                 @case ('loading') {
                   <p class="muted small">מחשבים את מחיר המשלוח…</p>
                 }
+                @case ('ready') {
+                  @if (refreshing()) {
+                    <p class="muted small">מעדכנים את מחיר המשלוח…</p>
+                  }
+                }
                 @case ('error') {
                   <p class="small">{{ quoteMessage() }}</p>
                   <button type="button" class="btn btn-secondary" (click)="retryQuote()">נסו שוב</button>

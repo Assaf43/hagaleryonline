@@ -88,6 +88,8 @@ export class CheckoutPage {
   protected readonly errors = signal<FieldErrors>({});
   protected readonly quote = signal<QuoteState>({ kind: 'none' });
   protected readonly submitting = signal(false);
+  /** A new quote is on its way while the previous one stays on screen (no flicker of the method cards). */
+  protected readonly refreshing = signal(false);
   /** A message about the whole order (not one field); `cartLink` adds "לסל הקניות". */
   protected readonly formError = signal<{ message: string; cartLink: boolean } | null>(null);
 
@@ -160,7 +162,15 @@ export class CheckoutPage {
           ),
           takeUntilDestroyed(inject(DestroyRef)),
         )
-        .subscribe((state) => this.quote.set(state));
+        .subscribe((state) => {
+          // Keep the cards (and the focus on a radio) while the next quote loads; submit waits for it.
+          if (state.kind === 'loading' && this.quote().kind === 'ready') {
+            this.refreshing.set(true);
+            return;
+          }
+          this.refreshing.set(false);
+          this.quote.set(state);
+        });
     }
   }
 
@@ -231,9 +241,15 @@ export class CheckoutPage {
       this.focusField(first);
       return;
     }
+    if (this.refreshing()) {
+      this.formError.set({ message: 'מחשבים מחדש את מחיר המשלוח. נסו שוב בעוד רגע.', cartLink: false });
+      return;
+    }
     this.submitting.set(true);
     try {
-      const { redirectUrl } = await this.api.checkout(toCheckoutRequest(form));
+      // The total on screen goes along: if it is no longer the price, the server refuses (price_changed).
+      const expectedTotal = this.chosen() ? this.total() : undefined;
+      const { redirectUrl } = await this.api.checkout(toCheckoutRequest(form, expectedTotal));
       // The page is leaving: the button stays disabled.
       this.external.assign(redirectUrl);
     } catch (error) {
@@ -254,6 +270,18 @@ export class CheckoutPage {
     }
     if (code === 'empty_cart') {
       this.toCart();
+      return;
+    }
+    if (code === 'price_changed') {
+      const total = error instanceof HttpErrorResponse ? (error.error as { total?: unknown }).total : undefined;
+      this.formError.set({
+        message:
+          typeof total === 'number'
+            ? `המחיר השתנה מאז שהצגנו אותו. הסכום החדש לתשלום: ${formatPrice(total)}. בדקו את הסיכום ולחצו שוב על ״למעבר לתשלום״.`
+            : checkoutErrorMessage(code),
+        cartLink: false,
+      });
+      void this.cart.load();
       return;
     }
     this.formError.set({ message: checkoutErrorMessage(code), cartLink: code === 'insufficient_stock' });
