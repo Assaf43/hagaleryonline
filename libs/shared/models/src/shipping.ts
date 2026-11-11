@@ -10,6 +10,12 @@ export interface LocalityOption {
  */
 export type ShippingMethod = 'curbside' | 'full_service';
 
+/** The methods' names, as the customer and the staff both see them (spec §4.1): one wording on both sides. */
+export const SHIPPING_METHOD_LABELS_HE: Record<ShippingMethod, string> = {
+  curbside: 'עד נקודת הפריקה',
+  full_service: 'כולל סבלות והרכבה',
+};
+
 /** Highest floor a quote or an order accepts (0 = ground floor); the floor surcharge cannot start above it. */
 export const MAX_FLOOR = 60;
 

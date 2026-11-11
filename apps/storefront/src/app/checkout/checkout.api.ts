@@ -11,7 +11,6 @@ import type {
   SandboxCompleteResponse,
   SandboxPaymentView,
   ShippingErrorCode,
-  ShippingMethod,
   ShippingQuote,
   ShippingQuoteRequest,
 } from '@hg/models';
@@ -77,11 +76,8 @@ export class ExternalNavigation {
   }
 }
 
-/** Shipping methods as the customer sees them (spec §4.1). */
-export const SHIPPING_METHOD_LABELS_HE: Record<ShippingMethod, string> = {
-  curbside: 'עד נקודת הפריקה',
-  full_service: 'כולל סבלות והרכבה',
-};
+/** Shipping methods as the customer sees them (spec §4.1); defined once in `@hg/models`, shared with the admin. */
+export { SHIPPING_METHOD_LABELS_HE } from '@hg/models';
 
 /** Codes this file turns into Hebrew: checkout/order/payment codes plus the quote's `unknown_locality`. */
 export type ApiErrorCode = CheckoutErrorCode | ShippingErrorCode;

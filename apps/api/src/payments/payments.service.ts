@@ -176,10 +176,20 @@ export class PaymentsService {
           );
           return 'amount_mismatch';
         }
-        // A newer order of the same cart exists (this one was superseded, then paid anyway): both can be paid, so
-        // the payment is flagged for staff (shown as "needs attention"); nothing else changes.
+        // A newer order of the same cart is still live — waiting for its payment within its reservation, or paid —
+        // so both could be paid: the payment is flagged for staff ("needs attention") and the cart keeps the lines
+        // the newer order needs. A newer order that was dropped (failed, cancelled, expired) does not count.
         const newer = order.cartId
-          ? await tx.order.count({ where: { cartId: order.cartId, number: { gt: order.number } } })
+          ? await tx.order.count({
+              where: {
+                cartId: order.cartId,
+                number: { gt: order.number },
+                OR: [
+                  { status: OrderStatus.PAID },
+                  { status: OrderStatus.PENDING_PAYMENT, reservedUntil: { gt: new Date() } },
+                ],
+              },
+            })
           : 0;
         await tx.payment.update({
           where: { id: payment.id },

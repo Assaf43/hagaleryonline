@@ -587,6 +587,20 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     await complete(second.tx, 'cancel').expect(200);
   });
 
+  it('paying a replaced order after its replacement was dropped: not flagged, and the cart is emptied', async () => {
+    const b = browser();
+    await b.add(plenty, 1);
+    const first = await placeOrder(b);
+    const second = await placeOrder(b);
+    // The customer drops the newer order (cancels its payment) and pays the older page instead.
+    await complete(second.tx, 'cancel').expect(200);
+    await complete(first.tx, 'success').expect(200);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { transactionId: first.tx } });
+    expect(payment.rawStatus).not.toBe('superseded_paid');
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: first.order.id } })).status).toBe(OrderStatus.PAID);
+    expect((await b.cart()).lines).toEqual([]);
+  });
+
   it('concurrent duplicate webhooks take the stock once', async () => {
     const b = browser();
     await b.add(plenty, 2);

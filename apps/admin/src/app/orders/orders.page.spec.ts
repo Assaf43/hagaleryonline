@@ -240,6 +240,8 @@ describe('admin orders screens', () => {
     expect(text).toContain('תל אביב - יפו');
     expect(text).toContain('להתקשר לפני');
     expect(flat(text)).toContain('1,150₪');
+    // The method in the customer's own words (the storefront shows the same name).
+    expect(text).toContain('משלוח (עד נקודת הפריקה)');
     const payment = el.querySelector('.payment')!;
     expect(payment.textContent).toContain('הצליח');
     expect(payment.textContent).toContain('3 תשלומים');
