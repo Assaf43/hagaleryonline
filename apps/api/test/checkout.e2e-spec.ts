@@ -114,7 +114,10 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       option && cart.status === 200 ? view.subtotal - (view.discount?.amount ?? 0) + option.total : 0;
     return { ...req, expectedTotal };
   };
-  const checkoutBody = (patch: Partial<CheckoutRequest> = {}): CheckoutRequest => ({
+  /** A valid request; `expectedTotal` is left to `browser().checkout()` (the total on screen) unless a test sets it. */
+  const checkoutBody = (
+    patch: Partial<CheckoutRequest> = {},
+  ): Omit<CheckoutRequest, 'expectedTotal'> & { expectedTotal?: number } => ({
     contact: { fullName: 'דנה כהן', phone: '050-1234567', email: 'dana@example.test' },
     address: {
       localityId: LOCALITY,
