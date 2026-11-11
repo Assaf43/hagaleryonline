@@ -86,8 +86,11 @@ export interface CheckoutRequest {
   address: CheckoutAddress;
   method: ShippingMethod;
   acceptTerms: true;
-  /** Agorot: the total the customer saw. When it differs from the recomputed total the order is not placed (409 `price_changed`). */
-  expectedTotal?: number;
+  /**
+   * Agorot: the total the customer saw, shipping included. Required (400 `invalid_input` without it); when it differs
+   * from the recomputed total the order is not placed (409 `price_changed`).
+   */
+  expectedTotal: number;
 }
 
 /** Where to send the customer to pay (the provider's page). Also the answer of POST /api/orders/:number/retry-payment. */

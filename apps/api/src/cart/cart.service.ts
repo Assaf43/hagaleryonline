@@ -80,12 +80,12 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
 
   /** Adds to the variant's line (creating the cart on the first add), clamped to the line limit. */
   async add(token: string | undefined, variantId: number, quantity: number): Promise<CartResult> {
-    const orderable = await this.orderable(variantId);
+    const existing = token ? await this.resolve(token) : null;
+    const orderable = await this.orderable(variantId, existing?.id);
     if (!orderable) throw notFound();
     const { price, limit, fulfillment } = orderable;
     if (limit < 1) throw unavailable();
 
-    const existing = token ? await this.resolve(token) : null;
     // One transaction: create the cart if needed, then an atomic insert-or-increment (INSERT … ON CONFLICT),
     // so adds that arrive together never lose quantity; the result is clamped to the line limit.
     const { cartId, liveToken, wanted } = await this.prisma.$transaction(async (tx) => {
@@ -118,7 +118,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       cart && (await this.prisma.cartItem.findUnique({ where: { cartId_variantId: { cartId: cart.id, variantId } } }));
     if (!cart || !item) throw notFound();
     // The line exists, so a variant that is no longer shown is unavailable rather than unknown.
-    const orderable = await this.orderable(variantId);
+    const orderable = await this.orderable(variantId, cart.id);
     if (!orderable || orderable.limit < 1) throw unavailable();
     const { limit, fulfillment } = orderable;
     const next = clampQuantity(quantity, limit);
@@ -165,8 +165,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     return { id: cart.id };
   }
 
-  /** A shown variant's current price, fulfillment and line limit; null when it is not shown. */
-  private async orderable(variantId: number) {
+  /** A shown variant's current price, fulfillment and line limit (for this cart); null when it is not shown. */
+  private async orderable(variantId: number, cartId?: string) {
     const snapshot = await this.catalog.snapshot();
     const shown = findShown(snapshot, variantId);
     const variant = await this.prisma.variant.findUnique({
@@ -175,7 +175,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     });
     if (!shown || !variant?.active) return null;
     const fulfillment = FULFILLMENT[variant.fulfillment];
-    const stock = (await availableStock(this.prisma, [variantId])).get(variantId) ?? 0;
+    const stock = (await availableStock(this.prisma, [variantId], cartId)).get(variantId) ?? 0;
     return { price: variant.price, fulfillment, limit: lineLimit(fulfillment, stock) };
   }
 

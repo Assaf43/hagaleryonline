@@ -245,11 +245,19 @@ export class CheckoutPage {
       this.formError.set({ message: 'מחשבים מחדש את מחיר המשלוח. נסו שוב בעוד רגע.', cartLink: false });
       return;
     }
+    // A method may still be picked while its price is gone (the requote failed): never order without it on screen.
+    if (!this.chosen()) {
+      this.formError.set({
+        message: 'מחיר המשלוח עדיין לא חושב. בדקו את הכתובת, בחרו שיטת משלוח ונסו שוב.',
+        cartLink: false,
+      });
+      this.focusField('method');
+      return;
+    }
     this.submitting.set(true);
     try {
       // The total on screen goes along: if it is no longer the price, the server refuses (price_changed).
-      const expectedTotal = this.chosen() ? this.total() : undefined;
-      const { redirectUrl } = await this.api.checkout(toCheckoutRequest(form, expectedTotal));
+      const { redirectUrl } = await this.api.checkout(toCheckoutRequest(form, this.total()));
       // The page is leaving: the button stays disabled.
       this.external.assign(redirectUrl);
     } catch (error) {

@@ -15,6 +15,7 @@ const valid = (): CheckoutRequest => ({
   },
   method: 'full_service',
   acceptTerms: true,
+  expectedTotal: 355_000,
 });
 
 /** The 400 body for a request with one field changed (`undefined` removes it). */
@@ -69,7 +70,34 @@ describe('parseCheckoutRequest (spec §5.1, §5.2)', () => {
       },
       method: 'full_service',
       acceptTerms: true,
+      expectedTotal: 355_000,
     });
+  });
+
+  it('requires the total the customer saw (expectedTotal): missing or not a whole number of agorot → 400', () => {
+    for (const value of [undefined, null, -1, 1.5, '355000', Number.MAX_SAFE_INTEGER + 1]) {
+      const body = valid() as unknown as Record<string, unknown>;
+      if (value === undefined) delete body.expectedTotal;
+      else body.expectedTotal = value;
+      try {
+        parseCheckoutRequest(body);
+        throw new Error(`expectedTotal ${String(value)} was accepted`);
+      } catch (e) {
+        expect((e as HttpException).getResponse()).toEqual({ statusCode: 400, code: 'invalid_input' });
+      }
+    }
+  });
+
+  it('checks the fields before the total, so a form error still names its field', () => {
+    const body = valid() as unknown as Record<string, unknown>;
+    delete body.expectedTotal;
+    (body.contact as Record<string, unknown>).phone = '';
+    expect(() => parseCheckoutRequest(body)).toThrow(HttpException);
+    try {
+      parseCheckoutRequest(body);
+    } catch (e) {
+      expect((e as HttpException).getResponse()).toMatchObject({ code: 'invalid_field', field: 'contact.phone' });
+    }
   });
 
   it('turns empty or missing optional fields into null', () => {

@@ -254,6 +254,21 @@ describe('CheckoutPage', () => {
     expect(assign).toHaveBeenCalledWith('http://localhost:4200/pay/sandbox/abc');
   });
 
+  it('never submits without a shipping price on screen (the requote failed after a method was chosen)', async () => {
+    await setup();
+    await fillValid();
+    fill('chk-floor', '4');
+    await vi.advanceTimersByTimeAsync(300);
+    http.expectOne('/api/shipping/quote').flush(null, { status: 0, statusText: 'Network error' });
+    await render();
+    expect(q('.summary').textContent).toContain('לפי הכתובת ושיטת המשלוח');
+
+    await submit();
+    http.expectNone('/api/checkout');
+    expect(q('.form-error').textContent).toContain('מחיר המשלוח עדיין לא חושב');
+    expect(document.activeElement?.id).toBe('chk-method');
+  });
+
   it('shows a server field error inline and focuses it', async () => {
     await setup();
     await fillValid();

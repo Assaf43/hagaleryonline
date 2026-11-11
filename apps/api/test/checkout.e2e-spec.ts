@@ -65,11 +65,26 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       cart: async () => (await agent.get('/api/cart').expect(200)).body as CartView,
       add: (variantId: number, quantity: number) =>
         agent.post('/api/cart/items').set('Origin', ORIGIN).send({ variantId, quantity }).expect(200),
-      checkout: (body: unknown) =>
-        agent
-          .post('/api/checkout')
-          .set('Origin', ORIGIN)
-          .send(body as object),
+      /**
+       * POST /api/checkout. Like the storefront, it sends the total on screen (cart subtotal + the chosen method's
+       * quote) unless the body already has `expectedTotal`; when nothing can be quoted it sends 0, so the server's
+       * own refusal (empty cart, shortage, unknown locality…) is what the test sees. A promise of the response, with
+       * `.expect(status)` like supertest's.
+       */
+      checkout: (body: unknown) => {
+        const sent = (async (): Promise<request.Response> =>
+          agent
+            .post('/api/checkout')
+            .set('Origin', ORIGIN)
+            .send(await withExpectedTotal(agent, body)))();
+        return Object.assign(sent, {
+          expect: async (status: number) => {
+            const res = await sent;
+            expect(res.status, JSON.stringify(res.body)).toBe(status);
+            return res;
+          },
+        });
+      },
       quote: async (floor: number, hasElevator: boolean) =>
         (
           await agent
@@ -81,6 +96,24 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     };
   };
   const http = () => request(app.getHttpServer() as App);
+  const withExpectedTotal = async (agent: ReturnType<typeof request.agent>, body: unknown): Promise<object> => {
+    const req = body as Record<string, unknown>;
+    if (typeof req !== 'object' || req === null || 'expectedTotal' in req) return req;
+    const address = (req.address ?? {}) as Partial<CheckoutRequest['address']>;
+    const [cart, quote] = await Promise.all([
+      agent.get('/api/cart'),
+      agent
+        .post('/api/shipping/quote')
+        .set('Origin', ORIGIN)
+        .send({ localityId: address.localityId, floor: address.floor, hasElevator: address.hasElevator }),
+    ]);
+    const option =
+      quote.status === 200 ? (quote.body as ShippingQuote).methods.find((m) => m.method === req.method) : undefined;
+    const view = cart.body as CartView;
+    const expectedTotal =
+      option && cart.status === 200 ? view.subtotal - (view.discount?.amount ?? 0) + option.total : 0;
+    return { ...req, expectedTotal };
+  };
   const checkoutBody = (patch: Partial<CheckoutRequest> = {}): CheckoutRequest => ({
     contact: { fullName: 'דנה כהן', phone: '050-1234567', email: 'dana@example.test' },
     address: {
@@ -525,6 +558,11 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     const b = browser();
     await b.add(few, 2);
     const first = await placeOrder(b);
+    // Back from the payment page: the customer's own pending order does not make their lines look sold out (a new
+    // checkout releases it), so the total they see is the one charged. Other customers still see them reserved.
+    const own = (await b.cart()).lines[0];
+    expect(own).toMatchObject({ variantId: few, quantity: 2, available: true, maxQuantity: 2 });
+    expect(await limitOf(few)).toBe(0);
     const second = await placeOrder(b, checkoutBody({ method: 'full_service' }));
     expect(second.order.id).not.toBe(first.order.id);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: first.order.id } })).status).toBe(OrderStatus.EXPIRED);
@@ -603,6 +641,11 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(await limitOf(plenty)).toBe(available);
     await b.checkout({ ...checkoutBody(), expectedTotal: -5 }).expect(400);
     await b.checkout({ ...checkoutBody(), expectedTotal: '90000' }).expect(400);
+    // Without the total the customer saw, nothing is charged (an old client or a script cannot skip the check).
+    const missing = await b.agent.post('/api/checkout').set('Origin', ORIGIN).send(checkoutBody()).expect(400);
+    expect(missing.body).toEqual({ statusCode: 400, code: 'invalid_input' });
+    expect(await prisma.order.count()).toBe(orders);
+    expect(await limitOf(plenty)).toBe(available);
     const ok = await b.checkout({ ...checkoutBody(), expectedTotal: 90_000 }).expect(201);
     expect((await orderOfTx(txOf(ok))).total).toBe(90_000);
   });
@@ -626,7 +669,11 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     throttle.setLimit('checkout', 2);
     throttle.setLimit('retry', 1);
     try {
-      const empty = () => http().post('/api/checkout').set('Origin', ORIGIN).send(checkoutBody());
+      const empty = () =>
+        http()
+          .post('/api/checkout')
+          .set('Origin', ORIGIN)
+          .send({ ...checkoutBody(), expectedTotal: 0 });
       await empty().expect(409);
       await empty().expect(409);
       const limited = await empty().expect(429);
@@ -636,6 +683,13 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       const retry = () => http().post('/api/orders/100001/retry-payment?t=wrong').set('Origin', ORIGIN);
       await retry().expect(404);
       await retry().expect(429);
+
+      // Behind the proxy each customer has a bucket of their own (the client IP comes from X-Forwarded-For).
+      throttle.setLimit('checkout', 1);
+      const from = (ip: string) => empty().set('X-Forwarded-For', ip);
+      await from('203.0.113.7').expect(409);
+      await from('203.0.113.7').expect(429);
+      await from('203.0.113.8').expect(409);
     } finally {
       throttle.setLimit('checkout', 100_000);
       throttle.setLimit('retry', 100_000);

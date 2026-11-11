@@ -66,9 +66,11 @@ export async function computeCartLines(
       },
     },
   });
+  // The cart's own pending orders do not count against it: a new checkout of this cart releases them first.
   const stock = await availableStock(
     db,
     items.map((i) => i.variantId),
+    cartId,
   );
   return items.map((item) => {
     const v = item.variant;

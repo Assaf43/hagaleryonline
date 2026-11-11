@@ -14,6 +14,48 @@ describe('SandboxPaymentProvider (spec §5.3, CHK-10)', () => {
     expect(
       () => new SandboxPaymentProvider(config({ NODE_ENV: 'production', PAYMENT_SANDBOX_SECRET: SECRET })),
     ).toThrow(/cannot run in production/);
+    expect(
+      () =>
+        new SandboxPaymentProvider(
+          config({ NODE_ENV: 'production', PAYMENT_SANDBOX_ALLOW_REMOTE: 'true', PAYMENT_SANDBOX_SECRET: SECRET }),
+        ),
+    ).toThrow(/cannot run in production/);
+  });
+
+  it('refuses a public site address unless a test environment allows it explicitly (NODE_ENV may be missing)', () => {
+    for (const site of ['https://hagaleryonline.co.il', 'https://www.example.com/', 'http://10.0.0.5:4200']) {
+      expect(() => new SandboxPaymentProvider(config({ SITE_URL: site, PAYMENT_SANDBOX_SECRET: SECRET }))).toThrow(
+        /PAYMENT_SANDBOX_ALLOW_REMOTE/,
+      );
+      expect(
+        () =>
+          new SandboxPaymentProvider(
+            config({ SITE_URL: site, PAYMENT_SANDBOX_ALLOW_REMOTE: 'true', PAYMENT_SANDBOX_SECRET: SECRET }),
+          ),
+      ).not.toThrow();
+    }
+    // The storefront address counts too when there is no SITE_URL.
+    expect(
+      () =>
+        new SandboxPaymentProvider(
+          config({ STOREFRONT_URL: 'https://shop.example.com', PAYMENT_SANDBOX_SECRET: SECRET }),
+        ),
+    ).toThrow(/PAYMENT_SANDBOX_ALLOW_REMOTE/);
+  });
+
+  it('runs on development addresses', () => {
+    for (const site of [
+      undefined,
+      'http://localhost:4200',
+      'http://127.0.0.1:4200',
+      'http://[::1]:4200',
+      'http://shop.localhost',
+      'https://x.test/',
+    ])
+      expect(
+        () =>
+          new SandboxPaymentProvider(config({ ...(site ? { SITE_URL: site } : {}), PAYMENT_SANDBOX_SECRET: SECRET })),
+      ).not.toThrow();
   });
 
   it('opens a storefront payment page with a random transaction id', async () => {
@@ -67,15 +109,21 @@ describe('SandboxPaymentProvider (spec §5.3, CHK-10)', () => {
 });
 
 describe('selectPaymentProvider', () => {
-  it('builds only the selected adapter (default sandbox) and fails on an unknown code', () => {
+  it('builds only the selected adapter and fails on an unknown code', () => {
     const built: string[] = [];
     const factories = {
       sandbox: () => (built.push('sandbox'), { code: 'sandbox' }) as never,
       other: () => (built.push('other'), { code: 'other' }) as never,
     };
-    expect(selectPaymentProvider(undefined, factories)).toEqual({ code: 'sandbox' });
+    expect(selectPaymentProvider('sandbox', factories)).toEqual({ code: 'sandbox' });
     expect(selectPaymentProvider(' other ', factories)).toEqual({ code: 'other' });
     expect(built).toEqual(['sandbox', 'other']);
     expect(() => selectPaymentProvider('toString', factories)).toThrow(/Unknown PAYMENT_PROVIDER "toString"/);
+  });
+
+  it('has no default: a missing PAYMENT_PROVIDER stops the API instead of falling back to the sandbox', () => {
+    const factories = { sandbox: () => ({ code: 'sandbox' }) as never };
+    for (const code of [undefined, '', '  '])
+      expect(() => selectPaymentProvider(code, factories)).toThrow(/PAYMENT_PROVIDER is not set/);
   });
 });

@@ -37,7 +37,7 @@ export interface PaymentProvider {
   verifyWebhook(headers: IncomingHttpHeaders, rawBody: Buffer): Promise<PaymentResult>;
 }
 
-/** Injection token of the active provider, chosen by the `PAYMENT_PROVIDER` env variable (default `sandbox`). */
+/** Injection token of the active provider, chosen by the `PAYMENT_PROVIDER` env variable (required, no default). */
 export const PAYMENT_PROVIDER = 'PAYMENT_PROVIDER';
 
 export class WebhookSignatureError extends Error {
@@ -55,14 +55,16 @@ export class WebhookPayloadError extends Error {
 }
 
 /**
- * The adapter named by `code` (empty → `sandbox`). Adapters are built lazily, so one that refuses to load (the
+ * The adapter named by `code` (required: empty stops the API at startup). Adapters are built lazily, so one that refuses to load (the
  * sandbox in production) only stops the API when it is the one selected; an unknown code fails at startup.
  */
 export function selectPaymentProvider(
   code: string | undefined,
   factories: Record<string, () => PaymentProvider>,
 ): PaymentProvider {
-  const wanted = code?.trim() || 'sandbox';
+  // No default: a box that forgot the variable must not quietly take payments in the sandbox (free orders).
+  const wanted = code?.trim();
+  if (!wanted) throw new Error(`PAYMENT_PROVIDER is not set. Expected one of: ${Object.keys(factories).join(', ')}.`);
   const factory = Object.hasOwn(factories, wanted) ? factories[wanted] : undefined;
   if (!factory)
     throw new Error(`Unknown PAYMENT_PROVIDER "${wanted}". Expected one of: ${Object.keys(factories).join(', ')}.`);
