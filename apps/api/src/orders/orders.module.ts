@@ -8,6 +8,7 @@ import { PaymentsController } from '../payments/payments.controller.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { SandboxPaymentProvider } from '../payments/sandbox-payment.provider.js';
 import { HttpWebhookDispatcher, WebhookDispatcher } from '../payments/webhook-dispatcher.js';
+import { PromotionsModule } from '../promotions/promotions.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
@@ -23,7 +24,7 @@ import { WriteThrottle } from './write-throttle.js';
  * address stops the API only when it is the configured provider.
  */
 @Module({
-  imports: [AuthModule, CatalogModule, CartModule, ShippingModule],
+  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule],
   controllers: [CheckoutController, OrdersController, PaymentsController, OrdersAdminController],
   providers: [
     CheckoutService,

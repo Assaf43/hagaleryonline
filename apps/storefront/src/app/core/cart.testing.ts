@@ -30,5 +30,6 @@ export function cartView(lines: CartLine[] = [], notices: CartView['notices'] = 
     notices,
     shippingFrom: null,
     discount: null,
+    couponCode: null,
   };
 }

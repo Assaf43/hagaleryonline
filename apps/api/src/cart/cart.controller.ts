@@ -65,13 +65,17 @@ export class CartController {
     return this.respond(req, res, await this.cart.remove(tokenOf(req), parseIdParam(variantId)));
   }
 
-  /** Renews the cookie of a live cart; drops a cookie that no longer names one. */
-  private respond(req: Request, res: Response, { view, token }: CartResult): CartView {
-    const options: CookieOptions = { httpOnly: true, sameSite: 'lax', secure: this.config.cookieSecure, path: '/' };
-    if (token) res.cookie(CART_COOKIE, token, { ...options, maxAge: CART_TTL_MS });
-    else if (tokenOf(req)) res.clearCookie(CART_COOKIE, options);
-    return view;
+  private respond(req: Request, res: Response, result: CartResult): CartView {
+    return sendCart(this.config, req, res, result);
   }
+}
+
+/** Renews the cookie of a live cart; drops a cookie that no longer names one. Returns the view to send. */
+export function sendCart(config: AuthConfig, req: Request, res: Response, { view, token }: CartResult): CartView {
+  const options: CookieOptions = { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/' };
+  if (token) res.cookie(CART_COOKIE, token, { ...options, maxAge: CART_TTL_MS });
+  else if (tokenOf(req)) res.clearCookie(CART_COOKIE, options);
+  return view;
 }
 
 function parseIdParam(value: string): number {

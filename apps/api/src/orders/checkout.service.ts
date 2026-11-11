@@ -22,11 +22,14 @@ import { CatalogService } from '../catalog/catalog.service.js';
 import { OrderShippingMethod, OrderStatus } from '../generated/prisma/client.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { couponProblemMessageHe } from '../promotions/discount-engine.js';
+import { discountInfo, discountLines, PromotionsService } from '../promotions/promotions.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
 import { lockCart, lockVariants } from './locks.js';
 import {
   cartChanged,
+  couponInvalid,
   emptyCart,
   fieldError,
   invalidInput,
@@ -54,9 +57,14 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
  *     rows in id order, recompute the lines under the locks — fresh prices, fresh available stock — and check them:
  *     the lines must be the ones that were quoted (else 409 `cart_changed`) and each must fit its limit (else 409
  *     `insufficient_stock` with the line and its new limit). The shipping is quoted once more from these locked lines
- *     (a price-list change in between is picked up), and when the total the customer saw (`expectedTotal`, required)
- *     differs from the recomputed one, nothing is created: 409 `price_changed` with the new total. Then create
- *     the order, its items and the reservation. `shown` / top category come from the catalog snapshot, which admin
+ *     (a price-list change in between is picked up). The one discount (spec §6) is recomputed from the locked lines
+ *     and the cart's coupon (read under the cart lock, so it cannot change meanwhile): a coupon used up since the
+ *     customer saw it → 409 `coupon_invalid`; any other change (a promotion that ended, a coupon that expired) shows
+ *     in the total. When the total the customer saw (`expectedTotal`, required) differs from the recomputed one
+ *     (subtotal − discount + shipping), nothing is created: 409 `price_changed` with the new total. Then create
+ *     the order, its items, the discount snapshot and the reservation. The usage limit counts paid orders only, so
+ *     the promotion row is not locked here: two pending orders may both use a coupon's last use, and both are
+ *     honored and counted when paid (Review Focus 5). `shown` / top category come from the catalog snapshot, which admin
  *     writes invalidate at once in this process (a multi-process deploy would see it up to 60 s late — Phase 9).
  *  4. After commit: ask the payment provider for a payment page and record the payment (PaymentsService).
  */
@@ -68,6 +76,7 @@ export class CheckoutService {
     private readonly catalog: CatalogService,
     private readonly shipping: ShippingService,
     private readonly payments: PaymentsService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   async checkout(token: string | undefined, body: unknown): Promise<CheckoutResponse> {
@@ -88,6 +97,10 @@ export class CheckoutService {
     const order = await this.prisma.$transaction(
       async (tx) => {
         if (!(await lockCart(tx, cart.id))) throw emptyCart();
+        const { couponCode } = await tx.cart.findUniqueOrThrow({
+          where: { id: cart.id },
+          select: { couponCode: true },
+        });
         await tx.order.updateMany({
           where: { cartId: cart.id, status: OrderStatus.PENDING_PAYMENT },
           data: { status: OrderStatus.EXPIRED },
@@ -112,8 +125,16 @@ export class CheckoutService {
         const estimate = deliveryEstimate(lines.map((l) => ({ ...l, available: true })));
         if (!estimate) throw emptyCart();
         const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.storedQuantity, 0);
-        // Phase 4d: the one discount of the order (decision 70) is computed and re-checked here.
-        const discount = 0;
+        // The one discount of the order (decision 70), on the locked lines at their current prices.
+        const evaluated = await this.promotions.evaluate(
+          tx,
+          discountLines(lines, (l) => l.storedQuantity),
+          couponCode,
+        );
+        if (evaluated.couponProblem === 'exhausted')
+          throw couponInvalid(couponProblemMessageHe('exhausted', evaluated.coupon));
+        const discount = evaluated.applied?.amount ?? 0;
+        const info = discountInfo(evaluated);
         const total = subtotal - discount + option.total;
         if (input.expectedTotal !== total) throw priceChanged(total);
         return tx.order.create({
@@ -127,6 +148,8 @@ export class CheckoutService {
             shippingLines: option.lines.map((l) => ({ ...l })),
             subtotal,
             discount,
+            discountInfo: info ? { ...info } : undefined,
+            promotionId: evaluated.promotion?.id ?? null,
             total,
             deliveryEstimate: estimate,
             paymentProvider: this.payments.providerCode,

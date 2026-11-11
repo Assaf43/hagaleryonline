@@ -6,6 +6,7 @@ import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PromotionsService } from '../promotions/promotions.service.js';
 import {
   PAYMENT_PROVIDER,
   WebhookPayloadError,
@@ -57,6 +58,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly dispatcher: WebhookDispatcher,
+    private readonly promotions: PromotionsService,
   ) {}
 
   get providerCode(): string {
@@ -206,7 +208,7 @@ export class PaymentsService {
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
         await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
-        await this.onPaid(tx, order.id);
+        await this.onPaid(tx, order.promotionId);
         return 'paid';
       }
 
@@ -256,11 +258,13 @@ export class PaymentsService {
     return shortage;
   }
 
-  /** Runs inside the webhook transaction when an order becomes paid. Coupon usage +1 comes here in Phase 4d. */
-  private async onPaid(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
-    void tx;
-    void orderId;
-    await Promise.resolve();
+  /**
+   * Runs inside the webhook transaction when an order becomes paid (once: a paid order is never paid again). The
+   * order's promotion counts one more use — even past a coupon's limit, since the order is honored (spec §6, Review
+   * Focus 5). The atomic increment locks the promotion row last: payment → order → variants → promotion.
+   */
+  private async onPaid(tx: Prisma.TransactionClient, promotionId: number | null): Promise<void> {
+    if (promotionId !== null) await this.promotions.countUse(tx, promotionId);
   }
 
   // ---------- Sandbox (development only, CHK-10) ----------

@@ -17,6 +17,9 @@ export const emptyCart = () => new CheckoutError(HttpStatus.CONFLICT, 'empty_car
 export const cartChanged = () => new CheckoutError(HttpStatus.CONFLICT, 'cart_changed');
 /** The recomputed total differs from the one the customer saw; `total` is the new one (agorot). */
 export const priceChanged = (total: number) => new CheckoutError(HttpStatus.CONFLICT, 'price_changed', { total });
+/** The cart's coupon was used up since the customer saw it (spec §6): remove it and try again. */
+export const couponInvalid = (messageHe: string) =>
+  new CheckoutError(HttpStatus.CONFLICT, 'coupon_invalid', { field: 'coupon', messageHe });
 export const shippingUnavailable = () => new CheckoutError(HttpStatus.SERVICE_UNAVAILABLE, 'shipping_unavailable');
 export const paymentUnavailable = () => new CheckoutError(HttpStatus.BAD_GATEWAY, 'payment_unavailable');
 export const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'not_retryable');
