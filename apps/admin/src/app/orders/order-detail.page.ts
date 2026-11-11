@@ -5,18 +5,13 @@ import {
   FULFILLMENT_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
   ORDER_STATUS_LABELS_HE,
+  SHIPPING_METHOD_LABELS_HE,
   type AdminOrderDetail,
   type AdminPaymentStatus,
-  type ShippingMethod,
 } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
-
-const METHOD_LABELS: Record<ShippingMethod, string> = {
-  curbside: 'משלוח עד הבית',
-  full_service: 'משלוח עם סבלות והרכבה',
-};
 
 const PAYMENT_LABELS: Record<AdminPaymentStatus, string> = {
   pending: 'ממתין',
@@ -51,7 +46,8 @@ export class OrderDetailPage {
   protected readonly formatPrice = formatPrice;
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
-  protected readonly methodLabels = METHOD_LABELS;
+  /** The customer's wording, so staff and customer name the method the same way. */
+  protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly paymentLabels = PAYMENT_LABELS;
   protected readonly fulfillmentLabels = FULFILLMENT_LABELS_HE;
   protected readonly order = signal<AdminOrderDetail | null>(null);

@@ -27,7 +27,8 @@ const OUTCOMES: readonly PaymentOutcome[] = ['succeeded', 'failed', 'cancelled']
 /**
  * `sandbox` adapter (development only, CHK-10, spec §5.3): the "payment page" is the storefront's
  * /pay/sandbox/:transactionId, and the result comes back as a webhook signed with HMAC-SHA256
- * (`PAYMENT_SANDBOX_SECRET`). It refuses to load when NODE_ENV=production.
+ * (`PAYMENT_SANDBOX_SECRET`). It refuses to load when NODE_ENV=production, and on a public site address unless
+ * `PAYMENT_SANDBOX_ALLOW_REMOTE=true` (a test environment such as staging).
  */
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly code = SANDBOX_CODE;
@@ -38,13 +39,20 @@ export class SandboxPaymentProvider implements PaymentProvider {
   constructor(config: ConfigService) {
     if (config.get<string>('NODE_ENV') === 'production')
       throw new Error('PAYMENT_PROVIDER=sandbox cannot run in production: choose a real payment provider.');
+    const site = config.get<string>('SITE_URL') || config.get<string>('STOREFRONT_URL') || 'http://localhost:4200';
+    // Anyone can mark a sandbox payment paid, so on a public address (a production box without NODE_ENV) it would
+    // give orders away. A test environment on a real host must say so explicitly.
+    if (!isDevelopmentAddress(site) && config.get<string>('PAYMENT_SANDBOX_ALLOW_REMOTE') !== 'true')
+      throw new Error(
+        `PAYMENT_PROVIDER=sandbox refuses the public site address ${site}. ` +
+          'On a test environment set PAYMENT_SANDBOX_ALLOW_REMOTE=true; otherwise choose a real payment provider.',
+      );
     const secret = config.get<string>('PAYMENT_SANDBOX_SECRET')?.trim();
     if (!secret)
       new Logger(SandboxPaymentProvider.name).warn(
         'PAYMENT_SANDBOX_SECRET is not set: using a random secret for this process only',
       );
     this.secret = secret || randomBytes(32).toString('hex');
-    const site = config.get<string>('SITE_URL') || config.get<string>('STOREFRONT_URL') || 'http://localhost:4200';
     this.siteUrl = site.replace(/\/+$/, '');
   }
 
@@ -73,6 +81,23 @@ export class SandboxPaymentProvider implements PaymentProvider {
       return Promise.reject(e instanceof WebhookPayloadError ? e : new WebhookPayloadError('not JSON'));
     }
   }
+}
+
+/** A local development host: localhost, a loopback address, or a name ending in .localhost or .test. */
+function isDevelopmentAddress(site: string): boolean {
+  let host: string;
+  try {
+    host = new URL(site).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.test')
+  );
 }
 
 function parsePayload(rawBody: Buffer): PaymentResult {

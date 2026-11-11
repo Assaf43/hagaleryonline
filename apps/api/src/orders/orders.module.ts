@@ -18,9 +18,9 @@ import { OrdersService } from './orders.service.js';
 import { WriteThrottle } from './write-throttle.js';
 
 /**
- * Checkout, orders and payments (spec §5). The active `PaymentProvider` comes from `PAYMENT_PROVIDER` (default
- * `sandbox`); adapters are built only when selected, so the sandbox's refusal to run in production stops the API
- * only when it is the configured provider.
+ * Checkout, orders and payments (spec §5). The active `PaymentProvider` comes from `PAYMENT_PROVIDER` (required, no
+ * default); adapters are built only when selected, so the sandbox's refusal to run in production or on a public site
+ * address stops the API only when it is the configured provider.
  */
 @Module({
   imports: [AuthModule, CatalogModule, CartModule, ShippingModule],

@@ -54,8 +54,8 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
  *     rows in id order, recompute the lines under the locks — fresh prices, fresh available stock — and check them:
  *     the lines must be the ones that were quoted (else 409 `cart_changed`) and each must fit its limit (else 409
  *     `insufficient_stock` with the line and its new limit). The shipping is quoted once more from these locked lines
- *     (a price-list change in between is picked up), and when the customer sent the total they saw (`expectedTotal`)
- *     and it differs from the recomputed one, nothing is created: 409 `price_changed` with the new total. Then create
+ *     (a price-list change in between is picked up), and when the total the customer saw (`expectedTotal`, required)
+ *     differs from the recomputed one, nothing is created: 409 `price_changed` with the new total. Then create
  *     the order, its items and the reservation. `shown` / top category come from the catalog snapshot, which admin
  *     writes invalidate at once in this process (a multi-process deploy would see it up to 60 s late — Phase 9).
  *  4. After commit: ask the payment provider for a payment page and record the payment (PaymentsService).
@@ -115,7 +115,7 @@ export class CheckoutService {
         // Phase 4d: the one discount of the order (decision 70) is computed and re-checked here.
         const discount = 0;
         const total = subtotal - discount + option.total;
-        if (input.expectedTotal !== undefined && input.expectedTotal !== total) throw priceChanged(total);
+        if (input.expectedTotal !== total) throw priceChanged(total);
         return tx.order.create({
           data: {
             publicToken: randomBytes(32).toString('base64url'),
@@ -235,18 +235,17 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
 
   const checkedContact: CheckoutContact = { fullName, phone, email };
   const checkedAddress: CheckoutAddress = { localityId, street, houseNumber, apartment, floor, hasElevator, notes };
+  // Required: an order is never charged at a total the customer did not see (checked after the form fields, so a
+  // form error still names its field).
   const expectedTotal = root.expectedTotal;
-  if (
-    expectedTotal !== undefined &&
-    (typeof expectedTotal !== 'number' || !Number.isSafeInteger(expectedTotal) || expectedTotal < 0)
-  )
+  if (typeof expectedTotal !== 'number' || !Number.isSafeInteger(expectedTotal) || expectedTotal < 0)
     throw invalidInput();
   return {
     contact: checkedContact,
     address: checkedAddress,
     method: root.method as ShippingMethod,
     acceptTerms: true,
-    ...(expectedTotal === undefined ? {} : { expectedTotal }),
+    expectedTotal,
   };
 }
 
