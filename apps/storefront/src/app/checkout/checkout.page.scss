@@ -194,6 +194,22 @@ h2 {
   text-transform: uppercase;
 }
 
+.coupon-notices {
+  display: grid;
+  gap: var(--space-1);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.coupon-notice {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-info-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+}
+
 .total {
   font-weight: 700;
   font-size: var(--font-h3);

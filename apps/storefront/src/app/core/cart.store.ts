@@ -71,6 +71,15 @@ export class CartStore {
     return this.write(() => this.api.remove(variantId));
   }
 
+  /** Enters a coupon code (spec §6); a refusal (400 with `messageHe`, or 429) reaches the caller. */
+  applyCoupon(code: string): Promise<CartView> {
+    return this.write(() => this.api.applyCoupon(code));
+  }
+
+  removeCoupon(): Promise<CartView> {
+    return this.write(() => this.api.removeCoupon());
+  }
+
   /** Errors reach the caller, which shows its own message; the last view stays. */
   private async write(call: () => Promise<CartView>): Promise<CartView> {
     if (!this.browser) throw new Error('The cart is not available in the server render');
@@ -82,15 +91,23 @@ export class CartStore {
   }
 }
 
-/** One-time notice kinds the server sends only once. */
-const ONE_TIME: ReadonlySet<CartNotice['kind']> = new Set(['price_changed', 'quantity_clamped']);
+/**
+ * One-time notice kinds the server sends only once: line notices, and the `coupon` notice of a coupon the server
+ * removed (unknown, expired or used up — a coupon that only does not apply right now keeps its notice on every read).
+ */
+const ONE_TIME: ReadonlySet<CartNotice['kind']> = new Set(['price_changed', 'quantity_clamped', 'coupon']);
 
-/** `next` plus the one-time notices of `previous` it lacks whose line is still in the cart. */
+/**
+ * `next` plus the one-time notices of `previous` it lacks that still concern it: a line notice while its line is in
+ * the cart; the coupon notice of a dropped coupon (no code before or now) — a code entered since replaces it.
+ */
 function withCarriedNotices(previous: CartView | null, next: CartView): CartView {
   if (!previous) return next;
   const has = (n: CartNotice) => next.notices.some((m) => m.kind === n.kind && m.variantId === n.variantId);
-  const carried = previous.notices.filter(
-    (n) => ONE_TIME.has(n.kind) && !has(n) && next.lines.some((l) => l.variantId === n.variantId),
-  );
+  const stillRelevant = (n: CartNotice) =>
+    n.variantId === null
+      ? previous.couponCode === null && next.couponCode === null
+      : next.lines.some((l) => l.variantId === n.variantId);
+  const carried = previous.notices.filter((n) => ONE_TIME.has(n.kind) && !has(n) && stillRelevant(n));
   return carried.length ? { ...next, notices: [...next.notices, ...carried] } : next;
 }

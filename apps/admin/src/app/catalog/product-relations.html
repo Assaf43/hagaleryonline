@@ -1,8 +1,10 @@
 <div class="head">
   <h3>{{ title() }}</h3>
-  <mat-checkbox [checked]="autofill()" [disabled]="disabled()" (change)="autofill.set($event.checked)">
-    {{ autofillLabel() }}
-  </mat-checkbox>
+  @if (showAutofill()) {
+    <mat-checkbox [checked]="autofill()" [disabled]="disabled()" (change)="autofill.set($event.checked)">
+      {{ autofillLabel() }}
+    </mat-checkbox>
+  }
 </div>
 
 <mat-form-field subscriptSizing="dynamic">
@@ -50,13 +52,13 @@
   <ol
     class="picked"
     cdkDropList
-    [cdkDropListDisabled]="disabled()"
+    [cdkDropListDisabled]="disabled() || !sortable()"
     (cdkDropListDropped)="drop($event)"
     [attr.aria-label]="title()"
   >
     @for (p of picks(); track p.id; let i = $index; let last = $last) {
       <li class="pick" cdkDrag>
-        @if (!disabled()) {
+        @if (!disabled() && sortable()) {
           <span class="handle" cdkDragHandle aria-hidden="true"><svg lucideGripVertical></svg></span>
         }
         @if (p.thumbnailUrl) {
@@ -72,24 +74,26 @@
           <span class="badge">מוסתר</span>
         }
         <span class="actions">
-          <button
-            matIconButton
-            type="button"
-            [disabled]="disabled() || i === 0"
-            (click)="move(i, i - 1)"
-            [attr.aria-label]="'הזזה למעלה: ' + p.modelName"
-          >
-            <svg lucideChevronUp></svg>
-          </button>
-          <button
-            matIconButton
-            type="button"
-            [disabled]="disabled() || last"
-            (click)="move(i, i + 1)"
-            [attr.aria-label]="'הזזה למטה: ' + p.modelName"
-          >
-            <svg lucideChevronDown></svg>
-          </button>
+          @if (sortable()) {
+            <button
+              matIconButton
+              type="button"
+              [disabled]="disabled() || i === 0"
+              (click)="move(i, i - 1)"
+              [attr.aria-label]="'הזזה למעלה: ' + p.modelName"
+            >
+              <svg lucideChevronUp></svg>
+            </button>
+            <button
+              matIconButton
+              type="button"
+              [disabled]="disabled() || last"
+              (click)="move(i, i + 1)"
+              [attr.aria-label]="'הזזה למטה: ' + p.modelName"
+            >
+              <svg lucideChevronDown></svg>
+            </button>
+          }
           <button
             matIconButton
             type="button"

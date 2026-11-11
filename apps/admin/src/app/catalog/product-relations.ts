@@ -17,6 +17,7 @@ const MAX_RESULTS = 8;
 /**
  * Hand-picked related products for one list ("goes with" or "similar", spec §4.4): search, add to
  * the end, reorder by drag or with buttons for keyboard users, remove. The parent saves the list.
+ * Also the product picker of a promotion (unordered, no autofill).
  */
 @Component({
   selector: 'hg-product-relations',
@@ -43,6 +44,10 @@ export class ProductRelations {
   readonly title = input.required<string>();
   readonly autofillLabel = input('השלמה אוטומטית');
   readonly disabled = input(false);
+  /** False for an unordered set (e.g. the products of a promotion): no drag handle or move buttons. */
+  readonly sortable = input(true);
+  /** False hides the "השלמה אוטומטית" checkbox. */
+  readonly showAutofill = input(true);
   readonly picks = model<RelatedPick[]>([]);
   readonly autofill = model<boolean>(false);
 

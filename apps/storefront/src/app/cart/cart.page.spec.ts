@@ -190,7 +190,31 @@ describe('CartPage', () => {
     await setup(view);
     const shipping = el().querySelector('.shipping-row')?.textContent?.replace(/\s+/g, ' ').trim();
     expect(shipping).toBe('משלוח החל מ־250 ₪');
-    expect(el().querySelector('.discount-row')?.textContent).toContain('100 ₪');
+    expect(el().querySelector('.discount-row')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון: −100 ₪');
+  });
+
+  it('shows the discount line "{name}: −{price}" under the subtotal, and the coupon field', async () => {
+    const view = cartView([cartLine(1, 2, 150000)]);
+    view.discount = { labelHe: 'מבצע סוף עונה', amount: 30000, source: 'automatic', code: null };
+    await setup(view);
+    const row = el().querySelector('.summary .subtotal + .discount-row');
+    expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('מבצע סוף עונה: −300 ₪');
+    expect(el().querySelector('.summary hg-coupon-field')).not.toBeNull();
+    expect(el().querySelector('hg-coupon-field label')?.textContent).toContain('קוד קופון');
+  });
+
+  it('shows a coupon notice once, by the coupon field and not in the cart notices', async () => {
+    const view = cartView(
+      [cartLine(1, 1)],
+      [
+        { variantId: null, kind: 'coupon', messageHe: 'תוקף הקופון פג' },
+        { variantId: 1, kind: 'price_changed', messageHe: 'המחיר עודכן' },
+      ],
+    );
+    await setup(view);
+    expect(el().querySelector('ul.notices')?.textContent).toContain('המחיר עודכן');
+    expect(el().querySelector('ul.notices')?.textContent).not.toContain('תוקף הקופון פג');
+    expect(el().querySelectorAll('.coupon-notice')).toHaveLength(1);
   });
 
   it('shows the empty state with a link to continue shopping', async () => {

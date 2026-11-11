@@ -120,6 +120,25 @@ describe('OrderPage', () => {
     expect(el().querySelector('.retry')).toBeNull();
   });
 
+  it('shows the order discount as "{name}: −{price}", and no discount line without one', async () => {
+    await setup(
+      order('paid', {
+        discount: 30000,
+        discountInfo: { labelHe: 'קופון חורף', source: 'coupon', code: 'WINTER' },
+        total: 315000,
+      }),
+    );
+    const row = el().querySelector('.totals .discount-row');
+    expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון חורף: −300 ₪');
+    expect(text()).toContain('3,150 ₪');
+    fixture.destroy();
+    http.match('/api/cart');
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+    await setup(order('paid'));
+    expect(el().querySelector('.discount-row')).toBeNull();
+  });
+
   it('refreshes the cart once the order is paid', async () => {
     await setup(order('paid'));
     http.expectOne('/api/cart');

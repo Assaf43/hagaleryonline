@@ -70,6 +70,15 @@ describe('MiniCart', () => {
     expect(line?.textContent?.replace(/\s+/g, ' ').trim()).toBe('משלוח החל מ־250 ₪');
   });
 
+  it('shows the discount line under the subtotal', async () => {
+    const view = cartView([cartLine(1, 2, 150000)]);
+    view.discount = { labelHe: 'קופון חורף', amount: 25000, source: 'coupon', code: 'WINTER' };
+    view.couponCode = 'WINTER';
+    const { dialog } = await setup(view);
+    const row = dialog.querySelector('.foot .subtotal + .discount-row');
+    expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון חורף: −250 ₪');
+  });
+
   it('opens with the title, the lines and the subtotal', async () => {
     const { dialog } = await setup();
     expect(dialog.hasAttribute('open')).toBe(true);

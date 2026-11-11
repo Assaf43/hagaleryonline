@@ -1,0 +1,52 @@
+@if (entered(); as c) {
+  <p class="coupon-chip">
+    <svg lucideTicketPercent aria-hidden="true"></svg>
+    <span
+      >קופון <bdi dir="ltr">{{ c }}</bdi></span
+    >
+    <button
+      type="button"
+      class="link-btn"
+      [disabled]="busy()"
+      [attr.aria-label]="'הסרת הקופון ' + c"
+      (click)="remove()"
+    >
+      הסרה
+    </button>
+  </p>
+} @else {
+  <form class="coupon-form" novalidate (submit)="apply($event)">
+    <label class="field-label" [for]="inputId">קוד קופון</label>
+    <div class="coupon-row">
+      <input
+        #codeInput
+        class="input"
+        type="text"
+        dir="ltr"
+        autocomplete="off"
+        autocapitalize="characters"
+        spellcheck="false"
+        [attr.maxlength]="maxLength"
+        [id]="inputId"
+        [value]="code()"
+        [attr.aria-invalid]="error() ? true : null"
+        [attr.aria-describedby]="error() ? errorId : null"
+        (input)="setCode($event)"
+      />
+      <button type="submit" class="btn btn-secondary" [disabled]="busy()">החלה</button>
+    </div>
+    @if (error()) {
+      <p class="field-error" [id]="errorId">{{ error() }}</p>
+    }
+  </form>
+}
+
+<!-- Outside the branches, so the region exists before the outcome or the server's reason arrives. -->
+<div class="coupon-live" aria-live="polite">
+  @for (n of notices(); track $index) {
+    <p class="coupon-notice">{{ n.messageHe }}</p>
+  }
+  @if (status()) {
+    <p class="coupon-status">{{ status() }}</p>
+  }
+</div>

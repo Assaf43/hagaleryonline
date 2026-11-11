@@ -110,6 +110,10 @@ export class CheckoutPage {
   });
   protected readonly chosen = computed(() => this.options().find((o) => o.method === this.form().method) ?? null);
   protected readonly discount = computed(() => this.cart.view()?.discount?.amount ?? 0);
+  /** Why the entered coupon gives no discount (spec §6); kept by the cart store until the next write. */
+  protected readonly couponNotices = computed(() =>
+    (this.cart.view()?.notices ?? []).filter((n) => n.kind === 'coupon'),
+  );
   protected readonly total = computed(() => {
     const view = this.cart.view();
     return view ? view.subtotal - this.discount() + (this.chosen()?.total ?? 0) : 0;

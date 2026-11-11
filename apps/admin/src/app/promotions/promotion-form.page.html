@@ -1,0 +1,269 @@
+<a class="back" routerLink="/promotions">חזרה למבצעים וקופונים</a>
+<h1>{{ isNew() ? 'מבצע חדש' : 'עריכת מבצע' }}</h1>
+
+@if (loadError()) {
+  <p class="form-error" role="alert">{{ loadError() }}</p>
+} @else if (!loaded()) {
+  <p class="page-intro" role="status">טוען…</p>
+} @else {
+  <form class="panel" novalidate (submit)="save($event)">
+    <fieldset class="choice">
+      <legend>סוג</legend>
+      @for (k of kinds; track k[0]) {
+        <label class="option">
+          <input type="radio" name="kind" [value]="k[0]" [checked]="form().kind === k[0]" (change)="setKind(k[0])" />
+          {{ k[1] }}
+        </label>
+      }
+      <p class="muted">
+        {{ coupon() ? 'חל רק כשהלקוח מזין את הקוד בסל.' : 'חל בסל לבד, בלי קוד, על כל הזמנה שעומדת בתנאים.' }}
+      </p>
+    </fieldset>
+
+    <div class="fields">
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>שם המבצע</mat-label>
+        <input
+          matInput
+          autocomplete="off"
+          maxlength="100"
+          [id]="ids.name"
+          [ngModel]="form().name"
+          (ngModelChange)="set('name', $event)"
+          [ngModelOptions]="{ standalone: true }"
+          [errorStateMatcher]="matcher('name')"
+        />
+        <mat-hint>הלקוחות רואים את השם בסל, בתשלום ובהזמנה</mat-hint>
+        <mat-error>{{ errors().name }}</mat-error>
+      </mat-form-field>
+
+      @if (coupon()) {
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>קוד קופון</mat-label>
+          <input
+            matInput
+            dir="ltr"
+            autocomplete="off"
+            maxlength="64"
+            [id]="ids.code"
+            [ngModel]="form().code"
+            (ngModelChange)="set('code', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            (blur)="normalizeCode()"
+            [errorStateMatcher]="matcher('code')"
+          />
+          <mat-hint>נשמר באותיות גדולות. הלקוחות יכולים להקליד אותו בכל צורה.</mat-hint>
+          <mat-error>{{ errors().code }}</mat-error>
+        </mat-form-field>
+      }
+    </div>
+
+    <fieldset class="choice">
+      <legend>סוג ההנחה</legend>
+      @for (t of types; track t[0]) {
+        <label class="option">
+          <input
+            type="radio"
+            name="discountType"
+            [value]="t[0]"
+            [checked]="form().discountType === t[0]"
+            (change)="setType(t[0])"
+          />
+          {{ t[1] }}
+        </label>
+      }
+    </fieldset>
+
+    <div class="fields">
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>{{ form().discountType === 'percent' ? 'אחוז הנחה' : 'סכום ההנחה (₪)' }}</mat-label>
+        <input
+          matInput
+          autocomplete="off"
+          [attr.inputmode]="form().discountType === 'percent' ? 'numeric' : 'decimal'"
+          [id]="ids.value"
+          [ngModel]="form().value"
+          (ngModelChange)="set('value', $event)"
+          [ngModelOptions]="{ standalone: true }"
+          [errorStateMatcher]="matcher('value')"
+        />
+        @if (form().discountType === 'percent') {
+          <span matTextSuffix>%</span>
+        }
+        <mat-hint>{{
+          form().discountType === 'percent'
+            ? 'מספר שלם בין 1 ל-100. ההנחה מעוגלת לשקל שלם.'
+            : 'לא יותר מסכום המוצרים שהמבצע חל עליהם'
+        }}</mat-hint>
+        <mat-error>{{ errors().value }}</mat-error>
+      </mat-form-field>
+    </div>
+
+    <fieldset
+      class="choice"
+      tabindex="-1"
+      [id]="ids.targetIds"
+      [attr.aria-invalid]="errors().targetIds ? true : null"
+      [attr.aria-describedby]="errors().targetIds ? ids.targetIds + '-error' : null"
+    >
+      <legend>חל על</legend>
+      @for (t of targets; track t[0]) {
+        <label class="option">
+          <input
+            type="radio"
+            name="target"
+            [value]="t[0]"
+            [checked]="form().target === t[0]"
+            (change)="setTarget(t[0])"
+          />
+          {{ t[1] }}
+        </label>
+      }
+    </fieldset>
+
+    @if (form().target === 'categories') {
+      <div class="categories" role="group" aria-label="קטגוריות במבצע">
+        <p class="muted">קטגוריה כוללת גם את תתי־הקטגוריות שלה.</p>
+        @for (c of categories(); track c.id) {
+          <label class="option" [style.--depth]="c.depth">
+            <input
+              type="checkbox"
+              [checked]="form().categoryIds.includes(c.id)"
+              (change)="toggleCategory(c.id, $any($event.target).checked)"
+            />
+            {{ c.nameHe }}
+          </label>
+        } @empty {
+          <p class="muted">אין קטגוריות.</p>
+        }
+      </div>
+    }
+    @if (form().target === 'products') {
+      <hg-product-relations
+        title="מוצרים במבצע"
+        [sortable]="false"
+        [showAutofill]="false"
+        [picks]="form().products"
+        (picksChange)="setProducts($event)"
+      />
+    }
+    @if (errors().targetIds) {
+      <p class="field-error" [id]="ids.targetIds + '-error'">{{ errors().targetIds }}</p>
+    }
+
+    <div class="fields">
+      <mat-form-field subscriptSizing="dynamic">
+        <mat-label>סכום מינימום (₪)</mat-label>
+        <input
+          matInput
+          inputmode="decimal"
+          autocomplete="off"
+          [id]="ids.minSubtotal"
+          [ngModel]="form().minSubtotal"
+          (ngModelChange)="set('minSubtotal', $event)"
+          [ngModelOptions]="{ standalone: true }"
+          [errorStateMatcher]="matcher('minSubtotal')"
+        />
+        <mat-hint>של המוצרים שהמבצע חל עליהם. ריק = ללא מינימום.</mat-hint>
+        <mat-error>{{ errors().minSubtotal }}</mat-error>
+      </mat-form-field>
+    </div>
+
+    <fieldset class="dates">
+      <legend>תאריכים</legend>
+      <p class="muted">שעון ישראל. בלי שעה: מתחילת יום ההתחלה ועד סוף יום הסיום. ריק = בלי הגבלת תאריך.</p>
+      <div class="date-grid">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>תאריך התחלה</mat-label>
+          <input
+            matInput
+            type="date"
+            [id]="ids.startDate"
+            [ngModel]="form().startDate"
+            (ngModelChange)="set('startDate', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('startDate')"
+          />
+          <mat-error>{{ errors().startDate }}</mat-error>
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>שעת התחלה (לא חובה)</mat-label>
+          <input
+            matInput
+            type="time"
+            [id]="ids.startTime"
+            [ngModel]="form().startTime"
+            (ngModelChange)="set('startTime', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('startTime')"
+          />
+          <mat-error>{{ errors().startTime }}</mat-error>
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>תאריך סיום</mat-label>
+          <input
+            matInput
+            type="date"
+            [id]="ids.endDate"
+            [ngModel]="form().endDate"
+            (ngModelChange)="set('endDate', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('endDate')"
+          />
+          <mat-error>{{ errors().endDate }}</mat-error>
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>שעת סיום (לא חובה)</mat-label>
+          <input
+            matInput
+            type="time"
+            [id]="ids.endTime"
+            [ngModel]="form().endTime"
+            (ngModelChange)="set('endTime', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('endTime')"
+          />
+          <mat-error>{{ errors().endTime }}</mat-error>
+        </mat-form-field>
+      </div>
+    </fieldset>
+
+    @if (coupon()) {
+      <div class="fields">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>מגבלת שימוש</mat-label>
+          <input
+            matInput
+            inputmode="numeric"
+            autocomplete="off"
+            [id]="ids.usageLimit"
+            [ngModel]="form().usageLimit"
+            (ngModelChange)="set('usageLimit', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('usageLimit')"
+          />
+          <mat-hint>מספר ההזמנות ששולמו עם הקופון. ריק = ללא הגבלה.</mat-hint>
+          <mat-error>{{ errors().usageLimit }}</mat-error>
+        </mat-form-field>
+      </div>
+    }
+    @if (saved(); as s) {
+      <p class="muted">
+        שימושים עד עכשיו: <span class="num">{{ s.usedCount }}</span>
+      </p>
+    }
+
+    <label class="option active">
+      <input type="checkbox" [checked]="form().active" (change)="setActive($any($event.target).checked)" />
+      פעיל
+    </label>
+
+    @if (problem()) {
+      <p class="form-error" role="alert">{{ problem() }}</p>
+    }
+    <div class="actions">
+      <button matButton="filled" type="submit" class="save" [disabled]="saving()">שמירה</button>
+      <a matButton routerLink="/promotions">ביטול</a>
+    </div>
+  </form>
+}

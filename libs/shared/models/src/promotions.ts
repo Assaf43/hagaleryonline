@@ -53,3 +53,91 @@ export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>,
 export function couponMinimumMessageHe(price: string): string {
   return `הקופון תקף מסכום של ${price}`;
 }
+
+// ---------- Admin "מבצעים וקופונים" (Phase 4d, ADM-05, permission promotions.manage) ----------
+
+/** Longest coupon code (characters, after `normalizeCouponCode`). */
+export const MAX_COUPON_CODE_LENGTH = 64;
+
+/**
+ * Characters a coupon code may have once normalized: Latin capitals, Hebrew letters, digits, "-" and "_". These have
+ * one upper-case form in JavaScript and PostgreSQL alike (the DB checks `code = upper(code)`).
+ */
+export const COUPON_CODE_PATTERN = /^[A-Z0-9א-ת_-]+$/;
+
+/** Hebrew labels of the admin screen. */
+export const PROMOTION_KIND_LABELS_HE: Record<PromotionKind, string> = {
+  automatic: 'מבצע אוטומטי',
+  coupon: 'קופון',
+};
+export const DISCOUNT_TYPE_LABELS_HE: Record<DiscountType, string> = {
+  percent: 'אחוז הנחה',
+  fixed: 'סכום קבוע',
+};
+export const PROMOTION_TARGET_LABELS_HE: Record<PromotionTarget, string> = {
+  order: 'כל ההזמנה',
+  categories: 'קטגוריות',
+  products: 'מוצרים',
+};
+
+/** A category or product the promotion targets, with what the admin shows of it. */
+export interface PromotionTargetRef {
+  id: number;
+  nameHe: string;
+  /** Products only (English model name); null for a category. */
+  modelName: string | null;
+  /** Products only: shown on the site; categories: always true. */
+  active: boolean;
+  /** Products only: first photo; null otherwise. */
+  thumbnailUrl: string | null;
+}
+
+/** One promotion in the admin (GET /api/admin/promotions, GET/PUT /api/admin/promotions/:id). Money in agorot. */
+export interface AdminPromotion {
+  id: number;
+  name: string;
+  kind: PromotionKind;
+  /** Coupons only (normalized, upper-case). */
+  code: string | null;
+  discountType: DiscountType;
+  /** Percent 1–100, or agorot for a fixed discount. */
+  value: number;
+  target: PromotionTarget;
+  /** In the saved order; empty for the whole order. */
+  targets: PromotionTargetRef[];
+  minSubtotal: number;
+  /** ISO times (UTC); null = no start / no end. */
+  startsAt: string | null;
+  endsAt: string | null;
+  /** Coupons only; null = no limit. */
+  usageLimit: number | null;
+  /** Paid orders that used it. */
+  usedCount: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /api/admin/promotions and PUT /api/admin/promotions/:id. */
+export interface AdminPromotionInput {
+  name: string;
+  kind: PromotionKind;
+  code: string | null;
+  discountType: DiscountType;
+  value: number;
+  target: PromotionTarget;
+  targetIds: number[];
+  minSubtotal: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  usageLimit: number | null;
+  active: boolean;
+}
+
+/** GET /api/admin/promotions/categories: every category in tree order, for the category picker. */
+export interface PromotionCategoryOption {
+  id: number;
+  nameHe: string;
+  /** 0 for a top-level category. */
+  depth: number;
+}

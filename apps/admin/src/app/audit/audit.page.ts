@@ -45,6 +45,9 @@ const ACTIONS: Record<string, string> = {
   'shipping_zone.create': 'יצירת אזור משלוח',
   'shipping_zone.update': 'עדכון אזור משלוח',
   'shipping_zone.delete': 'מחיקת אזור משלוח',
+  'promotion.create': 'יצירת מבצע',
+  'promotion.update': 'עדכון מבצע',
+  'promotion.deactivate': 'השבתת מבצע',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -58,10 +61,11 @@ const ENTITIES: Record<string, string> = {
   synonym: 'מילים נרדפות',
   shipping: 'מחירון משלוחים',
   shipping_zone: 'אזור משלוח',
+  promotion: 'מבצע',
 };
 
-/** Entries recorded readable as they are: Hebrew keys and display values (shipping price list and zones). */
-const READABLE = new Set(['shipping', 'shipping_zone']);
+/** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
+const READABLE = new Set(['shipping', 'shipping_zone', 'promotion']);
 
 /** Prices are stored in agorot; show them in shekels. */
 const MONEY = new Set(['price', 'compareAtPrice']);

@@ -212,6 +212,27 @@ describe('CheckoutPage', () => {
     expect(q<HTMLElement>('.summary .total').textContent).toContain('3,550 ₪');
   });
 
+  it('shows the discount line and the coupon notice in the summary, and sends the total after the discount', async () => {
+    const view = cartView(
+      [cartLine(1, 2, 150000)],
+      [{ variantId: null, kind: 'coupon', messageHe: 'המבצע הנוכחי משתלם יותר מהקופון' }],
+    );
+    view.discount = { labelHe: 'מבצע סוף עונה', amount: 30000, source: 'automatic', code: null };
+    view.couponCode = 'SAVE10';
+    await setup(view);
+    await fillValid();
+    const row = q<HTMLElement>('.summary .discount-row');
+    expect(row.textContent?.replace(/\s+/g, ' ').trim()).toBe('מבצע סוף עונה: −300 ₪');
+    expect(q<HTMLElement>('.summary .coupon-notice').textContent).toContain('המבצע הנוכחי משתלם יותר מהקופון');
+    // 3,000 − 300 + full service 550.
+    expect(q<HTMLElement>('.summary .total').textContent).toContain('3,250 ₪');
+    await submit();
+    const req = http.expectOne('/api/checkout');
+    expect(req.request.body).toMatchObject({ expectedTotal: 325000 });
+    req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+    await render();
+  });
+
   it('says when shipping is not available', async () => {
     await setup();
     await pickLocality();

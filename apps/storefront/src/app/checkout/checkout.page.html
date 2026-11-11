@@ -268,11 +268,16 @@
           <span>סכום ביניים</span><span class="num">{{ price(view.subtotal) }}</span>
         </p>
         @if (view.discount; as d) {
-          <p class="row">
-            <span>{{ d.labelHe }}</span
-            ><span class="num">-{{ price(d.amount) }}</span>
+          <p class="row discount-row">
+            <span>{{ d.labelHe }}:</span>&ngsp;<span class="num">−{{ price(d.amount) }}</span>
           </p>
         }
+        <!-- The coupon's state (e.g. a better automatic promotion, or a coupon that ended): read out when it changes. -->
+        <div class="coupon-notices" aria-live="polite">
+          @for (n of couponNotices(); track $index) {
+            <p class="coupon-notice">{{ n.messageHe }}</p>
+          }
+        </div>
         <p class="row">
           <span>משלוח</span>
           @if (chosen(); as c) {

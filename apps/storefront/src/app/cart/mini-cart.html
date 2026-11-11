@@ -64,6 +64,11 @@
           <span>סכום ביניים</span>
           <span class="num">{{ subtotal() }}</span>
         </p>
+        @if (discount(); as d) {
+          <p class="discount-row">
+            <span>{{ d.labelHe }}:</span>&ngsp;<span class="num">−{{ price(d.amount) }}</span>
+          </p>
+        }
         @if (shippingFrom(); as from) {
           <p class="shipping-from">
             <span>משלוח החל מ־</span><span class="num">{{ from }}</span>

@@ -1,0 +1,87 @@
+<div class="head">
+  <h1>מבצעים וקופונים</h1>
+  <a matButton="filled" class="new" routerLink="/promotions/new">
+    <svg lucidePlus></svg>
+    מבצע חדש
+  </a>
+</div>
+<p class="page-intro">
+  הנחה אחת להזמנה: המבצע האוטומטי הטוב ביותר או הקופון שהלקוח הזין, הגבוה מביניהם. הנחה באחוזים מעוגלת לשקל שלם. מבצע
+  שכבר שימש בהזמנה אי אפשר למחוק, רק להשבית.
+</p>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    @if (!items()) {
+      <button matButton="outlined" type="button" (click)="retry()">נסו שוב</button>
+    }
+  </div>
+}
+
+@if (items(); as list) {
+  <ul class="promotions">
+    @for (p of list; track p.id) {
+      <li class="promotion" [attr.data-state]="state(p)">
+        <a class="name" [routerLink]="['/promotions', p.id]">{{ p.name }}</a>
+        <span class="kind">{{ kindLabels[p.kind] }}</span>
+        @if (p.code) {
+          <span class="code"
+            ><span class="visually-hidden">קוד: </span><bdi dir="ltr">{{ p.code }}</bdi></span
+          >
+        } @else {
+          <span class="no-code" aria-hidden="true"></span>
+        }
+        <span class="value">
+          @if (p.discountType === 'percent') {
+            <bdi dir="ltr">{{ p.value }}%</bdi>
+          } @else {
+            {{ formatPrice(p.value) }}
+          }
+        </span>
+        <span class="targets">
+          @if (p.target === 'products') {
+            {{ targetLabels.products }}:
+            @for (t of p.targets; track t.id; let last = $last) {
+              <bdi dir="ltr">{{ t.modelName }}</bdi>
+              @if (!last) {
+                <span>, </span>
+              }
+            }
+          } @else {
+            {{ targetsText(p) }}
+          }
+        </span>
+        <span class="dates">{{ datesText(p) }}</span>
+        <span class="uses"
+          >שימושים: <span class="num">{{ p.usedCount }}</span> /
+          @if (p.usageLimit === null) {
+            ללא הגבלה
+          } @else {
+            <span class="num">{{ p.usageLimit }}</span>
+          }
+        </span>
+        <span class="state">{{ stateLabels[state(p)] }}</span>
+        <span class="actions">
+          <a matButton="outlined" [routerLink]="['/promotions', p.id]">עריכה</a>
+          @if (p.active) {
+            <button
+              matButton
+              type="button"
+              class="deactivate"
+              [disabled]="busy() === p.id"
+              [attr.aria-label]="'השבתה: ' + p.name"
+              (click)="deactivate(p)"
+            >
+              השבתה
+            </button>
+          }
+        </span>
+      </li>
+    } @empty {
+      <li class="empty">אין מבצעים עדיין. אפשר להוסיף מבצע או קופון בכפתור "מבצע חדש".</li>
+    }
+  </ul>
+} @else if (!error()) {
+  <p class="page-intro" role="status">טוען…</p>
+}
