@@ -164,7 +164,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     const lines = cart
       ? discountLines(await computeCartLines(this.prisma, cart.id, await this.catalog.snapshot()), (l) => l.quantity)
       : [];
-    const found = await this.promotions.coupon(this.prisma, code);
+    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon against it.
+    const found = await this.promotions.coupon(this.prisma, code, { cartId: cart?.id });
     const message = couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date());
     if (message) throw new CouponRefused(message);
     // A valid coupon has eligible lines, so there is a cart.
@@ -284,6 +285,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       this.prisma,
       discountLines(computed, (l) => l.quantity),
       couponCode,
+      { cartId },
     );
     let code = couponCode;
     if (code && discount.couponProblem) {

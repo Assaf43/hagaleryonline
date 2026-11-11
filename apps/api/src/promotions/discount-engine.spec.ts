@@ -1,9 +1,11 @@
+import { normalizeCouponCode } from '@hg/models';
 import {
   couponError,
   couponProblem,
   discountAmount,
   eligibleSubtotal,
   evaluateDiscount,
+  promotionEnded,
   type DiscountLine,
   type PromotionRule,
 } from './discount-engine.js';
@@ -49,17 +51,24 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
       expect(discountAmount(rule({ value: 10 }), LINES)).toBe(40_000);
     });
 
-    it('percent rounds half up to the agora, per order (never per line)', () => {
-      // 12% of 1,001 agorot = 120.12 → 120; 15% of 1,003 = 150.45 → 150; 50% of 1,001 = 500.5 → 501.
-      expect(discountAmount(rule({ value: 12 }), [line(1, [10], 1_001)])).toBe(120);
-      expect(discountAmount(rule({ value: 15 }), [line(1, [10], 1_003)])).toBe(150);
-      expect(discountAmount(rule({ value: 50 }), [line(1, [10], 1_001)])).toBe(501);
-      // Two lines of 333 at 50%: 666 → 333 (rounding per line would give 167 + 167 = 334).
-      expect(discountAmount(rule({ value: 50 }), [line(1, [10], 333), line(2, [10], 333)])).toBe(333);
+    it('percent rounds half up to whole shekels, once per order (never per line)', () => {
+      // 10% of 1,995 ₪ = 199.5 ₪ → 200 ₪; 10% of 1,994 ₪ = 199.4 ₪ → 199 ₪.
+      expect(discountAmount(rule({ value: 10 }), [line(1, [10], 199_500)])).toBe(20_000);
+      expect(discountAmount(rule({ value: 10 }), [line(1, [10], 199_400)])).toBe(19_900);
+      // 15% of 10.03 ₪ = 1.5045 ₪ → 2 ₪; 12% of 10.01 ₪ = 1.2012 ₪ → 1 ₪.
+      expect(discountAmount(rule({ value: 15 }), [line(1, [10], 1_003)])).toBe(200);
+      expect(discountAmount(rule({ value: 12 }), [line(1, [10], 1_001)])).toBe(100);
+      // Two lines of 15 ₪ at 10%: 30 ₪ → 3 ₪ (rounding per line would give 2 + 2 = 4 ₪).
+      expect(discountAmount(rule({ value: 10 }), [line(1, [10], 1_500), line(2, [10], 1_500)])).toBe(300);
+      // Always a multiple of 100 agorot.
+      for (const base of [1, 99, 12_345, 987_654])
+        expect(discountAmount(rule({ value: 7 }), [line(1, [10], base)]) % 100).toBe(0);
     });
 
-    it('100% never exceeds the eligible subtotal', () => {
+    it('100% never exceeds the eligible subtotal; only that cap can leave agorot', () => {
       expect(discountAmount(rule({ value: 100 }), LINES)).toBe(400_000);
+      // 100% of 10.50 ₪ rounds to 11 ₪, capped at 10.50 ₪.
+      expect(discountAmount(rule({ value: 100 }), [line(1, [10], 1_050)])).toBe(1_050);
     });
 
     it('a fixed discount is capped at the eligible subtotal', () => {
@@ -108,6 +117,15 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
 
     it('an inactive promotion never applies', () => {
       expect(evaluateDiscount(LINES, [rule({ active: false })], null, NOW).applied).toBeNull();
+    });
+
+    it('a promotion whose amount rounds to 0 does not apply', () => {
+      // 1% of 0.40 ₪ → 0 ₪.
+      const tiny = [line(1, [10], 40)];
+      expect(evaluateDiscount(tiny, [rule({ value: 1 })], null, NOW).applied).toBeNull();
+      const result = evaluateDiscount(tiny, [], coupon({ value: 1 }), NOW);
+      expect(result).toMatchObject({ applied: null, couponOutcome: 'invalid', couponProblem: 'not_applicable' });
+      expect(couponError(coupon({ value: 1 }), 40, NOW)).toBe('הקופון לא חל על המוצרים בסל');
     });
 
     it('no lines → no discount', () => {
@@ -178,6 +196,25 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
     });
   });
 
+  describe('promotionEnded (retry of an order with a promotion)', () => {
+    it('inactive, out of dates or used up', () => {
+      expect(promotionEnded(coupon(), NOW)).toBe(false);
+      expect(promotionEnded(coupon({ active: false }), NOW)).toBe(true);
+      expect(promotionEnded(coupon({ endsAt: new Date(NOW.getTime() - 1) }), NOW)).toBe(true);
+      expect(promotionEnded(coupon({ startsAt: new Date(NOW.getTime() + DAY) }), NOW)).toBe(true);
+      expect(promotionEnded(coupon({ usageLimit: 2, usedCount: 2 }), NOW)).toBe(true);
+      expect(promotionEnded(coupon({ usageLimit: 2, usedCount: 1 }), NOW)).toBe(false);
+    });
+  });
+
+  describe('normalizeCouponCode (@hg/models)', () => {
+    it('NFKC, bidi and zero-width marks removed, trimmed, upper-case', () => {
+      expect(normalizeCouponCode(' \u200Fsave10\u200E ')).toBe('SAVE10');
+      expect(normalizeCouponCode('\u202Bwin\u200Bter\u202C\uFEFF')).toBe('WINTER');
+      expect(normalizeCouponCode('\u2066\uFF33\uFF21\uFF2C\uFF25\uFF12\uFF10\u2069')).toBe('SALE20');
+    });
+  });
+
   describe('coupon errors', () => {
     it('unknown, expired, inactive, not started, exhausted, below minimum, not applicable', () => {
       expect(couponError(null, 400_000, NOW)).toBe('קוד הקופון לא קיים');
@@ -189,7 +226,7 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
       expect(couponError(coupon({ minSubtotal: 500_000 }), 400_000, NOW)).toBe('הקופון תקף מסכום של 5,000 ₪');
       expect(couponError(coupon({ minSubtotal: 123_456 }), 0, NOW)).toBe('הקופון לא חל על המוצרים בסל');
       expect(couponError(coupon({ minSubtotal: 400_000 }), 400_000, NOW)).toBeNull();
-      expect(couponProblem(coupon(), 1, NOW)).toBeNull();
+      expect(couponProblem(coupon(), 10_000, NOW)).toBeNull();
     });
   });
 });

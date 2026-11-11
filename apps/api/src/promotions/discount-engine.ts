@@ -1,6 +1,7 @@
 import {
   COUPON_MESSAGES_HE,
   couponMinimumMessageHe,
+  formatPrice,
   type CartDiscount,
   type CouponProblem,
   type DiscountType,
@@ -15,9 +16,10 @@ import {
  *   category includes its sub-categories), or lines of a target product. The base is the line total at the current
  *   price (after the variant's sale price). Shipping is never discounted — it is not a line.
  * - A promotion applies when it is active, `startsAt ≤ now ≤ endsAt` (either may be open), its usage limit is not
- *   reached, and the eligible subtotal is above 0 and at least its minimum.
- * - Amount: percent → round half up to the agora, once on the eligible subtotal (never per line); fixed → the value.
- *   Either way never more than the eligible subtotal.
+ *   reached (`usedCount` is the caller's count: paid orders plus live pending ones, spec §6), the eligible subtotal is
+ *   above 0 and at least its minimum, and its amount is above 0.
+ * - Amount: percent → round half up to whole shekels, once on the eligible subtotal (never per line); fixed → the
+ *   value. Either way never more than the eligible subtotal (only that cap can leave agorot).
  * - One discount per order: the largest automatic promotion (ties → the lower id) against the entered coupon; the
  *   coupon wins only when strictly larger (ties go to the automatic promotion).
  */
@@ -88,7 +90,8 @@ export function discountAmount(rule: PromotionRule, lines: DiscountLine[]): numb
 }
 
 function amountOn(rule: PromotionRule, base: number): number {
-  const raw = rule.discountType === 'percent' ? Math.floor((base * rule.value + 50) / 100) : rule.value;
+  // Percent: base × value / 100 agorot, rounded half up to a multiple of 100 agorot (whole shekels).
+  const raw = rule.discountType === 'percent' ? Math.floor((base * rule.value + 5_000) / 10_000) * 100 : rule.value;
   return Math.max(0, Math.min(raw, base));
 }
 
@@ -104,7 +107,14 @@ function ruleProblem(
   if (rule.usageLimit !== null && rule.usedCount >= rule.usageLimit) return 'exhausted';
   if (eligible <= 0) return 'not_applicable';
   if (eligible < rule.minSubtotal) return 'below_minimum';
+  if (amountOn(rule, eligible) <= 0) return 'not_applicable';
   return null;
+}
+
+/** Not active, out of its dates or used up (by `usedCount`): an order holding it may not be paid again (retry). */
+export function promotionEnded(rule: PromotionRule, now: Date): boolean {
+  const problem = ruleProblem(rule, Number.MAX_SAFE_INTEGER, now);
+  return problem === 'expired' || problem === 'exhausted';
 }
 
 /** Why an entered coupon gives no discount (null: it is valid); `rule` is null when no coupon has that code. */
@@ -115,7 +125,7 @@ export function couponProblem(rule: PromotionRule | null, eligible: number, now:
 
 /** The Hebrew message of a coupon problem (spec §6). */
 export function couponProblemMessageHe(problem: CouponProblem, rule: PromotionRule | null): string {
-  if (problem === 'below_minimum') return couponMinimumMessageHe(formatShekels(rule?.minSubtotal ?? 0));
+  if (problem === 'below_minimum') return couponMinimumMessageHe(formatPrice(rule?.minSubtotal ?? 0));
   return COUPON_MESSAGES_HE[problem];
 }
 
@@ -167,11 +177,4 @@ export function evaluateDiscount(
     couponOutcome,
     couponProblem: problem,
   };
-}
-
-const ILS = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 });
-
-/** 500000 agorot → "5,000 ₪" (as the storefront's formatPrice). */
-export function formatShekels(agorot: number): string {
-  return `${ILS.format(Math.round(agorot / 100))} ₪`;
 }

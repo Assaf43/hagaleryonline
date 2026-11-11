@@ -12,8 +12,22 @@ export interface ApplyCouponRequest {
   code: string;
 }
 
+/** Bidi and zero-width marks a pasted code may carry (U+200B–U+200F, U+202A–U+202E, U+2066–U+2069, U+FEFF). */
+const INVISIBLE_MARKS = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
+
+/**
+ * The one form of a coupon code, used by the API (customer entry, admin save) and the admin form: NFKC, bidi and
+ * zero-width marks removed, trimmed, upper-case. Codes are unique and compared in this form.
+ */
+export function normalizeCouponCode(code: string): string {
+  return code.normalize('NFKC').replace(INVISIBLE_MARKS, '').trim().toUpperCase();
+}
+
 /** Why an entered coupon gives no discount. */
 export type CouponProblem = 'unknown' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
+
+/** Hebrew of the retry-payment 409 `promotion_ended`: the order's promotion or coupon is no longer valid. */
+export const PROMOTION_ENDED_MESSAGE_HE = 'המבצע או הקופון של ההזמנה כבר לא בתוקף. חזרו לסל כדי להזמין מחדש.';
 
 /**
  * 400 of POST /api/cart/coupon (`code: 'invalid_coupon'`), and 409 of POST /api/checkout

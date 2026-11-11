@@ -6,6 +6,7 @@ import { StorefrontOriginGuard } from '../auth/guards.js';
 import { sendCart } from '../cart/cart.controller.js';
 import { cartTokenOf as tokenOf } from '../cart/cart-token.js';
 import { CartError, CartService } from '../cart/cart.service.js';
+import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { MAX_COUPON_CODE } from './promotions.service.js';
 
 /**
@@ -20,8 +21,11 @@ export class CouponController {
     private readonly config: AuthConfig,
   ) {}
 
+  /** Throttled per IP: its distinct messages would otherwise let a script enumerate codes. */
   @Post()
   @HttpCode(HttpStatus.OK)
+  @UseGuards(WriteThrottleGuard)
+  @Throttled('coupon')
   async apply(
     @Body() body: unknown,
     @Req() req: Request,

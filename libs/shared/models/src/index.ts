@@ -7,3 +7,4 @@ export * from './cart.js';
 export * from './shipping.js';
 export * from './orders.js';
 export * from './promotions.js';
+export * from './format.js';

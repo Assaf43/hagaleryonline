@@ -14,6 +14,8 @@ import {
   PromotionTarget,
   type Prisma,
 } from './../src/generated/prisma/client.js';
+import { WriteThrottle } from './../src/orders/write-throttle.js';
+import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -29,6 +31,10 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   /** In the sub-category zz-promo-sub (under zz-promo): 100,000 a unit. */
   let sofa: number;
   let sofaProductId: number;
+  /** Same product, one unit in stock. */
+  let few: number;
+  /** Same product, hidden by a test. */
+  let hidden: number;
   /** In zz-promo-other: 50,000 a unit. */
   let lamp: number;
   let parentCategoryId: number;
@@ -115,6 +121,23 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
         ...data,
       },
     });
+  const fail = (tx: string) =>
+    http()
+      .post(`/api/payments/sandbox/${tx}/complete`)
+      .set('Origin', ORIGIN)
+      .send({ outcome: 'failure', installments: 1 });
+  const signedSuccess = (tx: string, amount: number) => {
+    const body = JSON.stringify({ transactionId: tx, status: 'succeeded', amount, installments: 1 });
+    return http()
+      .post('/api/payments/webhook')
+      .set('Content-Type', 'application/json')
+      .set('x-sandbox-signature', sign(body, process.env.PAYMENT_SANDBOX_SECRET ?? ''))
+      .send(body);
+  };
+  const retry = (number: number, token: string) =>
+    http().post(`/api/orders/${number}/retry-payment?t=${token}`).set('Origin', ORIGIN);
+  const viewOf = async (number: number, token: string) =>
+    (await http().get(`/api/orders/${number}?t=${token}`).expect(200)).body as OrderView;
   const usedCount = async (id: number) => (await prisma.promotion.findUniqueOrThrow({ where: { id } })).usedCount;
   const invalidateCatalog = () => app.get(CacheStore).invalidate('catalog:');
 
@@ -153,12 +176,18 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
         modelName: 'ZZPROMO',
         nameHe: 'ספת מבצע',
         categoryId: sub.id,
-        variants: { create: [{ sku: 'ZZPROMO-1', price: 100_000, stock: 100, sortOrder: 0, ...size }] },
+        variants: {
+          create: [
+            { sku: 'ZZPROMO-1', price: 100_000, stock: 100, sortOrder: 0, ...size },
+            { sku: 'ZZPROMO-2', price: 100_000, stock: 1, sortOrder: 1, ...size, widthCm: 220 },
+            { sku: 'ZZPROMO-3', price: 100_000, stock: 100, sortOrder: 2, ...size, widthCm: 240 },
+          ],
+        },
       },
-      include: { variants: true },
+      include: { variants: { orderBy: { sortOrder: 'asc' } } },
     });
     sofaProductId = sofaProduct.id;
-    sofa = sofaProduct.variants[0].id;
+    [sofa, few, hidden] = sofaProduct.variants.map((v) => v.id);
     const lampProduct = await prisma.product.create({
       data: {
         slug: 'zz-promo-lamp',
@@ -391,22 +420,229 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
       await b.add(sofa, 1);
       await b.apply('SAVE10').expect(200);
     }
-    // Both check out while the coupon is still unused: the limit counts paid orders only.
     const tx1 = txOf(await first.checkout());
+    // The first order's reservation runs out: it no longer holds the coupon's last use.
+    const late = await orderOfTx(tx1);
+    await prisma.order.update({ where: { id: late.id }, data: { reservedUntil: new Date(Date.now() - 1_000) } });
     const tx2 = txOf(await second.checkout());
 
     await pay(tx2).expect(200);
     expect(await usedCount(p.id)).toBe(1);
-    // A third customer can no longer check out with it.
+    // A third customer can no longer use it.
     const third = browser();
     await third.add(sofa, 1);
     await third.apply('SAVE10').expect(400);
 
     // The first order is paid late: honored at its discounted total, and counted past the limit.
     await pay(tx1).expect(200);
-    const late = await orderOfTx(tx1);
-    expect(late).toMatchObject({ status: OrderStatus.PAID, discount: 10_000 });
+    expect(await orderOfTx(tx1)).toMatchObject({ status: OrderStatus.PAID, discount: 10_000 });
     expect(await usedCount(p.id)).toBe(2);
+  });
+
+  it('the limit counts live pending orders of other carts (cart view, coupon entry and checkout agree)', async () => {
+    const p = await promotion({ usageLimit: 1 });
+    const first = browser();
+    const second = browser();
+    for (const b of [first, second]) {
+      await b.add(sofa, 1);
+      await b.apply('SAVE10').expect(200);
+    }
+    const total = await second.expectedTotal();
+    const tx1 = txOf(await first.checkout());
+
+    // The first order holds the last use while it waits for payment.
+    const refused = await second.checkout(total);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({
+      statusCode: 409,
+      code: 'coupon_invalid',
+      field: 'coupon',
+      messageHe: 'הקופון נוצל במלואו',
+    });
+    const view = await second.cart();
+    expect(view.discount).toBeNull();
+    expect(view.couponCode).toBeNull();
+    expect(view.notices).toEqual([{ variantId: null, kind: 'coupon', messageHe: 'הקופון נוצל במלואו' }]);
+    expect((await second.apply('SAVE10').expect(400)).body.messageHe).toBe('הקופון נוצל במלואו');
+
+    // The cart's own pending order does not count against it (a new checkout replaces it).
+    expect((await first.cart()).discount?.amount).toBe(10_000);
+    const again = txOf(await first.checkout());
+    expect(again).not.toBe(tx1);
+
+    // Once that order's reservation passes, the use is free again.
+    const order = await orderOfTx(again);
+    await prisma.order.update({ where: { id: order.id }, data: { reservedUntil: new Date(Date.now() - 1_000) } });
+    await second.apply('SAVE10').expect(200);
+    txOf(await second.checkout());
+    expect(await usedCount(p.id)).toBe(0);
+  });
+
+  it('an automatic promotion with a reached limit does not apply', async () => {
+    await promotion({ name: 'מוגבל', kind: PromotionKind.AUTOMATIC, code: null, value: 10, usageLimit: 1 });
+    const first = browser();
+    const second = browser();
+    await first.add(lamp, 1);
+    await second.add(lamp, 1);
+    const total = await second.expectedTotal();
+    expect((await second.cart()).discount?.amount).toBe(5_000);
+    txOf(await first.checkout());
+    expect((await second.cart()).discount).toBeNull();
+    const res = await second.checkout(total);
+    expect(res.body).toEqual({ statusCode: 409, code: 'price_changed', total: total + 5_000 });
+    txOf(await second.checkout());
+  });
+
+  it('a sold-out line alongside a coupon is a shortage, not a price change', async () => {
+    await promotion();
+    const b = browser();
+    await b.add(sofa, 1);
+    await b.add(few, 1);
+    await b.apply('SAVE10').expect(200);
+    const total = await b.expectedTotal();
+    await prisma.variant.update({ where: { id: few }, data: { stock: 0 } });
+    try {
+      const res = await b.checkout(total);
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ statusCode: 409, code: 'insufficient_stock', variantId: few, available: 0 });
+    } finally {
+      await prisma.variant.update({ where: { id: few }, data: { stock: 1 } });
+    }
+  });
+
+  it('a hidden line alongside a coupon: the discount is on the remaining lines only', async () => {
+    await promotion();
+    const b = browser();
+    await b.add(sofa, 1);
+    await b.add(hidden, 1);
+    await b.apply('SAVE10').expect(200);
+    expect((await b.cart()).discount?.amount).toBe(20_000);
+    await prisma.variant.update({ where: { id: hidden }, data: { active: false } });
+    await invalidateCatalog();
+    try {
+      expect((await b.cart()).discount?.amount).toBe(10_000);
+      const order = await orderOfTx(txOf(await b.checkout()));
+      expect(order).toMatchObject({ subtotal: 100_000, discount: 10_000 });
+    } finally {
+      await prisma.variant.update({ where: { id: hidden }, data: { active: true } });
+      await invalidateCatalog();
+    }
+  });
+
+  it('an automatic promotion created between the cart view and checkout: one price_changed, then success', async () => {
+    const b = browser();
+    await b.add(lamp, 1);
+    const total = await b.expectedTotal();
+    await promotion({ name: 'חדש', kind: PromotionKind.AUTOMATIC, code: null, value: 20 });
+    const res = await b.checkout(total);
+    expect(res.body).toEqual({ statusCode: 409, code: 'price_changed', total: total - 10_000 });
+    const order = await orderOfTx(txOf(await b.checkout(res.body.total as number)));
+    expect(order).toMatchObject({ discount: 10_000, total: total - 10_000 });
+  });
+
+  it('a deactivated coupon at checkout → price_changed; the cart view then drops it', async () => {
+    const p = await promotion();
+    const b = browser();
+    await b.add(sofa, 1);
+    await b.apply('SAVE10').expect(200);
+    const total = await b.expectedTotal();
+    await prisma.promotion.update({ where: { id: p.id }, data: { active: false } });
+    const res = await b.checkout(total);
+    expect(res.body).toEqual({ statusCode: 409, code: 'price_changed', total: total + 10_000 });
+    const view = await b.cart();
+    expect(view.couponCode).toBeNull();
+    expect(view.notices).toEqual([{ variantId: null, kind: 'coupon', messageHe: 'תוקף הקופון פג' }]);
+  });
+
+  it('paid twice / superseded and paid: counted once per paid order; the paid cart loses its coupon', async () => {
+    const p = await promotion();
+    // paid_twice: the failed first page is paid after the retry was paid.
+    const a = browser();
+    await a.add(sofa, 1);
+    await a.apply('SAVE10').expect(200);
+    const tx1 = txOf(await a.checkout());
+    await fail(tx1).expect(200);
+    const order = await orderOfTx(tx1);
+    const tx2 = txOf(await retry(order.number, order.publicToken).expect(201));
+    await pay(tx2).expect(200);
+    expect(await usedCount(p.id)).toBe(1);
+    await signedSuccess(tx1, order.total).expect(200);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: tx1 } })).rawStatus).toBe('paid_twice');
+    expect(await usedCount(p.id)).toBe(1);
+    // The paid order emptied the cart, coupon included.
+    expect(await a.cart()).toMatchObject({ lines: [], couponCode: null });
+
+    // superseded_paid: two orders of one cart both paid → two paid orders, two uses.
+    const b = browser();
+    await b.add(sofa, 1);
+    await b.apply('SAVE10').expect(200);
+    const first = txOf(await b.checkout());
+    const second = txOf(await b.checkout());
+    await pay(first).expect(200);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: first } })).rawStatus).toBe(
+      'superseded_paid',
+    );
+    // The newer order still needs the lines and the coupon.
+    expect((await b.cart()).couponCode).toBe('SAVE10');
+    await pay(second).expect(200);
+    expect(await usedCount(p.id)).toBe(3);
+  });
+
+  it('retry: refused when the order coupon is used up (by others) or expired; allowed while still valid', async () => {
+    const p = await promotion({ usageLimit: 1 });
+    const a = browser();
+    await a.add(sofa, 1);
+    await a.apply('SAVE10').expect(200);
+    const tx1 = txOf(await a.checkout());
+    await fail(tx1).expect(200);
+    const order = await orderOfTx(tx1);
+    // Its own (failed) order does not use up the coupon: retry works.
+    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(true);
+    const tx2 = txOf(await retry(order.number, order.publicToken).expect(201));
+    await fail(tx2).expect(200);
+
+    // Someone else used the last use.
+    await prisma.promotion.update({ where: { id: p.id }, data: { usedCount: 1 } });
+    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(false);
+    const ended = await retry(order.number, order.publicToken).expect(409);
+    expect(ended.body).toEqual({
+      statusCode: 409,
+      code: 'promotion_ended',
+      messageHe: 'המבצע או הקופון של ההזמנה כבר לא בתוקף. חזרו לסל כדי להזמין מחדש.',
+    });
+
+    // Expired instead.
+    await prisma.promotion.update({
+      where: { id: p.id },
+      data: { usedCount: 0, endsAt: new Date(Date.now() - 1_000) },
+    });
+    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(false);
+    expect((await retry(order.number, order.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.PAYMENT_FAILED);
+  });
+
+  it('DELETE /api/cart/coupon without a cart answers the empty cart and creates none', async () => {
+    const res = await browser().unapply().expect(200);
+    expect(res.body).toMatchObject({ lines: [], couponCode: null, discount: null });
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  it('coupon entry is rate limited per IP (429)', async () => {
+    const throttle = app.get(WriteThrottle);
+    throttle.setLimit('coupon', 2);
+    try {
+      const b = browser();
+      await b.add(sofa, 1);
+      await b.apply('NOPE1').expect(400);
+      await b.apply('NOPE2').expect(400);
+      const limited = await b.apply('NOPE3').expect(429);
+      expect(limited.body).toMatchObject({ statusCode: 429, code: 'too_many_requests' });
+      expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+      // Removing is not limited.
+      await b.unapply().expect(200);
+    } finally {
+      throttle.setLimit('coupon', 100_000);
+    }
   });
 
   it('a product-target coupon discounts only that product', async () => {

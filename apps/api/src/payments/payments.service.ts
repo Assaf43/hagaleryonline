@@ -200,10 +200,13 @@ export class PaymentsService {
         const ordered = order.items.flatMap((i) => (i.variantId === null ? [] : [{ ...i, variantId: i.variantId }]));
         // The cart is cleared only when this is its latest order: a newer pending order of the same cart (placed
         // after this one was superseded) still needs those lines.
-        if (order.cartId && newer === 0)
+        if (order.cartId && newer === 0) {
           await tx.cartItem.deleteMany({
             where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
           });
+          // The coupon went with this order: the cart does not offer it again.
+          await tx.cart.updateMany({ where: { id: order.cartId }, data: { couponCode: null } });
+        }
         const stockShortage = await this.takeStock(tx, ordered);
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);

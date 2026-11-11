@@ -62,9 +62,10 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
  *     customer saw it → 409 `coupon_invalid`; any other change (a promotion that ended, a coupon that expired) shows
  *     in the total. When the total the customer saw (`expectedTotal`, required) differs from the recomputed one
  *     (subtotal − discount + shipping), nothing is created: 409 `price_changed` with the new total. Then create
- *     the order, its items, the discount snapshot and the reservation. The usage limit counts paid orders only, so
- *     the promotion row is not locked here: two pending orders may both use a coupon's last use, and both are
- *     honored and counted when paid (Review Focus 5). `shown` / top category come from the catalog snapshot, which admin
+ *     the order, its items, the discount snapshot and the reservation. A usage limit counts paid orders plus live
+ *     pending orders of other carts (spec §6); the limited promotion rows are locked last, so two checkouts cannot both
+ *     take a coupon's last use. A pending order whose reservation ran out no longer holds a use, but if it is paid
+ *     late it is honored and counted, even past the limit (Review Focus 5). `shown` / top category come from the catalog snapshot, which admin
  *     writes invalidate at once in this process (a multi-process deploy would see it up to 60 s late — Phase 9).
  *  4. After commit: ask the payment provider for a payment page and record the payment (PaymentsService).
  */
@@ -125,11 +126,15 @@ export class CheckoutService {
         const estimate = deliveryEstimate(lines.map((l) => ({ ...l, available: true })));
         if (!estimate) throw emptyCart();
         const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.storedQuantity, 0);
-        // The one discount of the order (decision 70), on the locked lines at their current prices.
+        // The one discount of the order (decision 70), on the locked lines at their current prices. The limited
+        // promotions are locked last (cart → orders → variants → promotions), so their uses — paid plus live
+        // pending orders of other carts (this cart's were just expired) — hold until commit (spec §6).
+        await this.promotions.lockLimited(tx, couponCode);
         const evaluated = await this.promotions.evaluate(
           tx,
           discountLines(lines, (l) => l.storedQuantity),
           couponCode,
+          { cartId: cart.id },
         );
         if (evaluated.couponProblem === 'exhausted')
           throw couponInvalid(couponProblemMessageHe('exhausted', evaluated.coupon));

@@ -280,6 +280,17 @@ export class CheckoutPage {
       this.toCart();
       return;
     }
+    if (code === 'coupon_invalid') {
+      // The coupon was used up meanwhile: the reloaded cart no longer has it (its notice says so) and shows the
+      // total without it.
+      const body = error instanceof HttpErrorResponse ? (error.error as { messageHe?: unknown }) : {};
+      this.formError.set({
+        message: typeof body.messageHe === 'string' ? body.messageHe : checkoutErrorMessage(code),
+        cartLink: false,
+      });
+      void this.cart.load();
+      return;
+    }
     if (code === 'price_changed') {
       const total = error instanceof HttpErrorResponse ? (error.error as { total?: unknown }).total : undefined;
       this.formError.set({

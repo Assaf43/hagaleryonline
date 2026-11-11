@@ -111,6 +111,8 @@ export interface CheckoutResponse {
  * - `shipping_unavailable` (503): the shipping price list is not configured;
  * - `payment_unavailable` (502): the payment provider did not answer;
  * - `not_retryable` (409): the order is paid or still waiting for its payment;
+ * - `promotion_ended` (409): retry refused — the order's promotion or coupon ended, is inactive or used up;
+ *   `messageHe`;
  * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
  * - `not_found` (404): unknown order or transaction, or the token does not match;
  * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook.
@@ -129,6 +131,7 @@ export type CheckoutErrorCode =
   | 'shipping_unavailable'
   | 'payment_unavailable'
   | 'not_retryable'
+  | 'promotion_ended'
   | 'superseded'
   | 'not_found';
 

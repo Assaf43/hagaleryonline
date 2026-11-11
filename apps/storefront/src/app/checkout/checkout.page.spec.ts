@@ -329,6 +329,23 @@ describe('CheckoutPage', () => {
     expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
   });
 
+  it('on coupon_invalid shows the coupon message and reloads the cart', async () => {
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush(
+        { statusCode: 409, code: 'coupon_invalid', field: 'coupon', messageHe: 'הקופון נוצל במלואו' },
+        { status: 409, statusText: 'Conflict' },
+      );
+    await render();
+    expect(q<HTMLElement>('.form-error').textContent).toContain('הקופון נוצל במלואו');
+    expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000)]));
+    await render();
+  });
+
   it('on price_changed shows the new total, reloads the cart and sends nothing more', async () => {
     await setup();
     await fillValid();

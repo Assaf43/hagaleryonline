@@ -1,11 +1,9 @@
 import { FULFILLMENT_LABELS_HE, type FulfillmentMode } from '@hg/models';
 
-const ILS = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 });
+/** 459000 agorot → "4,590 ₪" — one formatter for the storefront and the API's messages (`@hg/models`). */
+export { formatPrice } from '@hg/models';
 
-/** 459000 agorot → "4,590 ₪" (prices are VAT included). */
-export function formatPrice(agorot: number): string {
-  return `${ILS.format(Math.round(agorot / 100))} ₪`;
-}
+const ILS = new Intl.NumberFormat('he-IL', { maximumFractionDigits: 0 });
 
 /** Short delivery line for product cards (PRD-09): "במלאי · אספקה עד 14 ימי עסקים". */
 export function deliveryText(mode: FulfillmentMode, days: number): string {

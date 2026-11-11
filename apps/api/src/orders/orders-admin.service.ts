@@ -18,7 +18,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-provider.js';
 import { orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
-import { effectiveStatus } from './orders.service.js';
+import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
 export const ADMIN_ORDERS_PAGE_SIZE = 30;
 
@@ -165,7 +165,7 @@ export class OrdersAdminService {
       shippingLines: order.shippingLines as unknown as ShippingQuoteLine[],
       subtotal: order.subtotal,
       discount: order.discount,
-      discountInfo: (order.discountInfo as OrderView['discountInfo']) ?? null,
+      discountInfo: publicDiscountInfo(order.discountInfo),
       total: order.total,
       deliveryEstimate: (order.deliveryEstimate as OrderView['deliveryEstimate']) ?? null,
       lines: order.items.map((i) => ({

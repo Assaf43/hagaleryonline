@@ -103,6 +103,10 @@ export function checkoutErrorMessage(code: ApiErrorCode | null): string {
       return 'הסל השתנה בזמן ההזמנה. בדקו את הסיכום ונסו שוב.';
     case 'price_changed':
       return 'המחיר השתנה מאז שהצגנו אותו. בדקו את הסיכום ונסו שוב.';
+    case 'coupon_invalid':
+      return 'הקופון כבר לא בתוקף. בדקו את הסיכום ונסו שוב.';
+    case 'promotion_ended':
+      return 'המבצע או הקופון של ההזמנה כבר לא בתוקף. חזרו לסל כדי להזמין מחדש.';
     case 'too_many_requests':
       return 'ביצעתם יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.';
     case 'shipping_unavailable':

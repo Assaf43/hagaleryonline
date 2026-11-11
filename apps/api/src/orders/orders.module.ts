@@ -16,7 +16,7 @@ import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
-import { WriteThrottle } from './write-throttle.js';
+import { WriteThrottleModule } from './write-throttle.module.js';
 
 /**
  * Checkout, orders and payments (spec §5). The active `PaymentProvider` comes from `PAYMENT_PROVIDER` (required, no
@@ -24,14 +24,13 @@ import { WriteThrottle } from './write-throttle.js';
  * address stops the API only when it is the configured provider.
  */
 @Module({
-  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule],
+  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule, WriteThrottleModule],
   controllers: [CheckoutController, OrdersController, PaymentsController, OrdersAdminController],
   providers: [
     CheckoutService,
     OrdersService,
     OrdersAdminService,
     PaymentsService,
-    WriteThrottle,
     { provide: WebhookDispatcher, useClass: HttpWebhookDispatcher },
     {
       provide: PAYMENT_PROVIDER,

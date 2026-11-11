@@ -2,10 +2,12 @@ import { Prisma } from '../generated/prisma/client.js';
 
 /**
  * Row locks of the order flow. To stay free of deadlocks every transaction takes them in this order:
- * cart → orders → variants (variants always by ascending id).
- *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants;
- *  - retry payment: the order, then its variants;
- *  - webhook: the payment, then its order, then (on success) the variants' stock.
+ * cart → orders → variants (variants always by ascending id) → promotions (by ascending id).
+ *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
+ *    limited promotions it may use (PromotionsService.lockLimited), so their usage counts hold until commit;
+ *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
+ *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
+ *    (its usage count +1).
  */
 
 /** Serializes checkouts of one cart. NO KEY UPDATE leaves cart line inserts and deletes (FK KEY SHARE) unblocked. */

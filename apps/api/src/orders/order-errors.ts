@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
-import type { CheckoutErrorCode } from '@hg/models';
+import { PROMOTION_ENDED_MESSAGE_HE, type CheckoutErrorCode } from '@hg/models';
 
 /** Errors of checkout, orders and payments: `{ statusCode, code, ...details }` (models `CheckoutErrorCode`). */
 export class CheckoutError extends HttpException {
@@ -20,6 +20,9 @@ export const priceChanged = (total: number) => new CheckoutError(HttpStatus.CONF
 /** The cart's coupon was used up since the customer saw it (spec §6): remove it and try again. */
 export const couponInvalid = (messageHe: string) =>
   new CheckoutError(HttpStatus.CONFLICT, 'coupon_invalid', { field: 'coupon', messageHe });
+/** Retry refused: the order's promotion or coupon ended, is inactive or used up (spec §6). */
+export const promotionEndedError = () =>
+  new CheckoutError(HttpStatus.CONFLICT, 'promotion_ended', { messageHe: PROMOTION_ENDED_MESSAGE_HE });
 export const shippingUnavailable = () => new CheckoutError(HttpStatus.SERVICE_UNAVAILABLE, 'shipping_unavailable');
 export const paymentUnavailable = () => new CheckoutError(HttpStatus.BAD_GATEWAY, 'payment_unavailable');
 export const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'not_retryable');

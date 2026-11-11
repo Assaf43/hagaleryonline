@@ -559,7 +559,8 @@ model Order {
   discount         Int                 @default(0)
   /// Snapshot of the applied promotion: { name, kind, code, labelHe, source }; null without a discount.
   discountInfo     Json?               @map("discount_info")
-  /// The applied promotion: its usage count goes up when the order is paid (spec §6).
+  /// The applied promotion: its usage count goes up when the order is paid (spec §6). A promotion with orders
+  /// cannot be deleted (RESTRICT).
   promotionId      Int?                @map("promotion_id")
   total            Int
   /// { fulfillment, leadTimeDays } of the slowest line (CRT-04).
@@ -577,13 +578,14 @@ model Order {
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
   cart      Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  promotion Promotion?  @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  promotion Promotion?  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
   items     OrderItem[]
   payments  Payment[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
   @@index([createdAt])
+  @@index([promotionId])
   @@map("orders")
 }
 
@@ -654,7 +656,7 @@ enum DiscountType {
   PERCENT @map("percent")
   FIXED   @map("fixed")
 
-  @@map("discount_type")
+  @@map("promotion_discount_type")
 }
 
 enum PromotionTarget {
@@ -666,6 +668,8 @@ enum PromotionTarget {
 }
 
 /// A promotion: automatic, or a coupon the customer enters. One discount per order — the larger wins (spec §6).
+/// CHECK constraints (raw SQL, migration promotions_checks): code upper-case; a code exactly for coupons; value > 0;
+/// percent value ≤ 100.
 model Promotion {
   id           Int             @id @default(autoincrement())
   name         String
