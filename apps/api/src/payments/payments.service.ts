@@ -138,6 +138,10 @@ export class PaymentsService {
    *   its latest payment, so a late failure of an earlier attempt does not disturb a retry in progress.
    */
   async apply(result: PaymentResult): Promise<WebhookOutcome> {
+    // The cart whose coupon went with the paid order. Cleared after commit: updating the cart row inside the
+    // transaction would lock it after the order (order → cart), the reverse of checkout and retry (cart → order),
+    // and deadlock with a checkout of the same cart.
+    let clearCouponOf: string | null = null;
     const outcome = await this.prisma.$transaction(async (tx): Promise<WebhookOutcome> => {
       const [locked] = await tx.$queryRaw<{ id: string; order_id: string }[]>`
         SELECT id, order_id FROM payments WHERE transaction_id = ${result.transactionId} FOR UPDATE`;
@@ -204,8 +208,8 @@ export class PaymentsService {
           await tx.cartItem.deleteMany({
             where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
           });
-          // The coupon went with this order: the cart does not offer it again.
-          await tx.cart.updateMany({ where: { id: order.cartId }, data: { couponCode: null } });
+          // The coupon went with this order: the cart does not offer it again (after commit, see above).
+          clearCouponOf = order.cartId;
         }
         const stockShortage = await this.takeStock(tx, ordered);
         if (stockShortage)
@@ -228,6 +232,13 @@ export class PaymentsService {
       await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAYMENT_FAILED } });
       return 'failed';
     });
+    if (clearCouponOf) {
+      const cartId: string = clearCouponOf;
+      // Best effort, no other lock held: a failure only leaves a code the cart view re-checks (and drops if used up).
+      await this.prisma.cart
+        .updateMany({ where: { id: cartId }, data: { couponCode: null } })
+        .catch((error: unknown) => this.logger.error(`Could not clear the coupon of cart ${cartId}`, error));
+    }
     return outcome;
   }
 

@@ -172,10 +172,11 @@ export class PromotionsService {
       status: OrderStatus.PENDING_PAYMENT,
       reservedUntil: { gt: new Date() },
     };
-    const not: Prisma.OrderWhereInput[] = [];
-    if (exclude.cartId) not.push({ cartId: exclude.cartId });
-    if (exclude.orderId) not.push({ id: exclude.orderId });
-    if (not.length > 0) where.NOT = not;
+    // Not `NOT: { cartId }`: on a nullable column it also drops the orders whose cart is gone (cart_id NULL).
+    const and: Prisma.OrderWhereInput[] = [];
+    if (exclude.cartId) and.push({ OR: [{ cartId: null }, { cartId: { not: exclude.cartId } }] });
+    if (exclude.orderId) and.push({ id: { not: exclude.orderId } });
+    if (and.length > 0) where.AND = and;
     const pending = await db.order.groupBy({ by: ['promotionId'], where, _count: { _all: true } });
     const counts = new Map(pending.map((p) => [p.promotionId, p._count._all]));
     return rules.map((r) => ({ ...r, usedCount: r.usedCount + (counts.get(r.id) ?? 0) }));

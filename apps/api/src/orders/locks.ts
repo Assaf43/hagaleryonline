@@ -7,7 +7,8 @@ import { Prisma } from '../generated/prisma/client.js';
  *    limited promotions it may use (PromotionsService.lockLimited), so their usage counts hold until commit;
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
- *    (its usage count +1).
+ *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);
+ *    the cart's coupon is cleared after commit.
  */
 
 /** Serializes checkouts of one cart. NO KEY UPDATE leaves cart line inserts and deletes (FK KEY SHARE) unblocked. */

@@ -478,6 +478,19 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     expect(await usedCount(p.id)).toBe(0);
   });
 
+  it('a live pending order without a cart (its cart was deleted) still holds its use', async () => {
+    await promotion({ usageLimit: 1 });
+    const first = browser();
+    await first.add(sofa, 1);
+    await first.apply('SAVE10').expect(200);
+    const order = await orderOfTx(txOf(await first.checkout()));
+    await prisma.order.update({ where: { id: order.id }, data: { cartId: null } });
+
+    const second = browser();
+    await second.add(sofa, 1);
+    expect((await second.apply('SAVE10').expect(400)).body.messageHe).toBe('הקופון נוצל במלואו');
+  });
+
   it('an automatic promotion with a reached limit does not apply', async () => {
     await promotion({ name: 'מוגבל', kind: PromotionKind.AUTOMATIC, code: null, value: 10, usageLimit: 1 });
     const first = browser();
