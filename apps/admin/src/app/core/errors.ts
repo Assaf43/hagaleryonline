@@ -150,6 +150,26 @@ export function catalogIssueText(code: CatalogErrorCode): string {
   return text[code];
 }
 
+/** Order actions (Phase 5): 409 codes, and the field a 400 `invalid_input` names. */
+const ORDER_CODES: Record<string, string> = {
+  invalid_transition: 'אי אפשר לעבור לסטטוס הזה',
+  refund_exceeds_paid: 'הסכום גדול מהיתרה להחזר',
+};
+
+const ORDER_FIELDS: Record<string, string> = {
+  'slot.date': 'תאריך האספקה לא תקין (לא יכול להיות לפני היום).',
+  'slot.window': 'טווח השעות לא תקין. שעת ההתחלה צריכה להיות לפני שעת הסיום.',
+  reason: 'יש למלא סיבה (3–500 תווים).',
+  amount: 'הסכום לא תקין.',
+  refund: 'בחירת ההחזר לא תקינה להזמנה הזו.',
+};
+
+function orderMessage(body: { code?: string; field?: string }): string | null {
+  if (body.code && ORDER_CODES[body.code]) return ORDER_CODES[body.code];
+  if (body.code === 'invalid_input' && body.field && ORDER_FIELDS[body.field]) return ORDER_FIELDS[body.field];
+  return null;
+}
+
 /** A Hebrew sentence for any error the admin API returns. */
 export function errorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'משהו השתבש. נסו שוב.';
@@ -157,6 +177,8 @@ export function errorMessage(error: unknown): string {
   if (error.status === 413) return IMAGE_PROBLEMS.too_large;
   const shipping = shippingMessage(error.error ?? {});
   if (shipping) return shipping;
+  const order = orderMessage(error.error ?? {});
+  if (order) return order;
   const catalog = catalogMessage(error.error ?? {});
   if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };

@@ -13,12 +13,13 @@ import { formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
 
+/** "הכול" and then every order status, in the order of the labels table. */
 const FILTERS: { status: OrderStatus | null; label: string }[] = [
   { status: null, label: 'הכול' },
-  { status: 'paid', label: ORDER_STATUS_LABELS_HE.paid },
-  { status: 'pending_payment', label: ORDER_STATUS_LABELS_HE.pending_payment },
-  { status: 'payment_failed', label: ORDER_STATUS_LABELS_HE.payment_failed },
-  { status: 'expired', label: ORDER_STATUS_LABELS_HE.expired },
+  ...(Object.keys(ORDER_STATUS_LABELS_HE) as OrderStatus[]).map((status) => ({
+    status,
+    label: ORDER_STATUS_LABELS_HE[status],
+  })),
 ];
 
 /** "פריט אחד" / "N פריטים". */
