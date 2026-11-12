@@ -23,6 +23,7 @@
     <p class="slot">
       אספקה מתואמת: <bdi dir="ltr">{{ s.date }}</bdi
       >, <bdi dir="ltr">{{ s.windowFrom }}–{{ s.windowTo }}</bdi>
+      <span class="slot-state" [attr.data-state]="s.state">({{ slotStateLabels[s.state] }})</span>
     </p>
   }
 

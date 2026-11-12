@@ -136,6 +136,7 @@ export type CheckoutErrorCode =
   | 'superseded'
   | 'invalid_transition'
   | 'refund_exceeds_paid'
+  | 'already_answered'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */
@@ -184,6 +185,14 @@ export interface OrderAddressView extends CheckoutAddress {
 
 export type DeliverySlotState = 'proposed' | 'confirmed' | 'change_requested' | 'superseded';
 
+/** How the admin order detail names the state of the delivery slot. */
+export const DELIVERY_SLOT_STATE_LABELS_HE: Record<DeliverySlotState, string> = {
+  proposed: 'הוצע',
+  confirmed: 'אושר על ידי הלקוח',
+  change_requested: 'הלקוח ביקש מועד אחר',
+  superseded: 'הוחלף',
+};
+
 /** The delivery date and time window staff set for an order (Phase 5, spec §4.1). */
 export interface DeliverySlotView {
   /** Israel-time calendar date, YYYY-MM-DD. */
@@ -192,6 +201,22 @@ export interface DeliverySlotView {
   windowFrom: string;
   windowTo: string;
   state: DeliverySlotState;
+}
+
+/** GET /api/delivery/:token — what the delivery confirmation page shows (spec §5.3). */
+export interface DeliveryLinkView {
+  orderNumber: number;
+  /** Israel-time calendar date, YYYY-MM-DD. */
+  date: string;
+  windowFrom: string;
+  windowTo: string;
+  state: DeliverySlotState;
+}
+
+/** POST /api/delivery/:token — the customer's answer; `note` is optional, at most 500 characters. */
+export interface DeliveryAnswerRequest {
+  answer: 'confirm' | 'change';
+  note?: string;
 }
 
 /** GET /api/orders/:number?t=<token> — the confirmation page. */

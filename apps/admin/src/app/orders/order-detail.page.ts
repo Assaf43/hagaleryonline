@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import {
+  DELIVERY_SLOT_STATE_LABELS_HE,
   FULFILLMENT_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
   ORDER_STATUS_LABELS_HE,
@@ -62,6 +63,7 @@ export class OrderDetailPage {
   protected readonly formatAmount = formatAmount;
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
+  protected readonly slotStateLabels = DELIVERY_SLOT_STATE_LABELS_HE;
   /** The customer's wording, so staff and customer name the method the same way. */
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly paymentLabels = PAYMENT_LABELS;

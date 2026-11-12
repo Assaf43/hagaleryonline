@@ -361,6 +361,19 @@ describe('order detail actions', () => {
     expect(buttons(done, 'button.advance')).toHaveLength(0);
   });
 
+  it('shows the state of the delivery slot in Hebrew', async () => {
+    const slot = { date: '2026-12-01', windowFrom: '09:00', windowTo: '13:00' } as const;
+    for (const [state, label] of [
+      ['proposed', 'הוצע'],
+      ['confirmed', 'אושר על ידי הלקוח'],
+      ['change_requested', 'הלקוח ביקש מועד אחר'],
+    ] as const) {
+      const fixture = await mount(['orders.manage'], { deliverySlot: { ...slot, state } });
+      expect((fixture.nativeElement as HTMLElement).querySelector('.slot')?.textContent).toContain(label);
+      TestBed.resetTestingModule();
+    }
+  });
+
   it('advances directly for an ordinary status and opens the slot form for delivery_scheduled', async () => {
     const fixture = await mount(['orders.manage']);
     buttons(fixture, 'button.advance')[0].click();

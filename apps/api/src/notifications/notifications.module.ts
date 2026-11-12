@@ -7,6 +7,7 @@ import { MockNotificationProvider } from './mock-notification.provider.js';
 import { EMAIL_PROVIDER, SMS_PROVIDER, type EmailProvider, type SmsProvider } from './notification-provider.js';
 import { NotificationsAdminController } from './notifications-admin.controller.js';
 import { NotificationsService } from './notifications.service.js';
+import { DeliverySlotSmsJob } from './delivery-slot-sms.job.js';
 import { OrderMessagesJob } from './order-messages.job.js';
 
 /**
@@ -20,6 +21,7 @@ import { OrderMessagesJob } from './order-messages.job.js';
   providers: [
     NotificationsService,
     OrderMessagesJob,
+    DeliverySlotSmsJob,
     {
       provide: EMAIL_PROVIDER,
       inject: [ConfigService],

@@ -36,6 +36,7 @@ export default defineConfig({
       THROTTLE_SANDBOX_LIMIT: '100000',
       THROTTLE_COUPON_LIMIT: '100000',
       THROTTLE_CANCEL_LIMIT: '100000',
+      THROTTLE_DELIVERY_LIMIT: '100000',
       PAYMENT_PROVIDER: 'sandbox',
       // Notifications (Phase 5b): the mock adapters send nothing and log the full message.
       EMAIL_PROVIDER: 'mock',

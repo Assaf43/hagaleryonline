@@ -11,6 +11,8 @@ import { SandboxPaymentProvider } from '../payments/sandbox-payment.provider.js'
 import { HttpWebhookDispatcher, WebhookDispatcher } from '../payments/webhook-dispatcher.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
+import { DeliverySlotController } from './delivery-slot.controller.js';
+import { DeliverySlotService } from './delivery-slot.service.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
 import { LatePaymentRefundJob } from './late-payment.job.js';
@@ -29,12 +31,19 @@ import { WriteThrottleModule } from './write-throttle.module.js';
  */
 @Module({
   imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule, WriteThrottleModule, OutboxModule],
-  controllers: [CheckoutController, OrdersController, PaymentsController, OrdersAdminController],
+  controllers: [
+    DeliverySlotController,
+    CheckoutController,
+    OrdersController,
+    PaymentsController,
+    OrdersAdminController,
+  ],
   providers: [
     CheckoutService,
     OrdersService,
     OrdersAdminService,
     OrderLifecycleService,
+    DeliverySlotService,
     RefundService,
     LatePaymentRefundJob,
     PaymentsService,

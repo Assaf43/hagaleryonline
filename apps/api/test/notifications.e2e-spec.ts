@@ -168,13 +168,13 @@ describe('Notifications (e2e, CHK-07)', () => {
     await move({ to: 'delivered' });
     await runJobs();
     const rows = await logs(order.id);
-    expect(rows.map((r) => r.template).sort()).toEqual(['status_delivered', 'status_shipped']);
+    expect(rows.map((r) => r.template).sort()).toEqual(['delivery_slot', 'status_delivered', 'status_shipped']);
     const shipped = rows.find((r) => r.template === 'status_shipped');
     expect(shipped?.subject).toBe(`ההזמנה ${order.number} בדרך אליך`);
     expect(rows.find((r) => r.template === 'status_delivered')?.subject).toBe(`ההזמנה ${order.number} סופקה`);
-    // The delivery SMS is Task 8: its job waits for a handler.
+    // The delivery SMS has its own handler (Task 8): the job ran.
     expect(
-      await prisma.outboxJob.count({ where: { orderId: order.id, type: 'sms.delivery_slot', state: 'PENDING' } }),
+      await prisma.outboxJob.count({ where: { orderId: order.id, type: 'sms.delivery_slot', state: 'DONE' } }),
     ).toBe(1);
   });
 
