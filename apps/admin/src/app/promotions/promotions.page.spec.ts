@@ -53,6 +53,14 @@ const CATEGORIES: PromotionCategoryOption[] = [
 /** Text without the bidi marks and spaces the currency formatter adds. */
 const flat = (text: string | null | undefined) => (text ?? '').replace(/[‎‏\s]/g, '');
 
+/** The text a sighted user sees (without the visually hidden cell labels). */
+const visible = (e: Element | null | undefined) => {
+  if (!e) return undefined;
+  const copy = e.cloneNode(true) as Element;
+  copy.querySelectorAll('.visually-hidden').forEach((h) => h.remove());
+  return copy.textContent?.trim();
+};
+
 const settle = async (fixture: ComponentFixture<unknown>) => {
   await fixture.whenStable();
   fixture.detectChanges();
@@ -86,21 +94,31 @@ describe('admin promotions screens', () => {
       const [auto, coupon] = rows;
       expect(auto.querySelector('.name')?.textContent).toContain('מבצע ספות');
       expect(auto.querySelector('a')?.getAttribute('href')).toBe('/promotions/1');
-      expect(auto.querySelector('.kind')?.textContent?.trim()).toBe('מבצע אוטומטי');
+      expect(visible(auto.querySelector('.kind'))).toBe('מבצע אוטומטי');
       expect(auto.querySelector('.code')).toBeNull();
-      expect(flat(auto.querySelector('.value')?.textContent)).toBe('15%');
+      expect(flat(visible(auto.querySelector('.value')))).toBe('15%');
       expect(auto.querySelector('.targets')?.textContent).toContain('קטגוריות: ספות, כורסאות');
-      expect(auto.querySelector('.dates')?.textContent).toContain('1.11.2026');
-      expect(auto.querySelector('.dates')?.textContent).toContain('31.12.2099');
+      expect(visible(auto.querySelector('.dates'))).toContain('1.11.2026');
+      expect(visible(auto.querySelector('.dates'))).toContain('31.12.2099');
       expect(auto.querySelector('.uses')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('שימושים: 12 / ללא הגבלה');
-      expect(auto.querySelector('.state')?.textContent?.trim()).toBe('פעיל');
+      expect(visible(auto.querySelector('.state'))).toBe('פעיל');
 
-      expect(coupon.querySelector('.kind')?.textContent?.trim()).toBe('קופון');
+      expect(visible(coupon.querySelector('.kind'))).toBe('קופון');
       expect(coupon.querySelector('.code bdi[dir="ltr"]')?.textContent).toBe('WINTER');
-      expect(flat(coupon.querySelector('.value')?.textContent)).toBe('250₪');
+      expect(flat(visible(coupon.querySelector('.value')))).toBe('250₪');
       expect(coupon.querySelector('.targets bdi[dir="ltr"]')?.textContent).toBe('ALBA');
-      expect(coupon.querySelector('.dates')?.textContent?.trim()).toBe('ללא תאריכים');
+      expect(visible(coupon.querySelector('.dates'))).toBe('ללא תאריכים');
       expect(coupon.querySelector('.uses')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('שימושים: 7 / 50');
+      // Every cell says what it is to a screen reader (the columns have no visible headers).
+      const hidden = [...auto.querySelectorAll('.visually-hidden')].map((h) => h.textContent?.trim());
+      expect(hidden).toEqual(expect.arrayContaining(['סוג:', 'הנחה:', 'חל על:', 'תאריכים:', 'מצב:']));
+      expect(coupon.querySelector('.code .visually-hidden')?.textContent?.trim()).toBe('קוד:');
+    });
+
+    it('says the intro without the misleading "once used" rule', async () => {
+      const { el } = await list();
+      expect(el.querySelector('.page-intro')?.textContent).toContain('אי אפשר למחוק מבצעים, רק להשבית אותם.');
+      expect(el.querySelector('.page-intro')?.textContent).not.toContain('שכבר שימש');
     });
 
     it('marks inactive, ended and scheduled promotions with text', async () => {
@@ -108,11 +126,14 @@ describe('admin promotions screens', () => {
         { ...base, id: 1, active: false },
         { ...base, id: 2, endsAt: '2020-01-01T00:00:00.000Z', startsAt: null },
         { ...base, id: 3, startsAt: '2099-01-01T00:00:00.000Z' },
+        // Used up wins over active (owner ruling R22).
+        { ...COUPON, id: 4, usageLimit: 7, usedCount: 7 },
+        { ...COUPON, id: 5, usageLimit: 7, usedCount: 9 },
       ]);
-      const states = [...el.querySelectorAll('.state')].map((s) => s.textContent?.trim());
-      expect(states).toEqual(['לא פעיל', 'הסתיים', 'מתוכנן']);
+      const states = [...el.querySelectorAll('.state')].map((s) => visible(s));
+      expect(states).toEqual(['לא פעיל', 'הסתיים', 'מתוכנן', 'נוצל', 'נוצל']);
       // Only an active promotion can be deactivated.
-      expect(el.querySelectorAll('button.deactivate')).toHaveLength(2);
+      expect(el.querySelectorAll('button.deactivate')).toHaveLength(4);
     });
 
     it('deactivates after a confirmation and shows the new state', async () => {
@@ -122,7 +143,7 @@ describe('admin promotions screens', () => {
       expect(confirm).toHaveBeenCalledWith('להשבית את "מבצע ספות"? אפשר להפעיל אותו שוב בעריכה.');
       http.expectOne({ method: 'POST', url: '/api/admin/promotions/1/deactivate' }).flush({ ...base, active: false });
       await settle(fixture);
-      expect(el.querySelector('.state')?.textContent?.trim()).toBe('לא פעיל');
+      expect(visible(el.querySelector('.state'))).toBe('לא פעיל');
       confirm.mockRestore();
     });
 
@@ -184,7 +205,7 @@ describe('admin promotions screens', () => {
       type('promo-code', 'end25');
       el().querySelector<HTMLInputElement>('input[name="discountType"][value="fixed"]')!.click();
       fixture.detectChanges();
-      type('promo-value', '250.5');
+      type('promo-value', '250');
       type('promo-min', '1000');
       type('promo-start-date', '2026-03-27');
       type('promo-end-date', '2026-03-27');
@@ -196,7 +217,7 @@ describe('admin promotions screens', () => {
         kind: 'coupon',
         code: 'END25',
         discountType: 'fixed',
-        value: 25_050,
+        value: 25_000,
         target: 'order',
         targetIds: [],
         minSubtotal: 100_000,
@@ -246,6 +267,10 @@ describe('admin promotions screens', () => {
       expect(input('promo-value').value).toBe('250');
       expect(el().querySelector('.picked bdi')?.textContent).toBe('ALBA');
       expect(el().textContent).toContain('שימושים עד עכשיו: 7');
+      // Used already: changing the code has a consequence (R22).
+      expect(el().querySelector('.used-warning')?.textContent?.trim()).toBe(
+        'המבצע כבר נוצל. שינוי הקוד יסיר אותו מסלים פתוחים.',
+      );
       type('promo-code', 'taken');
       await save();
       const req = http.expectOne({ method: 'PUT', url: '/api/admin/promotions/2' });
@@ -259,6 +284,39 @@ describe('admin promotions screens', () => {
       expect(code.getAttribute('aria-invalid')).toBe('true');
       expect(el().textContent).toContain('כבר יש קופון עם הקוד הזה');
       expect(document.activeElement).toBe(code);
+    });
+
+    it('shows no "already used" warning for an unused promotion, and the approved hints', async () => {
+      await open('2', { ...COUPON, usedCount: 0 });
+      expect(el().querySelector('.used-warning')).toBeNull();
+      expect(el().textContent).toContain('ההנחה לא תעלה על סכום המוצרים שהמבצע חל עליהם');
+      expect(el().textContent).toContain(
+        'מספר ההזמנות שאפשר לבצע עם הקופון (כולל הזמנות שממתינות לתשלום). ריק = ללא הגבלה.',
+      );
+      el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
+      fixture.detectChanges();
+      expect(el().textContent).toContain('חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.');
+    });
+
+    it('date fields stay between 2000 and 2100', async () => {
+      await open('new');
+      for (const id of ['promo-start-date', 'promo-end-date']) {
+        expect(input(id).getAttribute('min')).toBe('2000-01-01');
+        expect(input(id).getAttribute('max')).toBe('2100-12-31');
+      }
+    });
+
+    it('asks before leaving with unsaved changes, and not otherwise', async () => {
+      await open('2', COUPON);
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+      expect(confirm).not.toHaveBeenCalled();
+      type('promo-name', 'שם אחר');
+      expect(fixture.componentInstance.canLeave()).toBe(false);
+      expect(confirm).toHaveBeenCalledWith('יש שינויים שלא נשמרו. לצאת בלי לשמור?');
+      confirm.mockReturnValue(true);
+      expect(fixture.componentInstance.canLeave()).toBe(true);
+      confirm.mockRestore();
     });
 
     it('says when the promotion does not exist', async () => {

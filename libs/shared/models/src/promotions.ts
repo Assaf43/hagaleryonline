@@ -24,7 +24,8 @@ export function normalizeCouponCode(code: string): string {
 }
 
 /** Why an entered coupon gives no discount. */
-export type CouponProblem = 'unknown' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
+export type CouponProblem =
+  'unknown' | 'not_started' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
 
 /** Hebrew of the retry-payment 409 `promotion_ended`: the order's promotion or coupon is no longer valid. */
 export const PROMOTION_ENDED_MESSAGE_HE = 'המבצע או הקופון של ההזמנה כבר לא בתוקף. חזרו לסל כדי להזמין מחדש.';
@@ -43,6 +44,8 @@ export interface CouponErrorBody {
 /** Hebrew messages of the coupon problems; `below_minimum` is built with `couponMinimumMessageHe`. */
 export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>, string> = {
   unknown: 'קוד הקופון לא קיים',
+  /** Before its start date (owner ruling R21); a deactivated coupon or one past its end is expired. */
+  not_started: 'הקופון עוד לא בתוקף',
   expired: 'תוקף הקופון פג',
   exhausted: 'הקופון נוצל במלואו',
   not_applicable: 'הקופון לא חל על המוצרים בסל',

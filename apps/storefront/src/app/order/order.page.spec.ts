@@ -130,6 +130,7 @@ describe('OrderPage', () => {
     );
     const row = el().querySelector('.totals .discount-row');
     expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון חורף: −300 ₪');
+    expect(row?.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−300');
     expect(text()).toContain('3,150 ₪');
     fixture.destroy();
     http.match('/api/cart');

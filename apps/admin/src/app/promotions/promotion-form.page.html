@@ -7,6 +7,9 @@
   <p class="page-intro" role="status">טוען…</p>
 } @else {
   <form class="panel" novalidate (submit)="save($event)">
+    @if ((saved()?.usedCount ?? 0) > 0) {
+      <p class="used-warning">המבצע כבר נוצל. שינוי הקוד יסיר אותו מסלים פתוחים.</p>
+    }
     <fieldset class="choice">
       <legend>סוג</legend>
       @for (k of kinds; track k[0]) {
@@ -16,7 +19,7 @@
         </label>
       }
       <p class="muted">
-        {{ coupon() ? 'חל רק כשהלקוח מזין את הקוד בסל.' : 'חל בסל לבד, בלי קוד, על כל הזמנה שעומדת בתנאים.' }}
+        {{ coupon() ? 'חל רק כשהלקוח מזין את הקוד בסל.' : 'חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.' }}
       </p>
     </fieldset>
 
@@ -93,7 +96,7 @@
         <mat-hint>{{
           form().discountType === 'percent'
             ? 'מספר שלם בין 1 ל-100. ההנחה מעוגלת לשקל שלם.'
-            : 'לא יותר מסכום המוצרים שהמבצע חל עליהם'
+            : 'ההנחה לא תעלה על סכום המוצרים שהמבצע חל עליהם'
         }}</mat-hint>
         <mat-error>{{ errors().value }}</mat-error>
       </mat-form-field>
@@ -178,6 +181,8 @@
           <input
             matInput
             type="date"
+            [min]="minDate"
+            [max]="maxDate"
             [id]="ids.startDate"
             [ngModel]="form().startDate"
             (ngModelChange)="set('startDate', $event)"
@@ -204,6 +209,8 @@
           <input
             matInput
             type="date"
+            [min]="minDate"
+            [max]="maxDate"
             [id]="ids.endDate"
             [ngModel]="form().endDate"
             (ngModelChange)="set('endDate', $event)"
@@ -242,7 +249,7 @@
             [ngModelOptions]="{ standalone: true }"
             [errorStateMatcher]="matcher('usageLimit')"
           />
-          <mat-hint>מספר ההזמנות ששולמו עם הקופון. ריק = ללא הגבלה.</mat-hint>
+          <mat-hint>מספר ההזמנות שאפשר לבצע עם הקופון (כולל הזמנות שממתינות לתשלום). ריק = ללא הגבלה.</mat-hint>
           <mat-error>{{ errors().usageLimit }}</mat-error>
         </mat-form-field>
       </div>

@@ -121,7 +121,7 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
         target: 'categories',
         targetIds: [parentCategory],
         discountType: 'fixed',
-        value: 15_050,
+        value: 15_000,
         minSubtotal: 200_000,
         startsAt: start,
         endsAt: end,
@@ -130,7 +130,7 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     expect(onCategory).toMatchObject({
       code: null,
       usageLimit: null,
-      value: 15_050,
+      value: 15_000,
       minSubtotal: 200_000,
       startsAt: start,
       endsAt: end,
@@ -188,6 +188,15 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
       [fresh({ target: 'products', targetIds: [99_999_999] }), 'targetIds'],
       [fresh({ target: 'products', targetIds: [productId, productId] }), 'targetIds'],
       [fresh({ startsAt: 'tomorrow' }), 'startsAt'],
+      // Real calendar times between 2000 and 2100 only.
+      [fresh({ startsAt: '2026-02-31T10:00:00.000Z' }), 'startsAt'],
+      [fresh({ startsAt: '2026-12-01T24:00:00.000Z' }), 'startsAt'],
+      [fresh({ endsAt: '0000-01-01T00:00:00.000Z' }), 'endsAt'],
+      [fresh({ endsAt: '1999-12-31T23:00:00.000Z' }), 'endsAt'],
+      [fresh({ endsAt: '2101-01-01T00:00:00+02:00' }), 'endsAt'],
+      // Fixed amounts and minimums in whole shekels.
+      [fresh({ discountType: 'fixed', value: 15_050 }), 'value'],
+      [fresh({ minSubtotal: 200_050 }), 'minSubtotal'],
       [fresh({ startsAt: '2026-12-02T00:00:00.000Z', endsAt: '2026-12-01T00:00:00.000Z' }), 'endsAt'],
       [fresh({ startsAt: '2026-12-01T00:00:00.000Z', endsAt: '2026-12-01T00:00:00.000Z' }), 'endsAt'],
       [{ ...fresh(), active: 'yes' }, 'active'],
@@ -210,6 +219,16 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     await owner.put(`/promotions/${second.id}`, coupon({ name: 'ZZ קופון ב', code: 'ZZUNIQUE' })).expect(409);
     // Saving a coupon with its own code is fine.
     await owner.put(`/promotions/${first.id}`, coupon({ name: 'ZZ קופון א', code: 'ZZUNIQUE' })).expect(200);
+  });
+
+  it('two creates of the same new code at once: one is saved, the other gets 409', async () => {
+    const [a, b] = await Promise.all([
+      owner.post('/promotions', coupon({ name: 'ZZ מרוץ א', code: 'ZZRACE' })),
+      owner.post('/promotions', coupon({ name: 'ZZ מרוץ ב', code: 'ZZRACE' })),
+    ]);
+    expect([a.status, b.status].sort((x, y) => x - y)).toEqual([201, 409]);
+    expect((a.status === 409 ? a : b).body).toMatchObject({ code: 'duplicate', field: 'code', value: 'ZZRACE' });
+    expect(await prisma.promotion.count({ where: { code: 'ZZRACE' } })).toBe(1);
   });
 
   it('edits a promotion and audits only what changed', async () => {

@@ -11,6 +11,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { DOCUMENT } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -30,7 +31,7 @@ let nextId = 0;
  */
 @Component({
   selector: 'hg-mini-cart',
-  imports: [RouterLink, CdkTrapFocus, LucideX, ResponsiveImage],
+  imports: [DiscountAmount, RouterLink, CdkTrapFocus, LucideX, ResponsiveImage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './mini-cart.html',
   styleUrl: './mini-cart.scss',

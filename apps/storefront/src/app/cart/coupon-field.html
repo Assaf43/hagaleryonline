@@ -5,6 +5,7 @@
       >קופון <bdi dir="ltr">{{ c }}</bdi></span
     >
     <button
+      #removeButton
       type="button"
       class="link-btn"
       [disabled]="busy()"
@@ -48,5 +49,9 @@
   }
   @if (status()) {
     <p class="coupon-status">{{ status() }}</p>
+  }
+  <!-- The refusal is also the field's description; here it is read out when it appears. -->
+  @if (error()) {
+    <p class="visually-hidden">{{ error() }}</p>
   }
 </div>

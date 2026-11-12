@@ -199,6 +199,8 @@ describe('CartPage', () => {
     await setup(view);
     const row = el().querySelector('.summary .subtotal + .discount-row');
     expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('מבצע סוף עונה: −300 ₪');
+    // R20: the signed number is isolated left-to-right, so the minus sits at the left of the digits.
+    expect(row?.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−300');
     expect(el().querySelector('.summary hg-coupon-field')).not.toBeNull();
     expect(el().querySelector('hg-coupon-field label')?.textContent).toContain('קוד קופון');
   });
@@ -214,6 +216,9 @@ describe('CartPage', () => {
     await setup(view);
     expect(el().querySelector('ul.notices')?.textContent).toContain('המחיר עודכן');
     expect(el().querySelector('ul.notices')?.textContent).not.toContain('תוקף הקופון פג');
+    // The coupon field fills its live region a moment after it appears (so the notice is announced).
+    await settle();
+    fixture.detectChanges();
     expect(el().querySelectorAll('.coupon-notice')).toHaveLength(1);
   });
 

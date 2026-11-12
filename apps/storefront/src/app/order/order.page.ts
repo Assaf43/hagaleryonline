@@ -10,6 +10,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type { OrderStatus, OrderView } from '@hg/models';
@@ -43,7 +44,7 @@ const STATUS_TITLES: Record<OrderStatus, string> = {
  */
 @Component({
   selector: 'hg-order-page',
-  imports: [RouterLink],
+  imports: [DiscountAmount, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './order.page.html',
   styleUrl: './order.page.scss',

@@ -102,7 +102,7 @@ function ruleProblem(
   now: Date,
 ): Exclude<CouponProblem, 'unknown' | 'lost'> | null {
   if (!rule.active) return 'expired';
-  if (rule.startsAt && now < rule.startsAt) return 'expired';
+  if (rule.startsAt && now < rule.startsAt) return 'not_started';
   if (rule.endsAt && now > rule.endsAt) return 'expired';
   if (rule.usageLimit !== null && rule.usedCount >= rule.usageLimit) return 'exhausted';
   if (eligible <= 0) return 'not_applicable';
@@ -114,7 +114,7 @@ function ruleProblem(
 /** Not active, out of its dates or used up (by `usedCount`): an order holding it may not be paid again (retry). */
 export function promotionEnded(rule: PromotionRule, now: Date): boolean {
   const problem = ruleProblem(rule, Number.MAX_SAFE_INTEGER, now);
-  return problem === 'expired' || problem === 'exhausted';
+  return problem === 'not_started' || problem === 'expired' || problem === 'exhausted';
 }
 
 /** Why an entered coupon gives no discount (null: it is valid); `rule` is null when no coupon has that code. */

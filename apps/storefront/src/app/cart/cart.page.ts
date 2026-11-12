@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, afterNextRender, computed, inject, signal } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { CartStore } from '../core/cart.store';
@@ -15,7 +16,7 @@ import { CouponField } from './coupon-field';
  */
 @Component({
   selector: 'hg-cart-page',
-  imports: [RouterLink, CouponField, QuantityStepper, ResponsiveImage],
+  imports: [DiscountAmount, RouterLink, CouponField, QuantityStepper, ResponsiveImage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './cart.page.html',
   styleUrl: './cart.page.scss',

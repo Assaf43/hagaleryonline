@@ -6,8 +6,8 @@
   </a>
 </div>
 <p class="page-intro">
-  הנחה אחת להזמנה: המבצע האוטומטי הטוב ביותר או הקופון שהלקוח הזין, הגבוה מביניהם. הנחה באחוזים מעוגלת לשקל שלם. מבצע
-  שכבר שימש בהזמנה אי אפשר למחוק, רק להשבית.
+  הנחה אחת להזמנה: המבצע האוטומטי הטוב ביותר או הקופון שהלקוח הזין, הגבוה מביניהם. הנחה באחוזים מעוגלת לשקל שלם. אי אפשר
+  למחוק מבצעים, רק להשבית אותם.
 </p>
 
 @if (error()) {
@@ -24,7 +24,7 @@
     @for (p of list; track p.id) {
       <li class="promotion" [attr.data-state]="state(p)">
         <a class="name" [routerLink]="['/promotions', p.id]">{{ p.name }}</a>
-        <span class="kind">{{ kindLabels[p.kind] }}</span>
+        <span class="kind"><span class="visually-hidden">סוג: </span>{{ kindLabels[p.kind] }}</span>
         @if (p.code) {
           <span class="code"
             ><span class="visually-hidden">קוד: </span><bdi dir="ltr">{{ p.code }}</bdi></span
@@ -33,6 +33,7 @@
           <span class="no-code" aria-hidden="true"></span>
         }
         <span class="value">
+          <span class="visually-hidden">הנחה: </span>
           @if (p.discountType === 'percent') {
             <bdi dir="ltr">{{ p.value }}%</bdi>
           } @else {
@@ -40,6 +41,7 @@
           }
         </span>
         <span class="targets">
+          <span class="visually-hidden">חל על: </span>
           @if (p.target === 'products') {
             {{ targetLabels.products }}:
             @for (t of p.targets; track t.id; let last = $last) {
@@ -52,7 +54,7 @@
             {{ targetsText(p) }}
           }
         </span>
-        <span class="dates">{{ datesText(p) }}</span>
+        <span class="dates"><span class="visually-hidden">תאריכים: </span>{{ datesText(p) }}</span>
         <span class="uses"
           >שימושים: <span class="num">{{ p.usedCount }}</span> /
           @if (p.usageLimit === null) {
@@ -61,7 +63,7 @@
             <span class="num">{{ p.usageLimit }}</span>
           }
         </span>
-        <span class="state">{{ stateLabels[state(p)] }}</span>
+        <span class="state"><span class="visually-hidden">מצב: </span>{{ stateLabels[state(p)] }}</span>
         <span class="actions">
           <a matButton="outlined" [routerLink]="['/promotions', p.id]">עריכה</a>
           @if (p.active) {

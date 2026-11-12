@@ -8,7 +8,7 @@ const COUPON: AdminPromotion = {
   kind: 'coupon',
   code: 'WINTER',
   discountType: 'fixed',
-  value: 25_050,
+  value: 25_000,
   target: 'products',
   targets: [{ id: 9, nameHe: 'ספה תלת', modelName: 'ALBA', active: true, thumbnailUrl: null }],
   minSubtotal: 300_000,
@@ -68,7 +68,7 @@ describe('promotion form', () => {
       kind: 'coupon',
       code: 'WINTER',
       discountType: 'fixed',
-      value: '250.5',
+      value: '250',
       target: 'products',
       minSubtotal: '3000',
       startDate: '2026-12-01',
@@ -89,7 +89,7 @@ describe('promotion form', () => {
       kind: 'coupon',
       code: 'WINTER',
       discountType: 'fixed',
-      value: 25_050,
+      value: 25_000,
       target: 'products',
       targetIds: [9],
       minSubtotal: 300_000,
@@ -99,7 +99,14 @@ describe('promotion form', () => {
       active: true,
     });
     expect(promotionInput(valid({ code: ' sale‏10 ' })).input?.code).toBe('SALE10');
-    expect(promotionInput(valid({ value: '99.99', discountType: 'fixed' })).input?.value).toBe(9_999);
+    // Whole shekels: "150" and "150.00" are fine.
+    expect(promotionInput(valid({ value: '150', discountType: 'fixed' })).input?.value).toBe(15_000);
+    expect(
+      promotionInput(valid({ value: '150.00', discountType: 'fixed', minSubtotal: '1000.0' })).input,
+    ).toMatchObject({
+      value: 15_000,
+      minSubtotal: 100_000,
+    });
     // Empty minimum = none; empty limit = no limit.
     expect(promotionInput(valid({ minSubtotal: '', usageLimit: '' })).input).toMatchObject({
       minSubtotal: 0,
@@ -141,10 +148,16 @@ describe('promotion form', () => {
     expect(promotionInput(valid({ code: '' })).errors.code).toBe('חובה למלא קוד קופון');
     expect(promotionInput(valid({ value: '12.5' })).errors.value).toBe('מספר שלם בין 1 ל-100');
     expect(promotionInput(valid({ value: '0' })).errors.value).toBe('מספר שלם בין 1 ל-100');
-    for (const bad of ['0', '-5', 'abc', '1.234'])
+    for (const bad of ['0', '-5', 'abc', '1.234', '150.50', '99.99'])
       expect(promotionInput(valid({ discountType: 'fixed', value: bad })).errors.value).toBe(
-        'סכום בשקלים, גדול מ-0 (עד שתי ספרות אחרי הנקודה)',
+        'סכום בשקלים שלמים, גדול מ-0',
       );
+    for (const bad of ['-1', '1000.5', 'abc'])
+      expect(promotionInput(valid({ minSubtotal: bad })).errors.minSubtotal).toBe('סכום בשקלים שלמים, 0 ומעלה');
+    // Dates between 2000 and 2100 only.
+    expect(promotionInput(valid({ startDate: '1999-12-31' })).errors.startDate).toBe('תאריך בין 2000 ל-2100');
+    expect(promotionInput(valid({ endDate: '2101-01-01' })).errors.endDate).toBe('תאריך בין 2000 ל-2100');
+    expect(promotionInput(valid({ endDate: '2100-12-31' })).errors).toEqual({});
     expect(promotionInput(valid({ target: 'products', products: [] })).errors.targetIds).toBe(
       'צריך לבחור לפחות מוצר אחד',
     );

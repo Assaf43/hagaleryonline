@@ -12,6 +12,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -70,7 +71,7 @@ const EMPTY_FORM: CheckoutForm = {
  */
 @Component({
   selector: 'hg-checkout-page',
-  imports: [RouterLink, LocalityField],
+  imports: [DiscountAmount, RouterLink, LocalityField],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './checkout.page.html',
   styleUrl: './checkout.page.scss',
@@ -112,8 +113,10 @@ export class CheckoutPage {
   protected readonly discount = computed(() => this.cart.view()?.discount?.amount ?? 0);
   /** Why the entered coupon gives no discount (spec §6); kept by the cart store until the next write. */
   protected readonly couponNotices = computed(() =>
-    (this.cart.view()?.notices ?? []).filter((n) => n.kind === 'coupon'),
+    this.noticesReady() ? (this.cart.view()?.notices ?? []).filter((n) => n.kind === 'coupon') : [],
   );
+  /** Set one render after the summary appears, so its live region is in the page before the first notice. */
+  private readonly noticesReady = signal(false);
   protected readonly total = computed(() => {
     const view = this.cart.view();
     return view ? view.subtotal - this.discount() + (this.chosen()?.total ?? 0) : 0;
@@ -131,6 +134,11 @@ export class CheckoutPage {
       noindex: true,
     });
     afterNextRender(() => void this.cart.load());
+
+    effect(() => {
+      if (this.cart.view() && !untracked(this.noticesReady))
+        afterNextRender(() => setTimeout(() => this.noticesReady.set(true)), { injector: this.injector });
+    });
 
     // Nothing to order: back to the cart.
     effect(() => {

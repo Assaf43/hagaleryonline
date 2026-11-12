@@ -221,7 +221,10 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
       expect(couponError(rule(), 400_000, NOW)).toBe('קוד הקופון לא קיים');
       expect(couponError(coupon({ endsAt: new Date(NOW.getTime() - 1) }), 400_000, NOW)).toBe('תוקף הקופון פג');
       expect(couponError(coupon({ active: false }), 400_000, NOW)).toBe('תוקף הקופון פג');
-      expect(couponError(coupon({ startsAt: new Date(NOW.getTime() + DAY) }), 400_000, NOW)).toBe('תוקף הקופון פג');
+      // Not started yet has its own message (owner ruling R21).
+      expect(couponError(coupon({ startsAt: new Date(NOW.getTime() + DAY) }), 400_000, NOW)).toBe(
+        'הקופון עוד לא בתוקף',
+      );
       expect(couponError(coupon({ usageLimit: 1, usedCount: 1 }), 400_000, NOW)).toBe('הקופון נוצל במלואו');
       expect(couponError(coupon({ minSubtotal: 500_000 }), 400_000, NOW)).toBe('הקופון תקף מסכום של 5,000 ₪');
       expect(couponError(coupon({ minSubtotal: 123_456 }), 0, NOW)).toBe('הקופון לא חל על המוצרים בסל');

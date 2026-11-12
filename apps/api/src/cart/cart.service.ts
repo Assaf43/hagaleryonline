@@ -35,7 +35,7 @@ export class CouponRefused extends HttpException {
 }
 
 /** Coupon problems that will not go away by changing the cart: the code is removed from the cart (shown once). */
-const DROP_COUPON: ReadonlySet<CouponProblem> = new Set(['unknown', 'expired', 'exhausted']);
+const DROP_COUPON: ReadonlySet<CouponProblem> = new Set(['unknown', 'not_started', 'expired', 'exhausted']);
 
 const notFound = () => new CartError(HttpStatus.NOT_FOUND, 'not_found');
 const unavailable = () => new CartError(HttpStatus.CONFLICT, 'unavailable');

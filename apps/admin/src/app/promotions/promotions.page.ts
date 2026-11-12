@@ -9,19 +9,21 @@ import { errorMessage } from '../core/errors';
 import { PromotionsApi } from '../core/promotions.api';
 import { formatIsraelDate } from './israel-time';
 
-export type PromotionState = 'active' | 'inactive' | 'ended' | 'scheduled';
+export type PromotionState = 'active' | 'inactive' | 'ended' | 'exhausted' | 'scheduled';
 
 export const STATE_LABELS: Record<PromotionState, string> = {
   active: 'פעיל',
   inactive: 'לא פעיל',
   ended: 'הסתיים',
+  exhausted: 'נוצל',
   scheduled: 'מתוכנן',
 };
 
-/** Off, past its end, before its start, or running now. */
+/** Off, past its end, used up (paid uses reached the limit, R22), before its start, or running now. */
 export function promotionState(p: AdminPromotion, now = Date.now()): PromotionState {
   if (!p.active) return 'inactive';
   if (p.endsAt && Date.parse(p.endsAt) < now) return 'ended';
+  if (p.usageLimit !== null && p.usedCount >= p.usageLimit) return 'exhausted';
   if (p.startsAt && Date.parse(p.startsAt) > now) return 'scheduled';
   return 'active';
 }

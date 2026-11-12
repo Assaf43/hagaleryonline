@@ -13,7 +13,7 @@ import { parseShekels, toShekelText } from '../shipping/shipping-form';
 import { endFields, israelEndToUtc, israelStartToUtc, startFields } from './israel-time';
 
 /**
- * The promotion form (spec §6, ADM-05): amounts typed in shekels and sent in agorot, a percent as a whole number,
+ * The promotion form (spec §6, ADM-05): amounts typed in whole shekels and sent in agorot, a percent as a whole number,
  * dates in Israel time sent in UTC, the coupon code normalized as the API and the customers' entry do. The
  * fields keep the typed text; these pure functions check it and build the API input.
  */
@@ -72,12 +72,13 @@ export const MESSAGES = {
   codePattern: `אותיות באנגלית או בעברית, ספרות, מקף או קו תחתון, עד ${MAX_COUPON_CODE_LENGTH} תווים`,
   codeTaken: 'כבר יש קופון עם הקוד הזה',
   percent: 'מספר שלם בין 1 ל-100',
-  fixed: 'סכום בשקלים, גדול מ-0 (עד שתי ספרות אחרי הנקודה)',
-  minSubtotal: 'סכום בשקלים, 0 ומעלה (עד שתי ספרות אחרי הנקודה)',
+  fixed: 'סכום בשקלים שלמים, גדול מ-0',
+  minSubtotal: 'סכום בשקלים שלמים, 0 ומעלה',
   categories: 'צריך לבחור לפחות קטגוריה אחת',
   products: 'צריך לבחור לפחות מוצר אחד',
   targetGone: 'אחד הפריטים שנבחרו כבר לא קיים. טענו את המסך מחדש ובחרו שוב.',
   date: 'צריך לבחור תאריך',
+  dateRange: 'תאריך בין 2000 ל-2100',
   time: 'שעה בפורמט 09:30',
   order: 'הסיום צריך להיות אחרי ההתחלה',
   usageLimit: 'מספר שלם, 1 ומעלה (ריק = ללא הגבלה)',
@@ -87,6 +88,15 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WHOLE = /^\d+$/;
 const MAX_LIMIT = 1_000_000;
+/** The years the API accepts (and the date inputs' min/max). */
+export const MIN_DATE = '2000-01-01';
+export const MAX_DATE = '2100-12-31';
+
+/** Agorot of a whole-shekel amount ("150", "150.00"); null when empty; undefined otherwise. */
+function wholeShekels(text: string): number | null | undefined {
+  const agorot = parseShekels(text);
+  return agorot === null || agorot === undefined || agorot % 100 === 0 ? agorot : undefined;
+}
 
 export function emptyForm(): PromotionForm {
   return {
@@ -164,7 +174,7 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
     value = whole(f.value, 1, 100);
     if (value === undefined) errors.value = MESSAGES.percent;
   } else {
-    const agorot = parseShekels(f.value);
+    const agorot = wholeShekels(f.value);
     value = agorot ? agorot : undefined;
     if (value === undefined) errors.value = MESSAGES.fixed;
   }
@@ -174,7 +184,7 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
   if (f.target !== 'order' && targetIds.length === 0)
     errors.targetIds = f.target === 'categories' ? MESSAGES.categories : MESSAGES.products;
 
-  const min = parseShekels(f.minSubtotal);
+  const min = wholeShekels(f.minSubtotal);
   if (min === undefined) errors.minSubtotal = MESSAGES.minSubtotal;
 
   const startsAt = edge(f.startDate, f.startTime, 'startDate', 'startTime', errors, israelStartToUtc);
@@ -229,6 +239,10 @@ function edge(
   }
   if (!DATE.test(d)) {
     errors[dateField] = MESSAGES.date;
+    return null;
+  }
+  if (d < MIN_DATE || d > MAX_DATE) {
+    errors[dateField] = MESSAGES.dateRange;
     return null;
   }
   return errors[timeField] ? null : toUtc(d, t);

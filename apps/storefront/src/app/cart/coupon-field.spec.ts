@@ -70,6 +70,8 @@ describe('CouponField', () => {
     expect(remove.getAttribute('aria-label')).toBe('הסרת הקופון SAVE10');
     expect(el().querySelector('[aria-live="polite"]')?.textContent).toContain('הקופון הוחל');
     expect(el().querySelector('form')).toBeNull();
+    // Focus moves to the chip's "הסרה" (the form with the focused field is gone).
+    expect(document.activeElement).toBe(remove);
   });
 
   it('shows the reason under the field when the code is refused, and focuses it', async () => {
@@ -87,6 +89,8 @@ describe('CouponField', () => {
     expect(input().getAttribute('aria-invalid')).toBe('true');
     expect(input().getAttribute('aria-describedby')).toBe(error.id);
     expect(document.activeElement).toBe(input());
+    // Also read out in the live region, not only as the field's description.
+    expect(el().querySelector('[aria-live="polite"]')?.textContent).toContain('קוד הקופון לא קיים');
     // Typing again clears it.
     input().value = 'NOPE2';
     input().dispatchEvent(new Event('input'));
@@ -103,6 +107,9 @@ describe('CouponField', () => {
       .flush({ statusCode: 429, code: 'too_many_requests' }, { status: 429, statusText: 'Too Many Requests' });
     await render();
     expect(el().querySelector('.field-error')?.textContent?.trim()).toBe(
+      'ביצעתם יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
+    );
+    expect(el().querySelector('[aria-live="polite"]')?.textContent).toContain(
       'ביצעתם יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.',
     );
   });
@@ -123,6 +130,7 @@ describe('CouponField', () => {
       discount: { labelHe: 'מבצע סוף עונה', amount: 20000, source: 'automatic', code: null },
     };
     await setup(view);
+    await render();
     expect(el().querySelector('.coupon-chip bdi')?.textContent).toBe('SAVE10');
     expect(el().querySelector('.coupon-notice')?.textContent).toContain('המבצע הנוכחי משתלם יותר מהקופון');
 
@@ -132,11 +140,24 @@ describe('CouponField', () => {
     expect(el().querySelector('.coupon-chip')).toBeNull();
     expect(el().querySelector('form')).not.toBeNull();
     expect(el().querySelector('[aria-live="polite"]')?.textContent).toContain('הקופון הוסר');
+    // Focus goes to the field that replaced the chip.
+    expect(document.activeElement).toBe(input());
   });
 
   it('shows the notice of a coupon the server removed (expired) next to the field', async () => {
     await setup(cartView([cartLine(1, 1)], [{ variantId: null, kind: 'coupon', messageHe: 'תוקף הקופון פג' }]));
+    await render();
     expect(el().querySelector('.coupon-chip')).toBeNull();
     expect(el().querySelector('.coupon-notice')?.textContent).toContain('תוקף הקופון פג');
+  });
+
+  it('renders the live region empty first and fills it after, so the first notice is announced', async () => {
+    await setup(cartView([cartLine(1, 1)], [{ variantId: null, kind: 'coupon', messageHe: 'תוקף הקופון פג' }]));
+    const region = el().querySelector('[aria-live="polite"]')!;
+    expect(region.textContent?.trim()).toBe('');
+    await render();
+    // The same element (already in the page), now with the notice.
+    expect(el().querySelector('[aria-live="polite"]')).toBe(region);
+    expect(region.textContent).toContain('תוקף הקופון פג');
   });
 });

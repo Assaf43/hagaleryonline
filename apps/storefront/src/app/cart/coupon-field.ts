@@ -34,6 +34,7 @@ export class CouponField {
   protected readonly cart = inject(CartStore);
   private readonly injector = inject(Injector);
   private readonly input = viewChild<ElementRef<HTMLInputElement>>('codeInput');
+  private readonly removeButton = viewChild<ElementRef<HTMLButtonElement>>('removeButton');
 
   protected readonly inputId = `hg-coupon-${nextId++}`;
   protected readonly errorId = `${this.inputId}-error`;
@@ -46,7 +47,16 @@ export class CouponField {
 
   /** The code on the cart, applied or not. */
   protected readonly entered = computed(() => this.cart.view()?.couponCode ?? null);
-  protected readonly notices = computed(() => (this.cart.view()?.notices ?? []).filter((n) => n.kind === 'coupon'));
+  /** False until the first render: the live region is in the page empty first, so its first notice is read out. */
+  private readonly ready = signal(false);
+  protected readonly notices = computed(() =>
+    this.ready() ? (this.cart.view()?.notices ?? []).filter((n) => n.kind === 'coupon') : [],
+  );
+
+  constructor() {
+    // A task later, not in the same render pass: the browser has the empty region before its content arrives.
+    afterNextRender(() => setTimeout(() => this.ready.set(true)));
+  }
 
   protected setCode(event: Event) {
     this.code.set((event.target as HTMLInputElement).value);
@@ -65,9 +75,11 @@ export class CouponField {
       this.code.set('');
       // Applied, or kept with its reason (the notice) when an automatic promotion is better.
       this.status.set(view.discount?.source === 'coupon' ? 'הקופון הוחל' : '');
+      // The field is gone; the chip's "הסרה" takes the focus.
+      this.focusAfterRender(() => this.removeButton()?.nativeElement);
     } catch (e) {
       this.error.set(refusal(e));
-      afterNextRender(() => this.input()?.nativeElement.focus(), { injector: this.injector });
+      this.focusAfterRender(() => this.input()?.nativeElement);
     } finally {
       this.busy.set(false);
     }
@@ -80,11 +92,16 @@ export class CouponField {
     try {
       await this.cart.removeCoupon();
       this.status.set('הקופון הוסר');
+      this.focusAfterRender(() => this.input()?.nativeElement);
     } catch {
       this.status.set('לא הצלחנו להסיר את הקופון. נסו שוב.');
     } finally {
       this.busy.set(false);
     }
+  }
+
+  private focusAfterRender(target: () => HTMLElement | undefined) {
+    afterNextRender(() => target()?.focus(), { injector: this.injector });
   }
 }
 

@@ -266,7 +266,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     const cases: [string, string][] = [
       ['NOPE', 'קוד הקופון לא קיים'],
       ['OLD', 'תוקף הקופון פג'],
-      ['SOON', 'תוקף הקופון פג'],
+      ['SOON', 'הקופון עוד לא בתוקף'],
       ['OFF', 'תוקף הקופון פג'],
       ['BIG', 'הקופון תקף מסכום של 5,000 ₪'],
       ['USED', 'הקופון נוצל במלואו'],
@@ -565,6 +565,17 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     const view = await b.cart();
     expect(view.couponCode).toBeNull();
     expect(view.notices).toEqual([{ variantId: null, kind: 'coupon', messageHe: 'תוקף הקופון פג' }]);
+  });
+
+  it('a coupon whose start moved to the future: the cart says it is not valid yet (R21)', async () => {
+    const p = await promotion();
+    const b = browser();
+    await b.add(sofa, 1);
+    await b.apply('SAVE10').expect(200);
+    await prisma.promotion.update({ where: { id: p.id }, data: { startsAt: new Date(Date.now() + DAY) } });
+    const view = await b.cart();
+    expect(view.discount).toBeNull();
+    expect(view.notices).toEqual([{ variantId: null, kind: 'coupon', messageHe: 'הקופון עוד לא בתוקף' }]);
   });
 
   it('paid twice / superseded and paid: counted once per paid order; the paid cart loses its coupon', async () => {

@@ -249,6 +249,22 @@ describe('admin orders screens', () => {
     expect(payment.textContent).toContain('sbx_abc');
   });
 
+  it('shows the discount with the minus at the left of the digits (R20)', async () => {
+    const fixture = TestBed.createComponent(OrderDetailPage);
+    fixture.componentRef.setInput('number', '100002');
+    fixture.detectChanges();
+    http.expectOne('/api/admin/orders/100002').flush({
+      ...DETAIL,
+      discount: 15_000,
+      discountInfo: { labelHe: 'קופון חורף', source: 'coupon', code: 'WINTER' },
+      total: 100_000,
+    });
+    await settle(fixture);
+    const amount = (fixture.nativeElement as HTMLElement).querySelector('.discount-amount')!;
+    expect(amount.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−150');
+    expect(amount.textContent?.replace(/\s+/g, ' ').trim()).toBe('−150 ₪');
+  });
+
   it('shows no shortage notice for an ordinary order and a message for an unknown one', async () => {
     const fixture = TestBed.createComponent(OrderDetailPage);
     fixture.componentRef.setInput('number', '100002');

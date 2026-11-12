@@ -95,9 +95,9 @@
               </p>
               @if (o.discount > 0) {
                 <p class="row discount-row">
-                  <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}:</span>&ngsp;<span class="num"
-                    >−{{ price(o.discount) }}</span
-                  >
+                  <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}:</span>&ngsp;<hg-discount-amount
+                    [amount]="o.discount"
+                  />
                 </p>
               }
               @for (l of o.shippingLines; track $index) {

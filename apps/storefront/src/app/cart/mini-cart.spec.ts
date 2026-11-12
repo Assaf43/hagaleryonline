@@ -77,6 +77,7 @@ describe('MiniCart', () => {
     const { dialog } = await setup(view);
     const row = dialog.querySelector('.foot .subtotal + .discount-row');
     expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון חורף: −250 ₪');
+    expect(row?.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−250');
   });
 
   it('opens with the title, the lines and the subtotal', async () => {

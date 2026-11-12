@@ -223,6 +223,7 @@ describe('CheckoutPage', () => {
     await fillValid();
     const row = q<HTMLElement>('.summary .discount-row');
     expect(row.textContent?.replace(/\s+/g, ' ').trim()).toBe('מבצע סוף עונה: −300 ₪');
+    expect(row.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−300');
     expect(q<HTMLElement>('.summary .coupon-notice').textContent).toContain('המבצע הנוכחי משתלם יותר מהקופון');
     // 3,000 − 300 + full service 550.
     expect(q<HTMLElement>('.summary .total').textContent).toContain('3,250 ₪');

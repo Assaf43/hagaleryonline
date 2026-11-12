@@ -269,7 +269,7 @@
         </p>
         @if (view.discount; as d) {
           <p class="row discount-row">
-            <span>{{ d.labelHe }}:</span>&ngsp;<span class="num">−{{ price(d.amount) }}</span>
+            <span>{{ d.labelHe }}:</span>&ngsp;<hg-discount-amount [amount]="d.amount" />
           </p>
         }
         <!-- The coupon's state (e.g. a better automatic promotion, or a coupon that ended): read out when it changes. -->

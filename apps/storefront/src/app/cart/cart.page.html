@@ -90,7 +90,7 @@
           </p>
           @if (view.discount; as d) {
             <p class="row discount-row">
-              <span>{{ d.labelHe }}:</span>&ngsp;<span class="num">−{{ price(d.amount) }}</span>
+              <span>{{ d.labelHe }}:</span>&ngsp;<hg-discount-amount [amount]="d.amount" />
             </p>
           }
           <hg-coupon-field />

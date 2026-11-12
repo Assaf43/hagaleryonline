@@ -38,7 +38,9 @@ import { PromotionsApi } from '../core/promotions.api';
 import {
   FIELD_IDS,
   FIELD_ORDER,
+  MAX_DATE,
   MESSAGES,
+  MIN_DATE,
   emptyForm,
   promotionInput,
   serverFieldOf,
@@ -76,6 +78,8 @@ export class PromotionFormPage {
   private readonly matchers = new Map<PromotionField, ErrorStateMatcher>();
 
   protected readonly ids = FIELD_IDS;
+  protected readonly minDate = MIN_DATE;
+  protected readonly maxDate = MAX_DATE;
   protected readonly kinds = Object.entries(PROMOTION_KIND_LABELS_HE) as [PromotionKind, string][];
   protected readonly types = Object.entries(DISCOUNT_TYPE_LABELS_HE) as [DiscountType, string][];
   protected readonly targets = Object.entries(PROMOTION_TARGET_LABELS_HE) as [PromotionTarget, string][];

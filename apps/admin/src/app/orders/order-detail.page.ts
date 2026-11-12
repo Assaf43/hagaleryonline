@@ -9,7 +9,7 @@ import {
   type AdminOrderDetail,
   type AdminPaymentStatus,
 } from '@hg/models';
-import { formatPrice } from '../catalog/catalog-format';
+import { formatAmount, formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
 
@@ -44,6 +44,7 @@ export class OrderDetailPage {
   readonly number = input.required<string>();
 
   protected readonly formatPrice = formatPrice;
+  protected readonly formatAmount = formatAmount;
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
   /** The customer's wording, so staff and customer name the method the same way. */
