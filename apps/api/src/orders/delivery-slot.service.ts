@@ -10,8 +10,8 @@ import { SLOT_NOTE_MAX, slotStateView } from './delivery-slot.js';
 
 /** The attention note of a change request; the customer's own words follow after " — ". */
 export const DELIVERY_CHANGE_NOTE = 'הלקוח ביקש מועד אספקה אחר';
-/** The customer's note is cut to this many characters inside the attention note (the column stays small). */
-const ATTENTION_NOTE_MAX = 300;
+/** The attention note never grows past this many characters; the customer's part is cut to fit. */
+const ATTENTION_NOTE_MAX = 500;
 
 /**
  * The delivery confirmation link (spec §5.3, SHP-04). The token in the URL is the only key; only its SHA-256 is
@@ -55,13 +55,13 @@ export class DeliverySlotService {
         data: { state, respondedAt: new Date(), ...(note ? { note } : {}) },
       });
       if (answer === 'change') {
-        const shown = note.length > ATTENTION_NOTE_MAX ? `${note.slice(0, ATTENTION_NOTE_MAX)}…` : note;
+        const current = await tx.order.findUniqueOrThrow({
+          where: { id: slot.orderId },
+          select: { attentionNote: true },
+        });
         await tx.order.update({
           where: { id: slot.orderId },
-          data: {
-            needsAttention: true,
-            attentionNote: shown ? `${DELIVERY_CHANGE_NOTE} — ${shown}` : DELIVERY_CHANGE_NOTE,
-          },
+          data: { needsAttention: true, attentionNote: changeNote(current.attentionNote, note) },
         });
       }
       await this.audit.record(
@@ -107,4 +107,16 @@ function toView(slot: {
     windowTo: slot.windowTo,
     state: slotStateView(slot.state),
   };
+}
+
+/**
+ * The attention note after a change request: an earlier, different note stays (the new text follows after " · ");
+ * the customer's own words follow " — " and are cut so the whole note stays within `ATTENTION_NOTE_MAX`.
+ */
+export function changeNote(existing: string | null, customerNote: string): string {
+  const prefix = existing && existing !== DELIVERY_CHANGE_NOTE ? `${existing} · ` : '';
+  const room = ATTENTION_NOTE_MAX - prefix.length - DELIVERY_CHANGE_NOTE.length - 3;
+  if (!customerNote || room < 2) return `${prefix}${DELIVERY_CHANGE_NOTE}`.slice(0, ATTENTION_NOTE_MAX);
+  const shown = customerNote.length > room ? `${customerNote.slice(0, room - 1)}…` : customerNote;
+  return `${prefix}${DELIVERY_CHANGE_NOTE} — ${shown}`;
 }

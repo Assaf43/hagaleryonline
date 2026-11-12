@@ -47,3 +47,11 @@ p {
 .state {
   color: var(--color-text-secondary);
 }
+
+.live:empty {
+  display: none;
+}
+
+.live {
+  font-weight: 600;
+}

@@ -40,6 +40,26 @@ export class DeliveryPage {
   protected readonly sending = signal(false);
   protected readonly sendError = signal('');
   protected readonly note = signal('');
+  /** The second step of "מבקש/ת מועד אחר": the note and its send button. */
+  protected readonly asking = signal(false);
+  /** The one live region's text: loading, the result of the answer, or an error. */
+  protected readonly liveText = computed(() => {
+    if (this.sendError()) return this.sendError();
+    switch (this.state()) {
+      case 'loading':
+        return 'טוען…';
+      case 'error':
+        return 'לא הצלחנו לטעון את הפרטים.';
+      case 'ready': {
+        const s = this.slot()?.state;
+        if (s === 'confirmed') return 'תודה, המועד אושר';
+        if (s === 'change_requested') return 'קיבלנו, ניצור קשר לתיאום מועד אחר';
+        return '';
+      }
+      default:
+        return '';
+    }
+  });
   /** "9.12.2026" from the Israel calendar date as given (no timezone shift). */
   protected readonly date = computed(() => {
     const d = this.slot()?.date;

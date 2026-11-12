@@ -75,14 +75,34 @@ describe('DeliveryPage', () => {
     expect(el().querySelector('button')).toBeNull();
   });
 
+  it('the note box appears only after "מבקש/ת מועד אחר", with its own label and send button', async () => {
+    await setup(view());
+    expect(el().querySelector('textarea')).toBeNull();
+    button('מבקש/ת מועד אחר').click();
+    fixture.detectChanges();
+    expect(el().querySelector('textarea')).not.toBeNull();
+    expect(text()).toContain('הערה לבקשת שינוי מועד (לא חובה)');
+    expect(button('שליחת הבקשה')).toBeTruthy();
+    expect(() => button('מאשר/ת את המועד').textContent).toThrow();
+    http.expectNone(URL);
+    button('חזרה').click();
+    fixture.detectChanges();
+    expect(el().querySelector('textarea')).toBeNull();
+    expect(button('מאשר/ת את המועד')).toBeTruthy();
+  });
+
   it('change sends the trimmed note and shows the follow-up text', async () => {
     await setup(view());
+    button('מבקש/ת מועד אחר').click();
+    fixture.detectChanges();
     const note = el().querySelector<HTMLTextAreaElement>('textarea')!;
     note.value = '  רק אחרי הצהריים ';
     note.dispatchEvent(new Event('input'));
-    button('מבקש/ת מועד אחר').click();
+    button('שליחת הבקשה').click();
+    fixture.detectChanges();
     const req = http.expectOne(URL);
     expect(req.request.body).toEqual({ answer: 'change', note: 'רק אחרי הצהריים' });
+    expect(button('שליחת הבקשה').disabled).toBe(true);
     req.flush(view('change_requested'));
     await settle();
     expect(text()).toContain('קיבלנו, ניצור קשר לתיאום מועד אחר');
@@ -91,9 +111,33 @@ describe('DeliveryPage', () => {
   it('change without a note sends no note', async () => {
     await setup(view());
     button('מבקש/ת מועד אחר').click();
+    fixture.detectChanges();
+    button('שליחת הבקשה').click();
     const req = http.expectOne(URL);
     expect(req.request.body).toEqual({ answer: 'change' });
     req.flush(view('change_requested'));
+  });
+
+  it('one live region exists before the result and announces it', async () => {
+    await setup(view());
+    const live = el().querySelector('[role="status"][aria-live="polite"]')!;
+    expect(live).not.toBeNull();
+    expect(live.textContent?.trim()).toBe('');
+    expect(el().querySelectorAll('[role="status"]')).toHaveLength(1);
+    button('מאשר/ת את המועד').click();
+    http.expectOne(URL).flush(view('confirmed'));
+    await settle();
+    expect(el().querySelector('[role="status"][aria-live="polite"]')).toBe(live);
+    expect(live.textContent).toContain('תודה, המועד אושר');
+  });
+
+  it('a failed send is announced in the live region and the form stays', async () => {
+    await setup(view());
+    button('מאשר/ת את המועד').click();
+    http.expectOne(URL).flush({}, { status: 500, statusText: 'Error' });
+    await settle();
+    expect(el().querySelector('[role="status"]')?.textContent).toContain('לא הצלחנו לשלוח');
+    expect(button('מאשר/ת את המועד').disabled).toBe(false);
   });
 
   it('an already answered link shows the result without buttons', async () => {

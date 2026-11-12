@@ -420,6 +420,19 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       expect(detail.needsAttention).toBe(true);
     });
 
+    it('a change request keeps an earlier attention note and stays within 500 characters', async () => {
+      const order = await scheduledOrder('dl-keep');
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { needsAttention: true, attentionNote: 'החזר נכשל' },
+      });
+      const token = await tokenOf(order.id);
+      await answer(token, { answer: 'change', note: 'ת'.repeat(500) }).expect(201);
+      const note = (await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).attentionNote!;
+      expect(note.startsWith('החזר נכשל · הלקוח ביקש מועד אספקה אחר — ת')).toBe(true);
+      expect(note.length).toBeLessThanOrEqual(500);
+    });
+
     it('change without a note uses the bare text; a bad answer or a long note is 400', async () => {
       const order = await scheduledOrder('dl-bare');
       const token = await tokenOf(order.id);

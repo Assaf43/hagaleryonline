@@ -1,8 +1,8 @@
 <section class="container page">
+  <p class="live" role="status" aria-live="polite">{{ liveText() }}</p>
   @switch (state()) {
     @case ('loading') {
       <h1>אישור מועד אספקה</h1>
-      <p class="muted">טוען…</p>
     }
     @case ('invalid') {
       <h1>הקישור אינו בתוקף</h1>
@@ -11,8 +11,7 @@
     }
     @case ('error') {
       <h1>אישור מועד אספקה</h1>
-      <div class="state" role="alert">
-        <p>לא הצלחנו לטעון את הפרטים.</p>
+      <div class="state">
         <button type="button" class="btn btn-secondary" (click)="reload()">נסו שוב</button>
       </div>
     }
@@ -27,35 +26,39 @@
         </p>
         @switch (s.state) {
           @case ('proposed') {
-            <div class="field">
-              <label class="field-label" for="delivery-note">הערה (לא חובה)</label>
-              <textarea
-                id="delivery-note"
-                class="input textarea"
-                rows="3"
-                maxlength="500"
-                [value]="note()"
-                (input)="setNote($event)"
-              ></textarea>
-            </div>
-            <div class="actions">
-              <button type="button" class="btn btn-primary" [disabled]="sending()" (click)="respond('confirm')">
-                מאשר/ת את המועד
-              </button>
-              <button type="button" class="btn btn-secondary" [disabled]="sending()" (click)="respond('change')">
-                מבקש/ת מועד אחר
-              </button>
-            </div>
-            @if (sendError()) {
-              <p class="send-error" role="alert">{{ sendError() }}</p>
+            @if (!asking()) {
+              <div class="actions">
+                <button type="button" class="btn btn-primary" [disabled]="sending()" (click)="respond('confirm')">
+                  מאשר/ת את המועד
+                </button>
+                <button type="button" class="btn btn-secondary" [disabled]="sending()" (click)="asking.set(true)">
+                  מבקש/ת מועד אחר
+                </button>
+              </div>
+            } @else {
+              <div class="field">
+                <label class="field-label" for="delivery-note">הערה לבקשת שינוי מועד (לא חובה)</label>
+                <textarea
+                  id="delivery-note"
+                  class="input textarea"
+                  rows="3"
+                  maxlength="500"
+                  [value]="note()"
+                  (input)="setNote($event)"
+                ></textarea>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn btn-primary" [disabled]="sending()" (click)="respond('change')">
+                  שליחת הבקשה
+                </button>
+                <button type="button" class="btn btn-secondary" [disabled]="sending()" (click)="asking.set(false)">
+                  חזרה
+                </button>
+              </div>
             }
           }
-          @case ('confirmed') {
-            <p class="result" role="status">תודה, המועד אושר</p>
-          }
-          @case ('change_requested') {
-            <p class="result" role="status">קיבלנו, ניצור קשר לתיאום מועד אחר</p>
-          }
+          @case ('confirmed') {}
+          @case ('change_requested') {}
         }
       }
     }
