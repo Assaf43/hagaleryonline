@@ -454,35 +454,36 @@ describe('Invoices (e2e, CHK-08)', () => {
     const first = await paidOrder('m-first');
     const last = await paidOrder('m-last');
     const after = await paidOrder('m-after');
-    // March 2027: Israel is +02:00 on the 1st and +03:00 on the 31st (DST began 26.3.2027).
-    await issuedAt(before.id, '2027-02-28T21:59:59.999Z');
-    await issuedAt(first.id, '2027-02-28T22:00:00.000Z');
-    await issuedAt(last.id, '2027-03-31T20:59:59.999Z');
-    await issuedAt(after.id, '2027-03-31T21:00:00.000Z');
+    // Past months only (a test issuing documents "now" can never land in them). March 2020: Israel is +02:00 on the
+    // 1st and +03:00 on the 31st (DST began 27.3.2020); 2020 is a leap year, so the winter edge is 29 February.
+    await issuedAt(before.id, '2020-02-29T21:59:59.999Z');
+    await issuedAt(first.id, '2020-02-29T22:00:00.000Z');
+    await issuedAt(last.id, '2020-03-31T20:59:59.999Z');
+    await issuedAt(after.id, '2020-03-31T21:00:00.000Z');
 
-    const march = await month('2027-03');
+    const march = await month('2020-03');
     expect(march.items.map((i) => i.orderNumber)).toEqual([first.number, last.number]);
     expect(march.items[0]).toMatchObject({
       type: 'tax_invoice_receipt',
       amount: TOTAL,
       vatAmount: vat18(TOTAL),
-      issuedAt: '2027-02-28T22:00:00.000Z',
+      issuedAt: '2020-02-29T22:00:00.000Z',
     });
     expect(typeof march.items[0].id).toBe('string');
     expect(march.items[0].number).toMatch(/^MOCK-INV-/);
-    expect(march.month).toBe('2027-03');
-    expect((await month('2027-02')).items.map((i) => i.orderNumber)).toEqual([before.number]);
-    expect((await month('2027-04')).items.map((i) => i.orderNumber)).toEqual([after.number]);
+    expect(march.month).toBe('2020-03');
+    expect((await month('2020-02')).items.map((i) => i.orderNumber)).toEqual([before.number]);
+    expect((await month('2020-04')).items.map((i) => i.orderNumber)).toEqual([after.number]);
   });
 
   it('totals: sales, credits (positive), net and VAT with a credit note', async () => {
     const order = await paidOrder('m-totals');
     await owner.post(`/orders/${order.number}/refunds`, { amount: 11_800, reason: 'בדיקה' }).expect(200);
     await runJobs();
-    await issuedAt(order.id, '2027-05-10T09:00:00.000Z');
-    await issuedAt(order.id, '2027-05-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
+    await issuedAt(order.id, '2020-05-10T09:00:00.000Z');
+    await issuedAt(order.id, '2020-05-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
 
-    const may = await month('2027-05');
+    const may = await month('2020-05');
     expect(may.items.map((i) => i.type)).toEqual(['tax_invoice_receipt', 'credit_note']);
     expect(may.items[1]).toMatchObject({ amount: 11_800, vatAmount: 1_800 });
     expect(may.totals).toEqual({
@@ -491,15 +492,15 @@ describe('Invoices (e2e, CHK-08)', () => {
       net: TOTAL - 11_800,
       vat: vat18(TOTAL) - 1_800,
     });
-    expect((await month('2027-06')).totals).toEqual({ sales: 0, credits: 0, net: 0, vat: 0 });
+    expect((await month('2020-06')).totals).toEqual({ sales: 0, credits: 0, net: 0, vat: 0 });
   });
 
   it('the list and the export need invoices.export and a valid month', async () => {
-    for (const url of ['/invoices?month=2027-05', '/invoices/export?month=2027-05']) {
+    for (const url of ['/invoices?month=2020-05', '/invoices/export?month=2020-05']) {
       await service.get(url).expect(403);
       await http().get(`/api/admin${url}`).expect(401);
     }
-    for (const bad of ['', '?month=2027-13', '?month=2027-5', '?month=2027-05-01', '?month=abc']) {
+    for (const bad of ['', '?month=2020-13', '?month=2020-5', '?month=2020-05-01', '?month=abc']) {
       for (const path of ['/invoices', '/invoices/export']) {
         const res = await owner.get(`${path}${bad}`).expect(400);
         expect(res.body).toMatchObject({ field: 'month' });
@@ -511,11 +512,11 @@ describe('Invoices (e2e, CHK-08)', () => {
     const order = await paidOrder('m-export');
     await owner.post(`/orders/${order.number}/refunds`, { amount: 11_800, reason: 'בדיקה' }).expect(200);
     await runJobs();
-    await issuedAt(order.id, '2027-07-10T09:00:00.000Z');
-    await issuedAt(order.id, '2027-07-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
+    await issuedAt(order.id, '2020-07-10T09:00:00.000Z');
+    await issuedAt(order.id, '2020-07-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
 
     const res = await owner
-      .get('/invoices/export?month=2027-07')
+      .get('/invoices/export?month=2020-07')
       .buffer(true)
       .parse((r, cb) => {
         const chunks: Buffer[] = [];
@@ -524,7 +525,7 @@ describe('Invoices (e2e, CHK-08)', () => {
       })
       .expect(200);
     expect(res.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    expect(res.headers['content-disposition']).toBe('attachment; filename="invoices-2027-07.xlsx"');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="invoices-2020-07.xlsx"');
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(res.body as ArrayBuffer);
     const docs = wb.getWorksheet('מסמכים')!;
@@ -539,7 +540,7 @@ describe('Invoices (e2e, CHK-08)', () => {
     ]);
     expect(docs.getRow(2).getCell(1).value).toBe('חשבונית מס/קבלה');
     expect(docs.getRow(2).getCell(3).value).toBe(order.number);
-    expect(docs.getRow(2).getCell(4).value).toBe('10.07.2027');
+    expect(docs.getRow(2).getCell(4).value).toBe('10.07.2020');
     expect(docs.getRow(2).getCell(5).value).toBe(TOTAL / 100);
     expect(docs.getRow(3).getCell(1).value).toBe('חשבונית זיכוי');
     expect(docs.getRow(3).getCell(5).value).toBe(118);
