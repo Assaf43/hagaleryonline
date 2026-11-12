@@ -104,6 +104,17 @@
           <svg lucideListX></svg>
           משימות שנכשלו
         </a>
+        @if (sentMessages.available()) {
+          <a
+            class="nav-link"
+            routerLink="/settings/sent-messages"
+            routerLinkActive="active"
+            (click)="isPhone() && drawer.close()"
+          >
+            <svg lucideMailCheck></svg>
+            הודעות שנשלחו (בדיקה)
+          </a>
+        }
       }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">

@@ -106,6 +106,12 @@ export const routes: Routes = [
         title: 'משימות שנכשלו',
       },
       {
+        path: 'settings/sent-messages',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/sent-messages.page').then((m) => m.SentMessagesPage),
+        title: 'הודעות שנשלחו (בדיקה)',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),

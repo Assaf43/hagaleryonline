@@ -16,6 +16,7 @@ import {
   LucideLayoutDashboard,
   LucideListX,
   LucideLogOut,
+  LucideMailCheck,
   LucideMenu,
   LucidePlugZap,
   LucideReceipt,
@@ -29,6 +30,7 @@ import { BRAND } from '@hg/models';
 import type { Permission } from '@hg/models';
 import { ThemeToggle } from '@hg/ui';
 import { AuthService } from '../core/auth.service';
+import { SentMessagesApi } from '../core/sent-messages.api';
 import { ChangePasswordDialog } from './change-password.dialog';
 
 /** Signed-in layout: toolbar, side navigation (a drawer on phones), and the page (ADM-15). */
@@ -50,6 +52,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
     LucideLayoutDashboard,
     LucideListX,
     LucideLogOut,
+    LucideMailCheck,
     LucideMenu,
     LucidePlugZap,
     LucideReceipt,
@@ -68,6 +71,7 @@ export class Shell {
   protected readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
+  protected readonly sentMessages = inject(SentMessagesApi);
 
   protected readonly isPhone = toSignal(
     inject(BreakpointObserver)
@@ -76,6 +80,11 @@ export class Shell {
     { initialValue: false },
   );
   protected readonly canSeeAudit = computed(() => this.can('audit.view'));
+
+  constructor() {
+    // The sent-messages page exists only while both providers are mocks: ask once whether the endpoint answers.
+    if (this.can('orders.manage')) void this.sentMessages.probe();
+  }
 
   protected can(permission: Permission): boolean {
     return this.auth.me()?.permissions.includes(permission) ?? false;

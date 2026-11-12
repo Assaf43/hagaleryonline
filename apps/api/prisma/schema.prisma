@@ -624,14 +624,15 @@ model Order {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  cart      Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  promotion Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
-  items     OrderItem[]
-  payments  Payment[]
-  events    OrderStatusEvent[]
-  refunds   Refund[]
-  slots     DeliverySlot[]
-  jobs      OutboxJob[]
+  cart          Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  promotion     Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  payments      Payment[]
+  events        OrderStatusEvent[]
+  refunds       Refund[]
+  slots         DeliverySlot[]
+  jobs          OutboxJob[]
+  notifications NotificationLog[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -851,4 +852,43 @@ model Promotion {
 
   @@index([kind, active])
   @@map("promotions")
+}
+
+// ---------- Notifications (Phase 5b, spec §3, §5.2) ----------
+
+enum NotificationChannel {
+  EMAIL @map("email")
+  SMS   @map("sms")
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  SENT   @map("sent")
+  FAILED @map("failed")
+
+  @@map("notification_status")
+}
+
+/// One message sent (or refused) through the NotificationProvider. The recipient is stored masked; `subject` and the
+/// rendered `body` (HTML for an e-mail, text for an SMS) only when the provider is `mock` (the dev viewer).
+model NotificationLog {
+  id                String              @id @default(uuid()) @db.Uuid
+  channel           NotificationChannel
+  recipientMasked   String              @map("recipient_masked")
+  template          String
+  /// Code of the provider that handled it.
+  provider          String
+  providerMessageId String?             @map("provider_message_id")
+  status            NotificationStatus
+  orderId           String?             @map("order_id") @db.Uuid
+  subject           String?
+  body              String?
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("notification_log")
 }
