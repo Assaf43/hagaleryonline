@@ -1,6 +1,6 @@
 import type { AdminPromotion } from '@hg/models';
 import { emptyForm, promotionInput, serverFieldOf, toForm, type PromotionForm } from './promotion-form';
-import { endFields, formatIsraelDate, israelEndToUtc, israelStartToUtc, startFields } from './israel-time';
+import { endFields, formatIsraelDate, israelDay, israelEndToUtc, israelStartToUtc, startFields } from './israel-time';
 
 const COUPON: AdminPromotion = {
   id: 4,
@@ -56,6 +56,10 @@ describe('Israel time (promotion dates)', () => {
     expect(startFields(null)).toEqual({ date: '', time: '' });
     expect(formatIsraelDate('2026-12-31T21:59:59.999Z', 'end')).toBe('31.12.2026');
     expect(formatIsraelDate('2026-07-01T15:00:00.000Z', 'end')).toBe('1.7.2026 18:00');
+    // Late evening UTC is already the next Israel day, whatever the machine's own time zone.
+    expect(israelDay('2026-11-05T22:30:00.000Z')).toBe('6.11.2026');
+    expect(israelDay('2026-07-01T20:59:00.000Z')).toBe('1.7.2026');
+    expect(israelDay('2026-07-01T21:00:00.000Z')).toBe('2.7.2026');
     expect(formatIsraelDate('2026-11-30T22:00:00.000Z', 'start')).toBe('1.12.2026');
   });
 });

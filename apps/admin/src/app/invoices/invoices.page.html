@@ -51,7 +51,7 @@
               >
             </td>
             <td>
-              <bdi>{{ i.issuedAt | date: 'd.M.yyyy' : 'Asia/Jerusalem' }}</bdi>
+              <bdi>{{ israelDay(i.issuedAt) }}</bdi>
             </td>
             <td class="num">
               <bdi>{{ formatPrice(i.amount) }}</bdi>

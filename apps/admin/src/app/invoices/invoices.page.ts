@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -6,7 +5,7 @@ import { INVOICE_TYPE_LABELS_HE, type AdminInvoicesMonth } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { InvoicesApi } from '../core/invoices.api';
-import { israelMonthOf, shiftMonth } from '../promotions/israel-time';
+import { israelDay, israelMonthOf, shiftMonth } from '../promotions/israel-time';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MONTH_NAME = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -24,7 +23,7 @@ export function monthLabel(month: string): string {
  */
 @Component({
   selector: 'hga-invoices-page',
-  imports: [DatePipe, RouterLink, MatButtonModule],
+  imports: [RouterLink, MatButtonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './invoices.page.html',
   styleUrl: './invoices.page.scss',
@@ -41,6 +40,7 @@ export class InvoicesPage {
   protected readonly labels = INVOICE_TYPE_LABELS_HE;
   protected readonly formatPrice = formatPrice;
   protected readonly monthLabel = monthLabel;
+  protected readonly israelDay = israelDay;
   protected readonly documentUrl = (id: string) => this.api.documentUrl(id);
 
   constructor() {
