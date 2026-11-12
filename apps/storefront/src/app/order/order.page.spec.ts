@@ -2,7 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
+import { ORDER_STATUS_LABELS_HE, PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from '../checkout/checkout.api';
 import { OrderPage } from './order.page';
@@ -48,6 +48,10 @@ function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
     deliveryEstimate: { fulfillment: 'in_stock', leadTimeDays: 14 },
     canRetryPayment: false,
     stockShortage: false,
+    statusLabelHe: ORDER_STATUS_LABELS_HE[status],
+    canCancel: status === 'pending_payment',
+    refundedTotal: 0,
+    deliverySlot: null,
     ...extra,
   };
 }

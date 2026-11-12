@@ -1,6 +1,15 @@
-import { BadRequestException, Controller, Get, Header, Param, Query, UseGuards } from '@nestjs/common';
-import type { AdminOrderDetail, AdminOrderPage, ProvidersStatus } from '@hg/models';
-import { AdminAuthGuard, RequirePermission, SameOriginGuard } from '../auth/guards.js';
+import { BadRequestException, Body, Controller, Get, Header, Param, Post, Query, UseGuards } from '@nestjs/common';
+import type { AdminOrderDetail, OrderStatus, AdminOrderPage, ProvidersStatus } from '@hg/models';
+import type { RequestMeta } from '../auth/auth.service.js';
+import {
+  Admin,
+  AdminAuthGuard,
+  ClientMeta,
+  RequirePermission,
+  SameOriginGuard,
+  type AdminContext,
+} from '../auth/guards.js';
+import { OrderLifecycleService } from './order-lifecycle.service.js';
 import { ORDER_STATUS_FILTERS, OrdersAdminService, type OrderStatusFilter } from './orders-admin.service.js';
 
 const invalid = (field: string) => new BadRequestException({ statusCode: 400, code: 'invalid_input', field });
@@ -9,7 +18,10 @@ const invalid = (field: string) => new BadRequestException({ statusCode: 400, co
 @Controller('admin')
 @UseGuards(SameOriginGuard, AdminAuthGuard)
 export class OrdersAdminController {
-  constructor(private readonly orders: OrdersAdminService) {}
+  constructor(
+    private readonly orders: OrdersAdminService,
+    private readonly lifecycle: OrderLifecycleService,
+  ) {}
 
   @Get('orders')
   @RequirePermission('orders.view')
@@ -39,6 +51,20 @@ export class OrdersAdminController {
   @Header('Cache-Control', 'no-store')
   detail(@Param('number') number: string): Promise<AdminOrderDetail> {
     return this.orders.detail(number);
+  }
+
+  /** Moves the order forward (spec §4.1); `delivery_scheduled` carries the delivery slot. */
+  @Post('orders/:number/status')
+  @RequirePermission('orders.manage')
+  advance(
+    @Param('number') number: string,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminOrderDetail> {
+    const { to, slot } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+    if (typeof to !== 'string') throw invalid('to');
+    return this.lifecycle.advance(number, to as OrderStatus, { adminId: admin.user.id, ip: client.ip }, slot);
   }
 
   /** The Super Admin holds every permission, so `orders.manage` covers both. */

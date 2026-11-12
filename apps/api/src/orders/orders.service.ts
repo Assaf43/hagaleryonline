@@ -1,27 +1,30 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type {
-  CheckoutResponse,
-  OrderAddressView,
-  OrderStatus as OrderStatusView,
-  OrderView,
-  ShippingMethod,
-  ShippingQuoteLine,
+import {
+  ORDER_STATUS_LABELS_HE,
+  type CheckoutResponse,
+  type OrderAddressView,
+  type OrderStatus as OrderStatusView,
+  type OrderView,
+  type ShippingMethod,
+  type ShippingQuoteLine,
 } from '@hg/models';
 import { availableStock } from '../cart/available-stock.js';
 import { availability } from '../cart/cart-lines.js';
 import type { CatalogSnapshot } from '../catalog/catalog-snapshot.js';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { DeliverySlotState, OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
+import { currentSlotView } from './delivery-slot.js';
 import { lockCart, lockOrder, lockVariants } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
+import { canCancel } from './order-transitions.js';
 
-const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
+export const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
   PENDING_PAYMENT: 'pending_payment',
   PAID: 'paid',
   PROCESSING: 'processing',
@@ -82,6 +85,10 @@ export class OrdersService {
     return {
       number: order.number,
       status: STATUS_VIEW[status],
+      statusLabelHe: ORDER_STATUS_LABELS_HE[STATUS_VIEW[status]],
+      canCancel: canCancel(status, 'customer'),
+      refundedTotal: order.refundedTotal,
+      deliverySlot: currentSlotView(order.slots),
       createdAt: order.createdAt.toISOString(),
       reservedUntil: order.reservedUntil.toISOString(),
       lines: order.items.map((i) => ({
@@ -163,7 +170,10 @@ export class OrdersService {
     if (number === null || typeof token !== 'string') throw orderNotFound();
     const order = await this.prisma.order.findUnique({
       where: { number },
-      include: { items: { orderBy: { id: 'asc' } } },
+      include: {
+        items: { orderBy: { id: 'asc' } },
+        slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
+      },
     });
     if (!order || !tokenMatches(token, order.publicToken)) throw orderNotFound();
     return order;

@@ -5,6 +5,7 @@ import type {
   AdminOrderPayment,
   AdminPaymentStatus,
   OrderAddressView,
+  OrderActorType as OrderActorView,
   OrderAttentionReason,
   OrderStatus as OrderStatusView,
   OrderView,
@@ -12,12 +13,21 @@ import type {
   ShippingMethod,
   ShippingQuoteLine,
 } from '@hg/models';
-import { OrderShippingMethod, OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
+import {
+  DeliverySlotState,
+  OrderActorType,
+  OrderShippingMethod,
+  OrderStatus,
+  PaymentStatus,
+  type Prisma,
+} from '../generated/prisma/client.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/payment-provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-provider.js';
+import { currentSlotView } from './delivery-slot.js';
 import { orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
+import { nextStatuses } from './order-transitions.js';
 import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
 export const ADMIN_ORDERS_PAGE_SIZE = 30;
@@ -36,6 +46,11 @@ const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
 const METHOD_VIEW: Record<OrderShippingMethod, ShippingMethod> = {
   CURBSIDE: 'curbside',
   FULL_SERVICE: 'full_service',
+};
+const ACTOR_VIEW: Record<OrderActorType, OrderActorView> = {
+  ADMIN: 'admin',
+  CUSTOMER: 'customer',
+  SYSTEM: 'system',
 };
 const PAYMENT_VIEW: Record<PaymentStatus, AdminPaymentStatus> = {
   PENDING: 'pending',
@@ -145,7 +160,12 @@ export class OrdersAdminService {
     if (number === null) throw orderNotFound();
     const order = await this.prisma.order.findUnique({
       where: { number },
-      include: { items: { orderBy: { id: 'asc' } }, payments: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        items: { orderBy: { id: 'asc' } },
+        payments: { orderBy: { createdAt: 'asc' } },
+        slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
+        events: { orderBy: { id: 'asc' } },
+      },
     });
     if (!order) throw orderNotFound();
     const payments: AdminOrderPayment[] = order.payments.map((p) => ({
@@ -189,6 +209,17 @@ export class OrdersAdminService {
       paymentProvider: order.paymentProvider,
       shippingProvider: order.shippingProvider,
       payments,
+      refundedTotal: order.refundedTotal,
+      deliverySlot: currentSlotView(order.slots),
+      nextStatuses: nextStatuses(order.status).map((s) => STATUS_VIEW[s]),
+      statusEvents: order.events.map((e) => ({
+        fromStatus: e.fromStatus ? STATUS_VIEW[e.fromStatus] : null,
+        toStatus: STATUS_VIEW[e.toStatus],
+        actorType: ACTOR_VIEW[e.actorType],
+        actorAdminId: e.actorAdminId,
+        note: e.note,
+        createdAt: e.createdAt.toISOString(),
+      })),
     };
   }
 
