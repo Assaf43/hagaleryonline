@@ -478,6 +478,38 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     expect(await usedCount(p.id)).toBe(0);
   });
 
+  it('two carts checking out a limit-1 coupon at the same moment: exactly one gets it (R16 lock)', async () => {
+    const p = await promotion({ usageLimit: 1 });
+    // Different products, so the variant locks do not line the two checkouts up on their own.
+    const a = browser();
+    const b = browser();
+    await a.add(sofa, 1);
+    await b.add(lamp, 1);
+    await a.apply('SAVE10').expect(200);
+    await b.apply('SAVE10').expect(200);
+    const [totalA, totalB] = await Promise.all([a.expectedTotal(), b.expectedTotal()]);
+
+    // Hold the promotion row while both checkouts start: both reach the promotion lock before either can commit.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const holder = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM promotions WHERE id = ${p.id} FOR UPDATE`;
+        await held;
+      },
+      { timeout: 20_000 },
+    );
+    const racing = Promise.all([a.checkout(totalA), b.checkout(totalB)]);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    release();
+    await holder;
+    const results = await racing;
+
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(results.find((r) => r.status === 409)!.body).toMatchObject({ code: 'coupon_invalid' });
+    expect(await prisma.order.count({ where: { promotionId: p.id, status: OrderStatus.PENDING_PAYMENT } })).toBe(1);
+  });
+
   it('a live pending order without a cart (its cart was deleted) still holds its use', async () => {
     await promotion({ usageLimit: 1 });
     const first = browser();

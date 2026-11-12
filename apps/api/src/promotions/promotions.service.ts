@@ -26,9 +26,6 @@ const TARGET: Record<DbPromotionTarget, PromotionTarget> = {
   [DbPromotionTarget.PRODUCTS]: 'products',
 };
 
-/** Longest coupon code accepted from a customer (characters, after trimming). */
-export const MAX_COUPON_CODE = 64;
-
 /** The order snapshot of the applied promotion (`orders.discount_info`, spec §6). */
 export interface DiscountInfo {
   name: string;

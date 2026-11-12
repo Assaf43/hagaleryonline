@@ -73,7 +73,7 @@ async function main() {
   await seedLocalities(prisma);
 
   await prisma.$executeRawUnsafe(
-    'TRUNCATE orders, products, categories, rooms, attributes, search_synonyms, shipping_rates, shipping_settings, shipping_zones RESTART IDENTITY CASCADE',
+    'TRUNCATE orders, promotions, products, categories, rooms, attributes, search_synonyms, shipping_rates, shipping_settings, shipping_zones RESTART IDENTITY CASCADE',
   );
 
   // Attributes and their closed value lists (ADM-03).
