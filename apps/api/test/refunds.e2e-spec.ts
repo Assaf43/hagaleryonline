@@ -88,8 +88,8 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
   const retry = (b: AdminBrowser, number: number, id: string) => b.post(`/orders/${number}/refunds/${id}/retry`);
   const customerCancel = (order: { number: number; publicToken: string }) =>
     http().post(`/api/orders/${order.number}/cancel?t=${order.publicToken}`).set('Origin', ORIGIN).expect(201);
-  const webhook = (transactionId: string, amount: number) => {
-    const body = JSON.stringify({ transactionId, status: 'succeeded', amount, installments: 1 });
+  const webhook = (transactionId: string, amount: number, status = 'succeeded') => {
+    const body = JSON.stringify({ transactionId, status, amount, installments: 1 });
     return http()
       .post('/api/payments/webhook')
       .set('Content-Type', 'application/json')
@@ -428,6 +428,37 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
       .set('Origin', ORIGIN)
       .expect(409);
     expect(res.body.code).toBe('not_retryable');
+  });
+
+  it('a failed or cancelled payment result after a cancel leaves the order CANCELLED (not retryable)', async () => {
+    const retryPayment = (o: { number: number; publicToken: string }) =>
+      http().post(`/api/orders/${o.number}/retry-payment?t=${o.publicToken}`).set('Origin', ORIGIN);
+
+    const byStaff = await makeOrder('cancel-fail-admin', OrderStatus.PENDING_PAYMENT);
+    await cancel(owner, byStaff.number, { refund: 'none', reason: 'בוטל על ידי הצוות' }).expect(200);
+    await webhook('sbx_zz_cancel-fail-admin', TOTAL, 'failed').expect(200);
+    await webhook('sbx_zz_cancel-fail-admin', TOTAL, 'cancelled').expect(200);
+    const staffRow = await prisma.order.findUniqueOrThrow({ where: { id: byStaff.id }, include: { payments: true } });
+    expect(staffRow.status).toBe(OrderStatus.CANCELLED);
+    expect(staffRow.payments[0].status).toBe(PaymentStatus.CANCELLED);
+    expect((await retryPayment(byStaff).expect(409)).body.code).toBe('not_retryable');
+
+    const byCustomer = await makeOrder('cancel-fail-customer', OrderStatus.PENDING_PAYMENT);
+    await customerCancel(byCustomer);
+    // A payment opened by a retry that raced the cancel is still pending.
+    await prisma.payment.updateMany({ where: { orderId: byCustomer.id }, data: { status: PaymentStatus.PENDING } });
+    await webhook('sbx_zz_cancel-fail-customer', TOTAL, 'failed').expect(200);
+    let customerRow = await prisma.order.findUniqueOrThrow({
+      where: { id: byCustomer.id },
+      include: { payments: true },
+    });
+    expect(customerRow.status).toBe(OrderStatus.CANCELLED);
+    expect(customerRow.payments[0].status).toBe(PaymentStatus.FAILED);
+    await webhook('sbx_zz_cancel-fail-customer', TOTAL, 'cancelled').expect(200);
+    customerRow = await prisma.order.findUniqueOrThrow({ where: { id: byCustomer.id }, include: { payments: true } });
+    expect(customerRow.status).toBe(OrderStatus.CANCELLED);
+    expect((await retryPayment(byCustomer).expect(409)).body.code).toBe('not_retryable');
+    expect(await prisma.orderStatusEvent.count({ where: { orderId: byCustomer.id } })).toBe(1);
   });
 
   it('the attention filter includes flagged orders; the detail carries refunds, note and slot', async () => {

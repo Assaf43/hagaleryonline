@@ -143,7 +143,7 @@ export class PaymentsService {
    *   stays cancelled, no stock is taken, it is flagged for staff, and the payment is refunded in full after commit;
    * - success → payment succeeded, order paid, in-stock stock taken (never below 0; a shortfall flags the order
    *   `stockShortage`), the order's lines removed from its cart unless a newer order of that cart exists;
-   * - failure / cancel → payment failed / cancelled; the order fails (releasing its reservation) only when this is
+   * - failure / cancel → payment failed / cancelled (a CANCELLED order is left as it is); the order fails (releasing its reservation) only when this is
    *   its latest payment, so a late failure of an earlier attempt does not disturb a retry in progress.
    */
   async apply(result: PaymentResult): Promise<WebhookOutcome> {
@@ -258,6 +258,8 @@ export class PaymentsService {
         where: { id: payment.id },
         data: { status: next, installments, rawStatus: result.rawStatus },
       });
+      // A cancelled order stays cancelled: a failed or cancelled result of its payment must not make it retryable.
+      if (order.status === OrderStatus.CANCELLED) return 'ignored';
       const latest = await tx.payment.findFirst({
         where: { orderId: order.id },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
