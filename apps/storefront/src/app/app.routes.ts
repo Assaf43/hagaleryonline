@@ -25,6 +25,7 @@ export const routes: Routes = [
     path: 'pay/sandbox/:transactionId',
     loadComponent: () => import('./pay/sandbox-pay.page').then((m) => m.SandboxPayPage),
   },
+  { path: 'delivery/:token', loadComponent: () => import('./delivery/delivery.page').then((m) => m.DeliveryPage) },
   { path: 'terms', loadComponent: () => import('./info/terms.page').then((m) => m.TermsPage) },
   { path: 'favorites', loadComponent: () => import('./favorites/favorites.page').then((m) => m.FavoritesPage) },
   { path: 'sizing-guide', loadComponent: () => import('./guide/sizing-guide.page').then((m) => m.SizingGuidePage) },

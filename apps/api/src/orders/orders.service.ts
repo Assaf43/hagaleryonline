@@ -14,6 +14,7 @@ import { availability } from '../cart/cart-lines.js';
 import type { CatalogSnapshot } from '../catalog/catalog-snapshot.js';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { DeliverySlotState, OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
@@ -56,7 +57,7 @@ function retryable(order: { status: OrderStatus; reservedUntil: Date }, now = ne
 }
 
 /** Constant-time comparison of the URL token with the order's (both hashed to equal length first). */
-function tokenMatches(given: string, expected: string): boolean {
+export function tokenMatches(given: string, expected: string): boolean {
   const digest = (value: string) => createHash('sha256').update(value).digest();
   return given.length > 0 && timingSafeEqual(digest(given), digest(expected));
 }
@@ -83,6 +84,7 @@ export class OrdersService {
       (await this.retryBlocker(this.prisma, order.items, await this.catalog.snapshot())) === null;
     const address = order.address as unknown as OrderAddressView;
     return {
+      invoices: invoiceViews(order.invoices),
       number: order.number,
       status: STATUS_VIEW[status],
       statusLabelHe: ORDER_STATUS_LABELS_HE[STATUS_VIEW[status]],
@@ -173,6 +175,7 @@ export class OrdersService {
       include: {
         items: { orderBy: { id: 'asc' } },
         slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
+        ...ORDER_INVOICES,
       },
     });
     if (!order || !tokenMatches(token, order.publicToken)) throw orderNotFound();

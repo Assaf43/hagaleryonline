@@ -5,7 +5,9 @@ import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import {
+  DELIVERY_SLOT_STATE_LABELS_HE,
   FULFILLMENT_LABELS_HE,
+  INVOICE_TYPE_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
   ORDER_STATUS_LABELS_HE,
   SHIPPING_METHOD_LABELS_HE,
@@ -62,6 +64,7 @@ export class OrderDetailPage {
   protected readonly formatAmount = formatAmount;
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
+  protected readonly slotStateLabels = DELIVERY_SLOT_STATE_LABELS_HE;
   /** The customer's wording, so staff and customer name the method the same way. */
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly paymentLabels = PAYMENT_LABELS;
@@ -75,6 +78,10 @@ export class OrderDetailPage {
   protected readonly actionError = signal('');
   protected readonly canManage = computed(() => this.auth.can('orders.manage'));
   protected readonly canCancel = computed(() => this.auth.can('orders.cancel'));
+  /** Opening a tax document needs `invoices.export` (the API's rule); without it the documents are listed as text. */
+  protected readonly canExport = computed(() => this.auth.can('invoices.export'));
+  protected readonly invoiceLabels = INVOICE_TYPE_LABELS_HE;
+  protected readonly documentUrl = (id: string) => `/api/admin/invoices/${encodeURIComponent(id)}/document`;
   protected readonly currentAdmin = computed(() => {
     const me = this.auth.me();
     return me ? { id: me.id, name: me.name } : null;

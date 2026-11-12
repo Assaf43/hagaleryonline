@@ -624,13 +624,16 @@ model Order {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  cart      Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  promotion Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
-  items     OrderItem[]
-  payments  Payment[]
-  events    OrderStatusEvent[]
-  refunds   Refund[]
-  slots     DeliverySlot[]
+  cart          Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  promotion     Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  payments      Payment[]
+  events        OrderStatusEvent[]
+  refunds       Refund[]
+  slots         DeliverySlot[]
+  jobs          OutboxJob[]
+  notifications NotificationLog[]
+  invoices      Invoice[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -697,8 +700,9 @@ model Refund {
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  creditNote Invoice?
 
   @@index([orderId])
   @@index([paymentId])
@@ -758,6 +762,43 @@ model Payment {
   @@map("payments")
 }
 
+// ---------- Outbox (Phase 5b, spec §5.1, decision 83) ----------
+
+enum OutboxJobState {
+  PENDING @map("pending")
+  RUNNING @map("running")
+  DONE    @map("done")
+  FAILED  @map("failed")
+
+  @@map("outbox_job_state")
+}
+
+/// A side effect (e-mail, SMS, invoice, refund) written in the transaction of the change that causes it and run by
+/// the API's worker (apps/api/src/outbox/). `dedupeKey` makes enqueueing idempotent; a failure retries with backoff,
+/// after 8 attempts the job is FAILED (admin "משימות שנכשלו", and the order needs attention).
+model OutboxJob {
+  id        String         @id @default(uuid()) @db.Uuid
+  /// `OutboxJobType` of @hg/models (`email.order_paid`, `invoice.issue`…).
+  type      String
+  dedupeKey String         @unique @map("dedupe_key")
+  payload   Json
+  state     OutboxJobState @default(PENDING)
+  attempts  Int            @default(0)
+  runAfter  DateTime       @default(now()) @map("run_after")
+  lastError String?        @map("last_error")
+  /// The order the job belongs to (its failed jobs flag it); null for jobs of no order.
+  orderId   String?        @map("order_id") @db.Uuid
+  createdAt DateTime       @default(now()) @map("created_at")
+  /// Also the claim time of a RUNNING job (a RUNNING job older than 10 minutes is reclaimed).
+  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([state, runAfter])
+  @@index([orderId])
+  @@map("outbox_jobs")
+}
+
 // ---------- Promotions and coupons (Phase 4d, spec §6, decision 70) ----------
 
 enum PromotionKind {
@@ -813,4 +854,110 @@ model Promotion {
 
   @@index([kind, active])
   @@map("promotions")
+}
+
+// ---------- Notifications (Phase 5b, spec §3, §5.2) ----------
+
+enum NotificationChannel {
+  EMAIL @map("email")
+  SMS   @map("sms")
+
+  @@map("notification_channel")
+}
+
+enum NotificationStatus {
+  SENT   @map("sent")
+  FAILED @map("failed")
+
+  @@map("notification_status")
+}
+
+/// One message sent (or refused) through the NotificationProvider. The recipient is stored masked; `subject` and the
+/// rendered `body` (HTML for an e-mail, text for an SMS) only when the provider is `mock` (the dev viewer).
+model NotificationLog {
+  id                String              @id @default(uuid()) @db.Uuid
+  channel           NotificationChannel
+  recipientMasked   String              @map("recipient_masked")
+  template          String
+  /// Code of the provider that handled it.
+  provider          String
+  providerMessageId String?             @map("provider_message_id")
+  status            NotificationStatus
+  orderId           String?             @map("order_id") @db.Uuid
+  subject           String?
+  body              String?
+  createdAt         DateTime            @default(now()) @map("created_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("notification_log")
+}
+
+// ---------- Invoices (Phase 5b, spec §3, §5.4, CHK-08, decision 81) ----------
+
+enum InvoiceType {
+  TAX_INVOICE_RECEIPT @map("tax_invoice_receipt")
+  CREDIT_NOTE         @map("credit_note")
+
+  @@map("invoice_type")
+}
+
+/// A tax document issued through the InvoiceProvider by an outbox job: a tax invoice / receipt when an order is paid,
+/// a credit note per succeeded refund. `idempotencyKey` is the job's dedupe key (unique), so a repeated job never
+/// issues twice. Amounts in agorot; the VAT is computed once at issue time and never recomputed. CHECKs (migration
+/// invoices): amount > 0, vat_amount >= 0, a refund exactly for credit notes, one tax invoice per order. A tax document
+/// is never deleted with its order or refund: both relations RESTRICT (migration invoices_restrict).
+model Invoice {
+  id             String      @id @default(uuid()) @db.Uuid
+  orderId        String      @map("order_id") @db.Uuid
+  type           InvoiceType
+  /// Credit notes only: the refund it credits.
+  refundId       String?     @unique @map("refund_id") @db.Uuid
+  /// Code of the provider that issued it.
+  provider       String
+  /// The provider's document number.
+  number         String
+  /// The provider's own link to the document, when it hosts it.
+  documentUrl    String?     @map("document_url")
+  /// Key of the document in the private storage area (`invoices/<number>.html`), when we keep the file.
+  fileKey        String?     @map("file_key")
+  /// Agorot, VAT included (the order total, or the refund amount).
+  amount         Int
+  vatAmount      Int         @map("vat_amount")
+  vatRate        Decimal     @map("vat_rate") @db.Decimal(5, 4)
+  issuedAt       DateTime    @map("issued_at")
+  idempotencyKey String      @unique @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  order  Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refund Refund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, number])
+  @@index([orderId])
+  @@index([issuedAt])
+  @@map("invoices")
+}
+
+/// The Israeli VAT rate from a date on (spec §3, §5.4). An invoice takes the latest rate whose `effectiveFrom` is on or
+/// before its Israel issue date. Seeded by migration invoices with 18% from 2025-01-01.
+model VatRate {
+  id            Int      @id @default(autoincrement())
+  rate          Decimal  @db.Decimal(5, 4)
+  effectiveFrom DateTime @unique @map("effective_from") @db.Date
+
+  @@map("vat_rates")
+}
+
+/// The `mock` invoice adapter's own record (development and tests): the number it gave each idempotency key (and the
+/// document date it was asked for), so the same key always gets the same number, as a real provider would. Numbers come from the sequences
+/// `mock_invoice_seq` / `mock_credit_note_seq` (migration invoices).
+model MockInvoiceDocument {
+  idempotencyKey String      @id @map("idempotency_key")
+  type           InvoiceType
+  number         String      @unique
+  issuedAt       DateTime    @default(now()) @map("issued_at")
+
+  @@map("mock_invoice_documents")
 }

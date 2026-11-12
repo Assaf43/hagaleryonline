@@ -1,0 +1,73 @@
+<section class="container page">
+  <p class="live" [class.live-error]="isError()" role="status" aria-live="polite">{{ liveText() }}</p>
+  @switch (state()) {
+    @case ('loading') {
+      <h1>אישור מועד אספקה</h1>
+    }
+    @case ('invalid') {
+      <h1>הקישור אינו בתוקף</h1>
+      <p class="muted">ייתכן שנקבע מועד חדש. אפשר לפנות אלינו ונשמח לעזור.</p>
+      <a routerLink="/" class="btn btn-secondary">לדף הבית</a>
+    }
+    @case ('error') {
+      <h1>אישור מועד אספקה</h1>
+      <div class="state">
+        <button type="button" class="btn btn-secondary" (click)="reload()">נסו שוב</button>
+      </div>
+    }
+    @case ('ready') {
+      @if (slot(); as s) {
+        <h1>
+          מועד האספקה של הזמנה <bdi dir="ltr">{{ s.orderNumber }}</bdi>
+        </h1>
+        <p class="when">
+          <bdi dir="ltr">{{ date() }}</bdi
+          >, בין <bdi dir="ltr">{{ s.windowFrom }}</bdi> ל-<bdi dir="ltr">{{ s.windowTo }}</bdi>
+        </p>
+        @switch (s.state) {
+          @case ('proposed') {
+            @if (!asking()) {
+              <div class="actions">
+                <button type="button" class="btn btn-primary" [disabled]="sending()" (click)="respond('confirm')">
+                  מאשר/ת את המועד
+                </button>
+                <button
+                  #askButton
+                  type="button"
+                  class="btn btn-secondary"
+                  [disabled]="sending()"
+                  (click)="startAsking()"
+                >
+                  מבקש/ת מועד אחר
+                </button>
+              </div>
+            } @else {
+              <div class="field">
+                <label class="field-label" for="delivery-note">הערה לבקשת שינוי מועד (לא חובה)</label>
+                <textarea
+                  #noteBox
+                  id="delivery-note"
+                  class="input textarea"
+                  rows="3"
+                  maxlength="500"
+                  [value]="note()"
+                  (input)="setNote($event)"
+                ></textarea>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn btn-primary" [disabled]="sending()" (click)="respond('change')">
+                  שליחת הבקשה
+                </button>
+                <button type="button" class="btn btn-secondary" [disabled]="sending()" (click)="stopAsking()">
+                  חזרה
+                </button>
+              </div>
+            }
+          }
+          @case ('confirmed') {}
+          @case ('change_requested') {}
+        }
+      }
+    }
+  }
+</section>

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { PaymentStatus, Prisma, RefundStatus, type Refund } from '../generated/prisma/client.js';
+import { OutboxService } from '../outbox/outbox.service.js';
 import { PAYMENT_PROVIDER, type PaymentProvider, type RefundResult } from '../payments/payment-provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { lockOrder } from './locks.js';
@@ -32,6 +33,13 @@ export const STALE_PENDING_MS = 2 * 60_000;
 
 const ERROR_MAX = 500;
 
+/** The late-payment refund is PENDING and not yet stale: its result may still arrive, so the job tries again later. */
+export class LatePaymentRefundInFlight extends Error {
+  constructor(refundId: string) {
+    super(`late-payment refund ${refundId} is still in flight`);
+  }
+}
+
 const exceedsPaid = () => new CheckoutError(HttpStatus.CONFLICT, 'refund_exceeds_paid');
 const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'invalid_transition');
 
@@ -51,6 +59,7 @@ export class RefundService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
+    private readonly outbox: OutboxService,
   ) {}
 
   /** What can still be refunded on an order, read inside `tx` (the caller holds the order lock for a decision). */
@@ -77,11 +86,12 @@ export class RefundService {
     amount: number | 'full',
     reason: string,
     adminId: number | null,
+    paymentId?: string,
   ): Promise<Refund> {
     const { refundable } = await this.state(tx, orderId);
     const value = amount === 'full' ? refundable : amount;
     if (value < 1 || value > refundable) throw exceedsPaid();
-    const payment = await this.paymentFor(tx, orderId, value);
+    const payment = await this.paymentFor(tx, orderId, value, paymentId);
     const id = randomUUID();
     return tx.refund.create({
       data: {
@@ -97,10 +107,13 @@ export class RefundService {
     });
   }
 
-  /** The latest succeeded payment that still has `amount` left (its amount minus its pending and succeeded refunds). */
-  private async paymentFor(tx: Prisma.TransactionClient, orderId: string, amount: number) {
+  /**
+   * The latest succeeded payment that still has `amount` left (its amount minus its pending and succeeded refunds);
+   * with `paymentId`, that payment only.
+   */
+  private async paymentFor(tx: Prisma.TransactionClient, orderId: string, amount: number, paymentId?: string) {
     const payments = await tx.payment.findMany({
-      where: { orderId, status: PaymentStatus.SUCCEEDED },
+      where: { orderId, status: PaymentStatus.SUCCEEDED, ...(paymentId ? { id: paymentId } : {}) },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: { refunds: { where: { status: { not: RefundStatus.FAILED } }, select: { amount: true } } },
     });
@@ -122,6 +135,31 @@ export class RefundService {
       return this.reserve(tx, orderId, amount, reason, adminId);
     });
     return this.execute(refund.id, { adminId, ip });
+  }
+
+  /**
+   * The refund of a payment that arrived after the order was cancelled (spec §4.2), run by the outbox job
+   * `refund.late_payment` — so it may run more than once: under the order lock, a late-payment refund of that payment
+   * that already exists is never made again. A PENDING one still in flight throws `LatePaymentRefundInFlight` (the
+   * job retries later); once it is stale (lost its result) it is executed again with its own key.
+   * 409 `refund_exceeds_paid` when it does not fit (the order keeps the "refund by hand" note).
+   */
+  async refundLatePayment(orderId: string, paymentId: string, amount: number): Promise<Refund | null> {
+    const next = await this.prisma.$transaction(async (tx) => {
+      if (!(await lockOrder(tx, orderId))) return null;
+      const existing = await tx.refund.findFirst({
+        where: { orderId, paymentId, reason: LATE_PAYMENT_REASON },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (existing) {
+        if (existing.status !== RefundStatus.PENDING) return null;
+        if (Date.now() - existing.updatedAt.getTime() < STALE_PENDING_MS)
+          throw new LatePaymentRefundInFlight(existing.id);
+        return existing;
+      }
+      return this.reserve(tx, orderId, amount, LATE_PAYMENT_REASON, null, paymentId);
+    });
+    return next ? this.execute(next.id, { adminId: null }) : null;
   }
 
   /**
@@ -269,8 +307,22 @@ export class RefundService {
     });
   }
 
-  /** Hook for the credit note and notifications of later tasks; runs in the transaction that records the refund. */
-  protected onRefundSucceeded(_tx: Prisma.TransactionClient, _refund: Refund): Promise<void> {
-    return Promise.resolve();
+  /** The refund e-mail and the credit note (spec §5.3, §5.4), queued in the transaction that records the refund. */
+  protected async onRefundSucceeded(tx: Prisma.TransactionClient, refund: Refund): Promise<void> {
+    const payload = { orderId: refund.orderId, refundId: refund.id };
+    await this.outbox.enqueue(tx, {
+      type: 'email.refund',
+      dedupeKey: `email.refund:${refund.id}`,
+      payload,
+      orderId: refund.orderId,
+    });
+    // A late payment's order was cancelled before it was paid, so it has no invoice to credit (review ruling).
+    if (refund.reason === LATE_PAYMENT_REASON) return;
+    await this.outbox.enqueue(tx, {
+      type: 'invoice.credit_note',
+      dedupeKey: `invoice.credit_note:${refund.id}`,
+      payload,
+      orderId: refund.orderId,
+    });
   }
 }

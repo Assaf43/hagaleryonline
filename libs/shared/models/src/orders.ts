@@ -136,6 +136,8 @@ export type CheckoutErrorCode =
   | 'superseded'
   | 'invalid_transition'
   | 'refund_exceeds_paid'
+  | 'already_answered'
+  | 'slot_closed'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */
@@ -184,6 +186,14 @@ export interface OrderAddressView extends CheckoutAddress {
 
 export type DeliverySlotState = 'proposed' | 'confirmed' | 'change_requested' | 'superseded';
 
+/** How the admin order detail names the state of the delivery slot. */
+export const DELIVERY_SLOT_STATE_LABELS_HE: Record<DeliverySlotState, string> = {
+  proposed: 'הוצע',
+  confirmed: 'אושר על ידי הלקוח',
+  change_requested: 'הלקוח ביקש מועד אחר',
+  superseded: 'הוחלף',
+};
+
 /** The delivery date and time window staff set for an order (Phase 5, spec §4.1). */
 export interface DeliverySlotView {
   /** Israel-time calendar date, YYYY-MM-DD. */
@@ -194,8 +204,51 @@ export interface DeliverySlotView {
   state: DeliverySlotState;
 }
 
+/** GET /api/delivery/:token — what the delivery confirmation page shows (spec §5.3). */
+export interface DeliveryLinkView {
+  orderNumber: number;
+  /** Israel-time calendar date, YYYY-MM-DD. */
+  date: string;
+  windowFrom: string;
+  windowTo: string;
+  state: DeliverySlotState;
+}
+
+/** POST /api/delivery/:token — the customer's answer; `note` is optional, at most 500 characters. */
+export interface DeliveryAnswerRequest {
+  answer: 'confirm' | 'change';
+  note?: string;
+}
+
+// ---------- Invoices (Phase 5b, spec §5.4, CHK-08, decision 81) ----------
+
+/** A tax invoice / receipt when the order is paid; a credit note for each succeeded refund. */
+export type InvoiceType = 'tax_invoice_receipt' | 'credit_note';
+
+/** How the storefront and the admin name each document (followed by its number). */
+export const INVOICE_TYPE_LABELS_HE: Record<InvoiceType, string> = {
+  tax_invoice_receipt: 'חשבונית מס/קבלה',
+  credit_note: 'חשבונית זיכוי',
+};
+
+/**
+ * One issued document of an order, oldest first. The customer opens it at
+ * `GET /api/orders/:number/invoices/:id?t=<order token>`, staff at `GET /api/admin/invoices/:id/document`
+ * (`invoices.export`).
+ */
+export interface OrderInvoiceView {
+  id: string;
+  type: InvoiceType;
+  /** The provider's document number, e.g. `MOCK-INV-000042`. */
+  number: string;
+  /** ISO time. */
+  issuedAt: string;
+}
+
 /** GET /api/orders/:number?t=<token> — the confirmation page. */
 export interface OrderView {
+  /** The order's tax invoice and credit notes, oldest first (empty until the first one is issued). */
+  invoices: OrderInvoiceView[];
   number: number;
   status: OrderStatus;
   /** Hebrew label of `status` (ORDER_STATUS_LABELS_HE). */
@@ -279,7 +332,9 @@ export type OrderAttentionReason =
   /** A payment that arrived after the order was cancelled (it is refunded in full). */
   | 'late_payment'
   /** Staff-visible flag with a note: a failed refund, a late payment on a cancelled order (`attentionNote`). */
-  | 'flagged';
+  | 'flagged'
+  /** An outbox job of the order (e-mail, SMS, invoice, refund) failed after all its retries. */
+  | 'job_failed';
 
 /** Hebrew label of each attention reason, shown next to the order in the admin. */
 export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
@@ -289,6 +344,7 @@ export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
   superseded_paid: 'שולמה למרות שנוצרה הזמנה חדשה מאותו סל',
   late_payment: 'תשלום התקבל אחרי ביטול',
   flagged: 'דורשת טיפול',
+  job_failed: 'משימה אוטומטית נכשלה',
 };
 
 /** One row of GET /api/admin/orders. */
@@ -369,6 +425,8 @@ export interface AdminOrderDetail {
   nextStatuses: OrderStatus[];
   /** Status changes, oldest first. */
   statusEvents: AdminOrderStatusEvent[];
+  /** The order's tax invoice and credit notes, oldest first. */
+  invoices: OrderInvoiceView[];
 }
 
 export type RefundStatus = 'pending' | 'succeeded' | 'failed';

@@ -17,6 +17,7 @@ import {
   PaymentStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
+import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { parseSlot } from './delivery-slot.js';
 import { lockOrder, lockOrderPayments, lockVariants } from './locks.js';
@@ -51,6 +52,7 @@ export class OrderLifecycleService {
     private readonly adminOrders: OrdersAdminService,
     private readonly orders: OrdersService,
     private readonly refunds: RefundService,
+    private readonly outbox: OutboxService,
   ) {}
 
   /**
@@ -134,6 +136,7 @@ export class OrderLifecycleService {
         where: { id: order.id },
         data: { status: OrderStatus.CANCELLED, cancelledAt: new Date() },
       });
+      await this.supersedeSlot(tx, order.id);
       await tx.orderStatusEvent.create({
         data: {
           orderId: order.id,
@@ -197,6 +200,8 @@ export class OrderLifecycleService {
         where: { id: order.id },
         data: { status: OrderStatus.CANCELLED, cancelledAt: new Date() },
       });
+      // The delivery link sent to the customer stops working with the cancel.
+      await this.supersedeSlot(tx, order.id);
       await tx.orderStatusEvent.create({
         data: {
           orderId: order.id,
@@ -288,12 +293,17 @@ export class OrderLifecycleService {
       });
   }
 
-  /** Supersedes the live slot, then inserts the new one (the partial unique index allows one live slot). */
-  private async replaceSlot(tx: Prisma.TransactionClient, orderId: string, slot: DeliverySlotInput): Promise<void> {
+  /** Supersedes the order's live delivery slot, if any (its link then answers 404). */
+  private async supersedeSlot(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
     await tx.deliverySlot.updateMany({
       where: { orderId, state: { not: DeliverySlotState.SUPERSEDED } },
       data: { state: DeliverySlotState.SUPERSEDED },
     });
+  }
+
+  /** Supersedes the live slot, then inserts the new one (the partial unique index allows one live slot). */
+  private async replaceSlot(tx: Prisma.TransactionClient, orderId: string, slot: DeliverySlotInput): Promise<void> {
+    await this.supersedeSlot(tx, orderId);
     await tx.deliverySlot.create({
       data: {
         orderId,
@@ -305,14 +315,44 @@ export class OrderLifecycleService {
     });
   }
 
-  /** Hook for the outbox jobs of later tasks (notifications, invoices); called in the transaction of every change. */
-  protected onStatusChanged(
-    _tx: Prisma.TransactionClient,
-    _order: { id: string; number: number },
-    _from: OrderStatus,
-    _to: OrderStatus,
+  /**
+   * The outbox jobs of a status move (spec §5.3, decision 83), in the transaction of the move: an SMS for each new
+   * delivery slot (also a slot-only change), an e-mail for `shipped` and `delivered`, and one for any cancel.
+   */
+  protected async onStatusChanged(
+    tx: Prisma.TransactionClient,
+    order: { id: string; number: number },
+    from: OrderStatus,
+    to: OrderStatus,
   ): Promise<void> {
-    return Promise.resolve();
+    if (to === OrderStatus.DELIVERY_SCHEDULED) {
+      // The slot inserted by this move (the only live one).
+      const slot = await tx.deliverySlot.findFirstOrThrow({
+        where: { orderId: order.id, state: { not: DeliverySlotState.SUPERSEDED } },
+        select: { id: true },
+      });
+      await this.outbox.enqueue(tx, {
+        type: 'sms.delivery_slot',
+        dedupeKey: `sms.delivery_slot:${slot.id}`,
+        payload: { orderId: order.id, slotId: slot.id },
+        orderId: order.id,
+      });
+    } else if (from !== to && (to === OrderStatus.SHIPPED || to === OrderStatus.DELIVERED)) {
+      const status = STATUS_VIEW[to];
+      await this.outbox.enqueue(tx, {
+        type: 'email.status',
+        dedupeKey: `email.status:${order.id}:${status}`,
+        payload: { orderId: order.id, status },
+        orderId: order.id,
+      });
+    } else if (to === OrderStatus.CANCELLED) {
+      await this.outbox.enqueue(tx, {
+        type: 'email.cancelled',
+        dedupeKey: `email.cancelled:${order.id}`,
+        payload: { orderId: order.id },
+        orderId: order.id,
+      });
+    }
   }
 }
 

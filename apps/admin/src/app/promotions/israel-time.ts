@@ -112,3 +112,25 @@ export function formatIsraelDate(iso: string, edge: 'start' | 'end'): string {
   const whole = edge === 'start' ? isDayStart(f) : isDayEnd(f);
   return whole ? date : `${date} ${f.time}`;
 }
+
+/**
+ * The Israel calendar date of an instant, "6.11.2026". Angular's `date` pipe takes only offsets ('+0200'), not
+ * 'Asia/Jerusalem', so it would show the browser's (or a CI runner's) local date.
+ */
+export function israelDay(iso: string): string {
+  const { wall } = fields(iso);
+  return `${wall.day}.${wall.month}.${wall.year}`;
+}
+
+/** The Israel-time month (YYYY-MM) of an instant: what "this month" means on the invoices page. */
+export function israelMonthOf(at: Date): string {
+  const f = fields(at.toISOString());
+  return f.date.slice(0, 7);
+}
+
+/** YYYY-MM moved by whole months (negative = earlier). */
+export function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const index = y * 12 + (m - 1) + delta;
+  return `${Math.floor(index / 12)}-${pad((index % 12) + 1)}`;
+}

@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   { key: 'shipping.manage', labelHe: 'מחירון משלוחים ואזורים' },
   { key: 'promotions.manage', labelHe: 'מבצעים וקופונים' },
   { key: 'audit.view', labelHe: 'צפייה ביומן השינויים' },
+  { key: 'invoices.export', labelHe: 'חשבוניות ודוחות לרואה החשבון' },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]['key'];

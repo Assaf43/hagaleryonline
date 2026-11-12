@@ -1,0 +1,63 @@
+<h1>משימות שנכשלו</h1>
+<p class="page-intro">
+  הודעות, חשבוניות והחזרים שהמערכת לא הצליחה לבצע גם אחרי כל הניסיונות החוזרים. אחרי שהבעיה טופלה אפשר לנסות שוב.
+</p>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    @if (!items()) {
+      <button matButton="outlined" type="button" (click)="reload()">נסו שוב</button>
+    }
+  </div>
+}
+
+@if (items(); as list) {
+  <ul class="jobs">
+    @for (job of list; track job.id) {
+      <li class="job">
+        <span class="type">{{ labels[job.type] ?? job.type }}</span>
+        <span class="order">
+          <span class="visually-hidden">הזמנה: </span>
+          @if (job.orderNumber !== null) {
+            <a [routerLink]="['/orders', job.orderNumber]"
+              >הזמנה <bdi>{{ job.orderNumber }}</bdi></a
+            >
+          } @else {
+            ללא הזמנה
+          }
+        </span>
+        <span class="attempts"
+          >ניסיונות: <bdi>{{ job.attempts }}</bdi></span
+        >
+        <span class="updated"
+          ><span class="visually-hidden">עודכן: </span><bdi>{{ job.updatedAt | date: 'd.M.yyyy HH:mm' }}</bdi></span
+        >
+        <span class="error">
+          <span class="visually-hidden">שגיאה אחרונה: </span>
+          @if (job.lastError) {
+            <bdi dir="ltr">{{ job.lastError }}</bdi>
+          } @else {
+            אין פירוט
+          }
+        </span>
+        <span class="actions">
+          <button
+            matButton="outlined"
+            type="button"
+            class="retry"
+            [disabled]="busy() === job.id"
+            [attr.aria-label]="'נסה שוב: ' + (labels[job.type] ?? job.type)"
+            (click)="retry(job)"
+          >
+            נסה שוב
+          </button>
+        </span>
+      </li>
+    } @empty {
+      <li class="empty">אין משימות שנכשלו.</li>
+    }
+  </ul>
+} @else if (!error()) {
+  <p class="page-intro" role="status">טוען…</p>
+}

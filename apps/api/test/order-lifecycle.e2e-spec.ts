@@ -9,8 +9,10 @@ import { configureApp } from './../src/configure-app.js';
 import { FulfillmentMode, OrderShippingMethod, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
+import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { adminBrowser, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
 const SECRET = process.env.PAYMENT_SANDBOX_SECRET ?? '';
@@ -32,8 +34,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
   let variantId: number;
 
   const http = () => request(app.getHttpServer() as App);
-  const cleanup = () =>
-    prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+  const cleanup = () => deleteOrders(prisma, TEST_ORDERS);
 
   const makeOrder = async (key: string, status: OrderStatus, opts: { variant?: boolean; reserved?: boolean } = {}) =>
     prisma.order.create({
@@ -330,5 +331,164 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
     } finally {
       throttle.setLimit('cancel', 1000);
     }
+  });
+
+  // Delivery-date SMS and the confirmation link (spec §5.3, SHP-04).
+  describe('delivery link', () => {
+    const schedule = (n: number, date = israelDate(3)) =>
+      move(owner, n, { to: 'delivery_scheduled', slot: slot(date) }).expect(201);
+    const sendJobs = async () => {
+      await app.get(OutboxService).runDue(100);
+    };
+    const smsLogs = (orderId: string) =>
+      prisma.notificationLog.findMany({
+        where: { orderId, template: 'delivery_slot' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+    /** Token of the link in the last SMS of the order. */
+    const tokenOf = async (orderId: string) => {
+      const rows = await smsLogs(orderId);
+      const match = /\/delivery\/([\w-]+)/.exec(rows[rows.length - 1].body ?? '');
+      return match![1];
+    };
+    const delivery = (token: string) => http().get(`/api/delivery/${token}`);
+    const answer = (token: string, body: object) =>
+      http().post(`/api/delivery/${token}`).set('Origin', ORIGIN).send(body);
+    const scheduledOrder = async (key: string) => {
+      const order = await makeOrder(key, OrderStatus.PROCESSING);
+      await schedule(order.number);
+      await sendJobs();
+      return order;
+    };
+
+    afterEach(async () => {
+      await prisma.outboxJob.deleteMany({});
+      await prisma.notificationLog.deleteMany({});
+    });
+
+    it('scheduling sends one SMS with a link; only the token hash is stored', async () => {
+      const order = await scheduledOrder('dl-sms');
+      const rows = await smsLogs(order.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ channel: 'SMS', status: 'SENT' });
+      const token = await tokenOf(order.id);
+      expect(rows[0].body).toContain(`http://localhost:4200/delivery/${token}`);
+      expect(rows[0].body).toContain(`${order.number}`);
+      const slotRow = await prisma.deliverySlot.findFirstOrThrow({ where: { orderId: order.id } });
+      expect(slotRow.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(slotRow.tokenHash).not.toContain(token);
+      const got = (await delivery(token).expect(200)).body;
+      expect(got).toEqual({
+        orderNumber: order.number,
+        date: israelDate(3),
+        windowFrom: '09:00',
+        windowTo: '13:00',
+        state: 'proposed',
+      });
+    });
+
+    it('confirm: slot CONFIRMED, audit written, a second answer is 409 already_answered', async () => {
+      const order = await scheduledOrder('dl-confirm');
+      const token = await tokenOf(order.id);
+      expect((await answer(token, { answer: 'confirm' }).expect(201)).body.state).toBe('confirmed');
+      expect((await answer(token, { answer: 'change' }).expect(409)).body.code).toBe('already_answered');
+      expect((await delivery(token).expect(200)).body.state).toBe('confirmed');
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row.needsAttention).toBe(false);
+      const audit = await prisma.auditLog.findFirst({
+        where: { action: 'delivery.confirmed', entityId: String(order.number) },
+      });
+      expect(audit?.actorId).toBeNull();
+      const detail = (await owner.get(`/orders/${order.number}`).expect(200)).body as AdminOrderDetail;
+      expect(detail.deliverySlot?.state).toBe('confirmed');
+    });
+
+    it('change request: flags the order with the note, writes audit, no status change', async () => {
+      const order = await scheduledOrder('dl-change');
+      const token = await tokenOf(order.id);
+      const res = await answer(token, { answer: 'change', note: '  רק אחרי הצהריים  ' }).expect(201);
+      expect(res.body.state).toBe('change_requested');
+      const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(row.status).toBe(OrderStatus.DELIVERY_SCHEDULED);
+      expect(row.needsAttention).toBe(true);
+      expect(row.attentionNote).toBe('הלקוח ביקש מועד אספקה אחר — רק אחרי הצהריים');
+      expect(
+        await prisma.auditLog.count({ where: { action: 'delivery.change_requested', entityId: String(order.number) } }),
+      ).toBe(1);
+      const detail = (await owner.get(`/orders/${order.number}`).expect(200)).body as AdminOrderDetail;
+      expect(detail.deliverySlot?.state).toBe('change_requested');
+      expect(detail.needsAttention).toBe(true);
+    });
+
+    it('a change request keeps an earlier attention note and stays within 500 characters', async () => {
+      const order = await scheduledOrder('dl-keep');
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { needsAttention: true, attentionNote: 'החזר נכשל' },
+      });
+      const token = await tokenOf(order.id);
+      await answer(token, { answer: 'change', note: 'ת'.repeat(500) }).expect(201);
+      const note = (await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).attentionNote!;
+      expect(note.startsWith('החזר נכשל · הלקוח ביקש מועד אספקה אחר — ת')).toBe(true);
+      expect(note.length).toBeLessThanOrEqual(500);
+    });
+
+    it('change without a note uses the bare text; a bad answer or a long note is 400', async () => {
+      const order = await scheduledOrder('dl-bare');
+      const token = await tokenOf(order.id);
+      await answer(token, { answer: 'maybe' }).expect(400);
+      await answer(token, { answer: 'change', note: 'x'.repeat(501) }).expect(400);
+      await answer(token, { answer: 'change' }).expect(201);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).attentionNote).toBe(
+        'הלקוח ביקש מועד אספקה אחר',
+      );
+    });
+
+    it('unknown token 404; superseded slot 404; cancelled order 404; POST needs the storefront origin', async () => {
+      await delivery('nope').expect(404);
+      await answer('nope', { answer: 'confirm' }).expect(404);
+      const order = await scheduledOrder('dl-old');
+      const oldToken = await tokenOf(order.id);
+      await http().post(`/api/delivery/${oldToken}`).send({ answer: 'confirm' }).expect(403);
+      await schedule(order.number, israelDate(5));
+      await delivery(oldToken).expect(404);
+      await answer(oldToken, { answer: 'confirm' }).expect(404);
+      await sendJobs();
+      const newToken = await tokenOf(order.id);
+      expect(newToken).not.toBe(oldToken);
+      expect((await delivery(newToken).expect(200)).body.date).toBe(israelDate(5));
+      await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } });
+      await delivery(newToken).expect(404);
+    });
+
+    it('once the order moved past delivery_scheduled: GET 404, an answer 409 slot_closed', async () => {
+      const order = await scheduledOrder('dl-closed');
+      const token = await tokenOf(order.id);
+      await move(owner, order.number, { to: 'shipped' }).expect(201);
+      await delivery(token).expect(404);
+      expect((await answer(token, { answer: 'confirm' }).expect(409)).body.code).toBe('slot_closed');
+      const slotRow = await prisma.deliverySlot.findFirstOrThrow({ where: { orderId: order.id } });
+      expect(slotRow.state).toBe('PROPOSED');
+    });
+
+    it('a job for a slot that is no longer proposed sends nothing', async () => {
+      const order = await makeOrder('dl-skip', OrderStatus.PROCESSING);
+      await schedule(order.number);
+      await prisma.deliverySlot.updateMany({ where: { orderId: order.id }, data: { state: 'CONFIRMED' } });
+      await sendJobs();
+      expect(await smsLogs(order.id)).toHaveLength(0);
+    });
+
+    it('answers are throttled per IP (bucket delivery)', async () => {
+      const throttle = app.get(WriteThrottle);
+      throttle.setLimit('delivery', 2);
+      try {
+        await answer('nope', { answer: 'confirm' }).expect(404);
+        await answer('nope', { answer: 'confirm' }).expect(404);
+        await answer('nope', { answer: 'confirm' }).expect(429);
+      } finally {
+        throttle.setLimit('delivery', 1000);
+      }
+    });
   });
 });

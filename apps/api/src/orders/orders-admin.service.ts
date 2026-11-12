@@ -19,11 +19,13 @@ import {
   OrderActorType,
   OrderShippingMethod,
   OrderStatus,
+  OutboxJobState,
   PaymentStatus,
   RefundStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/payment-provider.js';
+import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-provider.js';
 import { currentSlotView } from './delivery-slot.js';
@@ -120,15 +122,20 @@ const REFUND_VIEW: Record<RefundStatus, AdminRefund['status']> = {
   FAILED: 'failed',
 };
 
-/** The reasons an order needs staff: a stock shortage, a flagged payment, or the order's own flag (a failed refund). */
+/**
+ * The reasons an order needs staff: a stock shortage, a flagged payment, the order's own flag (a failed refund), or a
+ * failed outbox job of the order (`failedJobs`: how many of its jobs are FAILED).
+ */
 export function attentionReasons(order: {
   stockShortage: boolean;
   needsAttention: boolean;
   payments: { rawStatus: string | null }[];
+  failedJobs: number;
 }): OrderAttentionReason[] {
   const reasons = new Set<OrderAttentionReason>();
   if (order.stockShortage) reasons.add('stock_shortage');
   if (order.needsAttention) reasons.add('flagged');
+  if (order.failedJobs > 0) reasons.add('job_failed');
   for (const p of order.payments) {
     const reason = p.rawStatus ? ATTENTION_RAW[p.rawStatus] : undefined;
     if (reason) reasons.add(reason);
@@ -141,8 +148,12 @@ const ATTENTION_WHERE: Prisma.OrderWhereInput = {
     { stockShortage: true },
     { needsAttention: true },
     { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } },
+    { jobs: { some: { state: OutboxJobState.FAILED } } },
   ],
 };
+
+/** Counts the order's FAILED outbox jobs (the job_failed attention reason). */
+const FAILED_JOBS = { _count: { select: { jobs: { where: { state: OutboxJobState.FAILED } } } } } as const;
 
 /** Read-only orders for the admin (spec §5.5, ADM-13); status changes and refunds are Phase 5. */
 @Injectable()
@@ -165,13 +176,17 @@ export class OrdersAdminService {
         orderBy: [{ createdAt: 'desc' }, { number: 'desc' }],
         skip: (page - 1) * ADMIN_ORDERS_PAGE_SIZE,
         take: ADMIN_ORDERS_PAGE_SIZE,
-        include: { items: { select: { quantity: true } }, payments: { select: { rawStatus: true } } },
+        include: {
+          items: { select: { quantity: true } },
+          payments: { select: { rawStatus: true } },
+          ...FAILED_JOBS,
+        },
       }),
     ]);
     return {
       items: rows.map((o) => {
         const contact = o.contact as { fullName: string; phone: string };
-        const reasons = attentionReasons(o);
+        const reasons = attentionReasons({ ...o, failedJobs: o._count.jobs });
         return {
           number: o.number,
           createdAt: o.createdAt.toISOString(),
@@ -201,6 +216,8 @@ export class OrdersAdminService {
         slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
         events: { orderBy: { id: 'asc' } },
         refunds: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+        ...ORDER_INVOICES,
+        ...FAILED_JOBS,
       },
     });
     if (!order) throw orderNotFound();
@@ -213,7 +230,7 @@ export class OrdersAdminService {
       rawStatus: p.rawStatus,
       createdAt: p.createdAt.toISOString(),
     }));
-    const reasons = attentionReasons(order);
+    const reasons = attentionReasons({ ...order, failedJobs: order._count.jobs });
     const refunds: AdminRefund[] = order.refunds.map((r) => ({
       id: r.id,
       amount: r.amount,
@@ -270,6 +287,7 @@ export class OrdersAdminService {
         note: e.note,
         createdAt: e.createdAt.toISOString(),
       })),
+      invoices: invoiceViews(order.invoices),
     };
   }
 

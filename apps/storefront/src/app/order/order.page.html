@@ -140,6 +140,21 @@
               </p>
               <p class="muted small">המחיר כולל מע״מ</p>
             </section>
+
+            @if (o.invoices.length) {
+              <section class="documents" aria-labelledby="order-documents">
+                <h2 id="order-documents">מסמכים</h2>
+                <ul class="document-list">
+                  @for (d of o.invoices; track d.id) {
+                    <li>
+                      <a [href]="documentUrl(d.id)" target="_blank" rel="noopener"
+                        >{{ invoiceLabels[d.type] }} <bdi>{{ d.number }}</bdi></a
+                      >
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
           </div>
         </div>
         <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title" (close)="cancelling.set(false)">

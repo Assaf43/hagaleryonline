@@ -1,0 +1,63 @@
+<h1>הודעות שנשלחו (בדיקה)</h1>
+<p class="page-intro">
+  ההודעות האחרונות שהמערכת "שלחה" דרך ספק הבדיקה, כולל קודי אימות. העמוד קיים רק כל עוד ספקי המייל וה־SMS הם ספקי בדיקה.
+</p>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    @if (!items()) {
+      <button matButton="outlined" type="button" (click)="reload()">נסו שוב</button>
+    }
+  </div>
+}
+
+@if (items(); as list) {
+  <div class="layout">
+    <ul class="messages">
+      @for (m of list; track m.id) {
+        <li>
+          <button
+            type="button"
+            class="message"
+            [class.selected]="selected()?.id === m.id"
+            [attr.aria-current]="selected()?.id === m.id ? 'true' : null"
+            (click)="select(m.id)"
+          >
+            <span class="kind">{{ m.channel === 'email' ? 'מייל' : 'SMS' }}</span>
+            <span class="subject">{{ m.subject ?? m.template }}</span>
+            <span class="meta">
+              <bdi dir="ltr">{{ m.recipientMasked }}</bdi>
+              ·
+              <bdi>{{ m.createdAt | date: 'd.M.yyyy HH:mm:ss' }}</bdi>
+              @if (m.status === 'failed') {
+                · <strong class="failed">נכשלה</strong>
+              }
+            </span>
+          </button>
+        </li>
+      } @empty {
+        <li class="empty">עדיין לא נשלחו הודעות.</li>
+      }
+    </ul>
+
+    @if (selected(); as m) {
+      <section class="detail" aria-label="תוכן ההודעה">
+        <h2>{{ m.subject ?? 'הודעת SMS' }}</h2>
+        <p class="meta">
+          תבנית: <bdi dir="ltr">{{ m.template }}</bdi> · אל: <bdi dir="ltr">{{ m.recipientMasked }}</bdi>
+          @if (m.orderNumber !== null) {
+            · הזמנה <bdi>{{ m.orderNumber }}</bdi>
+          }
+        </p>
+        @if (emailDoc(); as doc) {
+          <iframe class="email" sandbox="" title="תוכן המייל" [srcdoc]="doc"></iframe>
+        } @else {
+          <pre class="sms">{{ m.body }}</pre>
+        }
+      </section>
+    }
+  </div>
+} @else if (!error()) {
+  <p class="page-intro" role="status">טוען…</p>
+}

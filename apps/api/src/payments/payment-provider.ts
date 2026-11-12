@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http';
+import { selectProvider } from '../providers/select-provider.js';
 
 /** What a provider needs to open a payment page for an order (never card data, NFR-10). */
 export interface OrderSummary {
@@ -75,19 +76,10 @@ export class WebhookPayloadError extends Error {
   }
 }
 
-/**
- * The adapter named by `code` (required: empty stops the API at startup). Adapters are built lazily, so one that refuses to load (the
- * sandbox in production) only stops the API when it is the one selected; an unknown code fails at startup.
- */
+/** The adapter named by `PAYMENT_PROVIDER` (required, no default); see `selectProvider`. */
 export function selectPaymentProvider(
   code: string | undefined,
   factories: Record<string, () => PaymentProvider>,
 ): PaymentProvider {
-  // No default: a box that forgot the variable must not quietly take payments in the sandbox (free orders).
-  const wanted = code?.trim();
-  if (!wanted) throw new Error(`PAYMENT_PROVIDER is not set. Expected one of: ${Object.keys(factories).join(', ')}.`);
-  const factory = Object.hasOwn(factories, wanted) ? factories[wanted] : undefined;
-  if (!factory)
-    throw new Error(`Unknown PAYMENT_PROVIDER "${wanted}". Expected one of: ${Object.keys(factories).join(', ')}.`);
-  return factory();
+  return selectProvider('PAYMENT_PROVIDER', code, factories);
 }

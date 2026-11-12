@@ -1,0 +1,102 @@
+<h1>חשבוניות</h1>
+<p class="page-intro">חשבוניות המס והזיכויים שהופקו בחודש, לפי שעון ישראל.</p>
+
+<div class="toolbar">
+  <div class="month-nav" role="group" aria-label="בחירת חודש">
+    <button matButton="outlined" type="button" (click)="shift(-1)">החודש הקודם</button>
+    <label class="month-field">
+      <span class="visually-hidden">חודש</span>
+      <input type="month" [value]="month()" (change)="pick($event)" />
+    </label>
+    <button matButton="outlined" type="button" (click)="shift(1)">החודש הבא</button>
+  </div>
+  <button matButton="filled" type="button" [disabled]="exporting() || loading()" (click)="export()">
+    ייצוא לרואה החשבון
+  </button>
+</div>
+
+<h2 class="month-title" aria-live="polite">{{ monthLabel(month()) }}</h2>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    <button matButton="outlined" type="button" (click)="reload()">נסו שוב</button>
+  </div>
+}
+
+@if (data(); as d) {
+  <div class="table-wrap" [attr.aria-busy]="loading()">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">סוג</th>
+          <th scope="col">מספר</th>
+          <th scope="col">הזמנה</th>
+          <th scope="col">תאריך</th>
+          <th scope="col" class="num">סכום</th>
+          <th scope="col" class="num">מע"מ</th>
+          <th scope="col">מסמך</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (i of d.items; track i.id) {
+          <tr [class.credit]="i.type === 'credit_note'">
+            <td>{{ labels[i.type] }}</td>
+            <td>
+              <bdi>{{ i.number }}</bdi>
+            </td>
+            <td>
+              <a [routerLink]="['/orders', i.orderNumber]"
+                ><bdi>{{ i.orderNumber }}</bdi></a
+              >
+            </td>
+            <td>
+              <bdi>{{ israelDay(i.issuedAt) }}</bdi>
+            </td>
+            <td class="num">
+              <bdi>{{ formatPrice(i.amount) }}</bdi>
+            </td>
+            <td class="num">
+              <bdi>{{ formatPrice(i.vatAmount) }}</bdi>
+            </td>
+            <td>
+              <a [href]="documentUrl(i.id)" target="_blank" rel="noopener"
+                >פתיחה<span class="visually-hidden"> של {{ labels[i.type] }} {{ i.number }}</span></a
+              >
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td class="empty" colspan="7">אין מסמכים בחודש הזה.</td>
+          </tr>
+        }
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row" colspan="4">מכירות</th>
+          <td class="num" colspan="3">
+            <bdi>{{ formatPrice(d.totals.sales) }}</bdi>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" colspan="4">זיכויים</th>
+          <td class="num" colspan="3">
+            <bdi>{{ formatPrice(d.totals.credits) }}</bdi>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" colspan="4">נטו</th>
+          <td class="num" colspan="3">
+            <bdi>{{ formatPrice(d.totals.net) }}</bdi>
+          </td>
+        </tr>
+        <tr>
+          <th scope="row" colspan="4">מע"מ</th>
+          <td class="num" colspan="3">
+            <bdi>{{ formatPrice(d.totals.vat) }}</bdi>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+}

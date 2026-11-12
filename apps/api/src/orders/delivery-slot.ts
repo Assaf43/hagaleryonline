@@ -13,6 +13,9 @@ const SLOT_STATE_VIEW: Record<DeliverySlotState, DeliverySlotView['state']> = {
   SUPERSEDED: 'superseded',
 };
 
+/** The slot state as the API shows it. */
+export const slotStateView = (state: DeliverySlotState): DeliverySlotView['state'] => SLOT_STATE_VIEW[state];
+
 /** Today's calendar date in Israel, YYYY-MM-DD (spec §4.1: slot dates are Israel-time dates). */
 export function israelToday(now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(now);

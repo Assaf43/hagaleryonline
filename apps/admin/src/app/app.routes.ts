@@ -94,10 +94,34 @@ export const routes: Routes = [
         title: 'הזמנה',
       },
       {
+        path: 'invoices',
+        canMatch: [hasPermission('invoices.export')],
+        loadComponent: () => import('./invoices/invoices.page').then((m) => m.InvoicesPage),
+        title: 'חשבוניות',
+      },
+      {
+        path: 'settings/vat',
+        canMatch: [superAdminOnly],
+        loadComponent: () => import('./settings/vat.page').then((m) => m.VatPage),
+        title: 'מע"מ',
+      },
+      {
         path: 'settings/providers',
         canMatch: [hasPermission('orders.manage')],
         loadComponent: () => import('./settings/providers.page').then((m) => m.ProvidersPage),
         title: 'ספקים',
+      },
+      {
+        path: 'settings/failed-jobs',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/failed-jobs.page').then((m) => m.FailedJobsPage),
+        title: 'משימות שנכשלו',
+      },
+      {
+        path: 'settings/sent-messages',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/sent-messages.page').then((m) => m.SentMessagesPage),
+        title: 'הודעות שנשלחו (בדיקה)',
       },
       {
         path: 'audit',

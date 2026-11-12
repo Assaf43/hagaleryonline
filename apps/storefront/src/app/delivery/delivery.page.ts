@@ -1,0 +1,152 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  PLATFORM_ID,
+  afterNextRender,
+  Injector,
+  viewChild,
+  type ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  untracked,
+} from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
+import type { DeliveryLinkView } from '@hg/models';
+import { PageMeta } from '../core/page-meta';
+import { DeliveryApi } from './delivery.api';
+
+/**
+ * Delivery date confirmation `/delivery/:token` (spec §5.3, SHP-04). The token in the URL is the only key, so the
+ * slot is read only in the browser (the server renders a shell and the token never reaches the HTML cache). The
+ * customer confirms the date or asks for another one, with an optional note; a slot answers once.
+ */
+@Component({
+  selector: 'hg-delivery-page',
+  imports: [RouterLink],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  templateUrl: './delivery.page.html',
+  styleUrl: './delivery.page.scss',
+})
+export class DeliveryPage {
+  readonly token = input.required<string>();
+
+  private readonly api = inject(DeliveryApi);
+  private readonly meta = inject(PageMeta);
+  private readonly injector = inject(Injector);
+  private readonly noteBox = viewChild<ElementRef<HTMLTextAreaElement>>('noteBox');
+  private readonly askButton = viewChild<ElementRef<HTMLButtonElement>>('askButton');
+  private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
+
+  protected readonly slot = signal<DeliveryLinkView | null>(null);
+  protected readonly state = signal<'loading' | 'ready' | 'invalid' | 'error'>('loading');
+  protected readonly sending = signal(false);
+  protected readonly sendError = signal('');
+  protected readonly note = signal('');
+  /** The second step of "מבקש/ת מועד אחר": the note and its send button. */
+  protected readonly asking = signal(false);
+  /** The one live region's text: loading, the result of the answer, or an error. */
+  protected readonly liveText = computed(() => {
+    if (this.sendError()) return this.sendError();
+    switch (this.state()) {
+      case 'loading':
+        return 'טוען…';
+      case 'error':
+        return 'לא הצלחנו לטעון את הפרטים.';
+      case 'ready': {
+        const s = this.slot()?.state;
+        if (s === 'confirmed') return 'תודה, המועד אושר';
+        if (s === 'change_requested') return 'קיבלנו, ניצור קשר לתיאום מועד אחר';
+        return '';
+      }
+      default:
+        return '';
+    }
+  });
+  /** "9.12.2026" from the Israel calendar date as given (no timezone shift). */
+  protected readonly date = computed(() => {
+    const d = this.slot()?.date;
+    const m = d ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(d) : null;
+    return m ? `${Number(m[3])}.${Number(m[2])}.${m[1]}` : (d ?? '');
+  });
+  /** Bumped on every load, so an older answer is dropped. */
+  private generation = 0;
+
+  constructor() {
+    effect(() => {
+      const token = this.token();
+      untracked(() => {
+        this.meta.set({
+          title: 'אישור מועד אספקה',
+          description: 'אישור מועד האספקה של ההזמנה',
+          path: '/delivery',
+          noindex: true,
+        });
+        if (this.browser) void this.load(token);
+      });
+    });
+  }
+
+  protected readonly isError = computed(() => !!this.sendError() || this.state() === 'error');
+
+  /** The buttons are swapped for the note step, so focus is moved by hand to keep the user's place. */
+  protected startAsking(): void {
+    this.asking.set(true);
+    afterNextRender(() => this.noteBox()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  protected stopAsking(): void {
+    this.asking.set(false);
+    this.sendError.set('');
+    afterNextRender(() => this.askButton()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  protected reload(): void {
+    void this.load(this.token());
+  }
+
+  private async load(token: string): Promise<void> {
+    const generation = ++this.generation;
+    this.state.set('loading');
+    this.sendError.set('');
+    try {
+      const view = await this.api.view(token);
+      if (generation !== this.generation) return;
+      this.slot.set(view);
+      this.state.set('ready');
+    } catch (error) {
+      if (generation !== this.generation) return;
+      this.state.set(error instanceof HttpErrorResponse && error.status === 404 ? 'invalid' : 'error');
+    }
+  }
+
+  protected setNote(event: Event): void {
+    this.note.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  protected async respond(answer: 'confirm' | 'change'): Promise<void> {
+    if (this.sending()) return;
+    this.sending.set(true);
+    this.sendError.set('');
+    const note = this.note().trim();
+    try {
+      const view = await this.api.answer(this.token(), {
+        answer,
+        ...(answer === 'change' && note ? { note } : {}),
+      });
+      this.slot.set(view);
+    } catch (error) {
+      // 404, or 409 slot_closed (the order moved past delivery scheduling): the link no longer works.
+      const closed = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === 'slot_closed';
+      if (closed || (error instanceof HttpErrorResponse && error.status === 404)) this.state.set('invalid');
+      else if (error instanceof HttpErrorResponse && error.status === 409) await this.load(this.token());
+      else this.sendError.set('לא הצלחנו לשלוח את התשובה. אפשר לנסות שוב.');
+    } finally {
+      this.sending.set(false);
+    }
+  }
+}
