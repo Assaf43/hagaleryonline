@@ -18,6 +18,7 @@ import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
 import { CancelDialog, type CancelDialogData } from './cancel-dialog';
+import { ConfirmDialog, type ConfirmDialogData } from './confirm-dialog';
 import { RefundDialog, type RefundDialogData } from './refund-dialog';
 import { SlotDialog, type SlotDialogData } from './slot-dialog';
 import { StatusTimeline } from './status-timeline';
@@ -86,9 +87,26 @@ export class OrderDetailPage {
     });
   }
 
+  /**
+   * Moving to `delivered` (final) or more than one step at once (`nextStatuses` is in flow order, so any target but
+   * the first skips a step) asks first; ordinary one-step moves stay one click.
+   */
   protected advance(o: AdminOrderDetail, to: OrderStatus) {
-    if (to === 'delivery_scheduled') this.openSlot(o);
-    else void this.run(() => this.api.advance(o.number, { to }));
+    const go = () => {
+      if (to === 'delivery_scheduled') this.openSlot(o);
+      else void this.run(() => this.api.advance(o.number, { to }));
+    };
+    if (to !== 'delivered' && o.nextStatuses.indexOf(to) <= 0) return go();
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data: { message: `לסמן את ההזמנה כ${this.statusLabels[to]}? אי אפשר לחזור אחורה.` },
+        width: '28rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((yes) => {
+        if (yes === true) go();
+      });
   }
 
   protected openSlot(o: AdminOrderDetail) {
@@ -120,7 +138,10 @@ export class OrderDetailPage {
       });
   }
 
-  /** An action answers with the fresh order; a refusal is shown above the actions and the order stays as it was. */
+  /**
+   * An action answers with the fresh order; a refusal is shown above the actions. A 409 `invalid_transition` means
+   * the order changed meanwhile (another tab, another admin): it is reloaded so the buttons match its real status.
+   */
   private async run(action: () => Promise<AdminOrderDetail>) {
     if (this.acting()) return;
     this.acting.set(true);
@@ -129,8 +150,21 @@ export class OrderDetailPage {
       this.order.set(await action());
     } catch (e) {
       this.actionError.set(errorMessage(e));
+      const { status, error } = e as { status?: number; error?: { code?: string } };
+      if (status === 409 && error?.code === 'invalid_transition') await this.refresh();
     } finally {
       this.acting.set(false);
+    }
+  }
+
+  /** Reloads the shown order in place (the page keeps its content while it loads). */
+  private async refresh() {
+    const seq = ++this.requestSeq;
+    try {
+      const order = await this.api.detail(this.number());
+      if (seq === this.requestSeq) this.order.set(order);
+    } catch {
+      // The refusal is already shown; the order stays as it was.
     }
   }
 

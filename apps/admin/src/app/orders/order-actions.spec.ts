@@ -8,6 +8,7 @@ import type { AdminMe, AdminOrderDetail, AdminRefund, Permission } from '@hg/mod
 import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
 import { CancelDialog } from './cancel-dialog';
+import { ConfirmDialog } from './confirm-dialog';
 import { OrderDetailPage } from './order-detail.page';
 import { RefundDialog } from './refund-dialog';
 import { parseShekels } from './shekels';
@@ -370,13 +371,66 @@ describe('order detail actions', () => {
     expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['קדם לבמשלוח']);
 
     TestBed.resetTestingModule();
-    const second = await mount(['orders.manage']);
+    const second = await mount(['orders.manage'], {
+      status: 'processing',
+      nextStatuses: ['delivery_scheduled', 'shipped', 'delivered'],
+    });
     const open = vi
       .spyOn(TestBed.inject(MatDialog), 'open')
       .mockReturnValue({ afterClosed: () => of(undefined) } as never);
-    buttons(second, 'button.advance')[1].click();
+    buttons(second, 'button.advance')[0].click();
     expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe(SlotDialog);
     expect(open.mock.calls[0][1]?.data).toMatchObject({ number: 100002 });
+  });
+
+  it('asks before delivered and before skipping steps; nothing is sent on "ביטול"', async () => {
+    const fixture = await mount(['orders.manage']);
+    const answer = { value: false };
+    const open = vi
+      .spyOn(TestBed.inject(MatDialog), 'open')
+      .mockImplementation(() => ({ afterClosed: () => of(answer.value) }) as never);
+
+    buttons(fixture, 'button.advance')[3].click(); // delivered
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe(ConfirmDialog);
+    expect(open.mock.calls[0][1]?.data).toEqual({ message: 'לסמן את ההזמנה כסופקה? אי אפשר לחזור אחורה.' });
+    http.expectNone('/api/admin/orders/100002/status');
+
+    buttons(fixture, 'button.advance')[2].click(); // shipped: skips two steps
+    expect(open.mock.calls[1][1]?.data).toEqual({ message: 'לסמן את ההזמנה כבמשלוח? אי אפשר לחזור אחורה.' });
+    http.expectNone('/api/admin/orders/100002/status');
+
+    answer.value = true;
+    buttons(fixture, 'button.advance')[3].click();
+    const req = http.expectOne('/api/admin/orders/100002/status');
+    expect(req.request.body).toEqual({ to: 'delivered' });
+    req.flush({ ...DETAIL, status: 'delivered', nextStatuses: [], canCancel: false });
+    await settle(fixture);
+    expect(buttons(fixture, 'button.advance')).toHaveLength(0);
+  });
+
+  it('skipping to delivery_scheduled asks first, then opens the slot form', async () => {
+    const fixture = await mount(['orders.manage']);
+    const open = vi
+      .spyOn(TestBed.inject(MatDialog), 'open')
+      .mockImplementation(() => ({ afterClosed: () => of(open.mock.calls.length === 1 ? true : undefined) }) as never);
+    buttons(fixture, 'button.advance')[1].click(); // paid → delivery_scheduled skips processing
+    expect(open.mock.calls.map((c) => c[0])).toEqual([ConfirmDialog, SlotDialog]);
+  });
+
+  it('after 409 invalid_transition the order is reloaded so the buttons match its real status', async () => {
+    const fixture = await mount(['orders.manage']);
+    buttons(fixture, 'button.advance')[0].click(); // processing: one step, no question
+    http
+      .expectOne('/api/admin/orders/100002/status')
+      .flush({ code: 'invalid_transition' }, { status: 409, statusText: 'Conflict' });
+    await settle(fixture);
+    http.expectOne('/api/admin/orders/100002').flush({ ...DETAIL, status: 'shipped', nextStatuses: ['delivered'] });
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[role=alert]')?.textContent).toContain('אי אפשר לעבור לסטטוס הזה');
+    expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['קדם לסופקה']);
   });
 
   it('cancel and refund buttons need orders.cancel; refund also needs a refundable amount', async () => {
