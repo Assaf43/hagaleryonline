@@ -7,6 +7,7 @@ import { MatDialog } from '@angular/material/dialog';
 import {
   DELIVERY_SLOT_STATE_LABELS_HE,
   FULFILLMENT_LABELS_HE,
+  INVOICE_TYPE_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
   ORDER_STATUS_LABELS_HE,
   SHIPPING_METHOD_LABELS_HE,
@@ -77,6 +78,10 @@ export class OrderDetailPage {
   protected readonly actionError = signal('');
   protected readonly canManage = computed(() => this.auth.can('orders.manage'));
   protected readonly canCancel = computed(() => this.auth.can('orders.cancel'));
+  /** Opening a tax document needs `invoices.export` (the API's rule); without it the documents are listed as text. */
+  protected readonly canExport = computed(() => this.auth.can('invoices.export'));
+  protected readonly invoiceLabels = INVOICE_TYPE_LABELS_HE;
+  protected readonly documentUrl = (id: string) => `/api/admin/invoices/${encodeURIComponent(id)}/document`;
   protected readonly currentAdmin = computed(() => {
     const me = this.auth.me();
     return me ? { id: me.id, name: me.name } : null;

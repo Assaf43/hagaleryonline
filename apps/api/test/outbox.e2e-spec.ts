@@ -170,8 +170,8 @@ describe('Outbox (e2e, decision 83)', () => {
       seen.push({ payload, job });
     });
     await enqueue('email.status', 'zz:ok');
-    // No handler is registered for credit notes in this task: later tasks add it, the job must wait for them.
-    await enqueue('invoice.credit_note', 'zz:no-handler');
+    // A type without a handler (every real type has one now): the job must wait for its handler.
+    await prisma.outboxJob.create({ data: { type: 'zz.no_handler', dedupeKey: 'zz:no-handler', payload: {} } });
 
     expect(await outbox.runDue()).toBe(1);
     expect(seen).toHaveLength(1);

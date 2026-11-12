@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { StorageProvider } from './storage.js';
 
@@ -23,6 +23,15 @@ export class LocalDiskStorage extends StorageProvider {
     const path = this.path(key, visibility);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, data);
+  }
+
+  async read(key: string, visibility: 'public' | 'private'): Promise<Buffer | null> {
+    try {
+      return await readFile(this.path(key, visibility));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
   }
 
   async remove(keys: { key: string; visibility: 'public' | 'private' }[]): Promise<void> {

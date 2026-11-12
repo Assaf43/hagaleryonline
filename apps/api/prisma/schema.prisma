@@ -633,6 +633,7 @@ model Order {
   slots         DeliverySlot[]
   jobs          OutboxJob[]
   notifications NotificationLog[]
+  invoices      Invoice[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -699,8 +700,9 @@ model Refund {
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  creditNote Invoice?
 
   @@index([orderId])
   @@index([paymentId])
@@ -891,4 +893,70 @@ model NotificationLog {
   @@index([createdAt])
   @@index([orderId])
   @@map("notification_log")
+}
+
+// ---------- Invoices (Phase 5b, spec §3, §5.4, CHK-08, decision 81) ----------
+
+enum InvoiceType {
+  TAX_INVOICE_RECEIPT @map("tax_invoice_receipt")
+  CREDIT_NOTE         @map("credit_note")
+
+  @@map("invoice_type")
+}
+
+/// A tax document issued through the InvoiceProvider by an outbox job: a tax invoice / receipt when an order is paid,
+/// a credit note per succeeded refund. `idempotencyKey` is the job's dedupe key (unique), so a repeated job never
+/// issues twice. Amounts in agorot; the VAT is computed once at issue time and never recomputed. CHECKs (migration
+/// invoices): amount > 0, vat_amount >= 0, a refund exactly for credit notes, one tax invoice per order.
+model Invoice {
+  id             String      @id @default(uuid()) @db.Uuid
+  orderId        String      @map("order_id") @db.Uuid
+  type           InvoiceType
+  /// Credit notes only: the refund it credits.
+  refundId       String?     @unique @map("refund_id") @db.Uuid
+  /// Code of the provider that issued it.
+  provider       String
+  /// The provider's document number.
+  number         String
+  /// The provider's own link to the document, when it hosts it.
+  documentUrl    String?     @map("document_url")
+  /// Key of the document in the private storage area (`invoices/<number>.html`), when we keep the file.
+  fileKey        String?     @map("file_key")
+  /// Agorot, VAT included (the order total, or the refund amount).
+  amount         Int
+  vatAmount      Int         @map("vat_amount")
+  vatRate        Decimal     @map("vat_rate") @db.Decimal(5, 4)
+  issuedAt       DateTime    @map("issued_at")
+  idempotencyKey String      @unique @map("idempotency_key")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  order  Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refund Refund? @relation(fields: [refundId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, number])
+  @@index([orderId])
+  @@index([issuedAt])
+  @@map("invoices")
+}
+
+/// The Israeli VAT rate from a date on (spec §3, §5.4). An invoice takes the latest rate whose `effectiveFrom` is on or
+/// before its Israel issue date. Seeded by migration invoices with 18% from 2025-01-01.
+model VatRate {
+  id            Int      @id @default(autoincrement())
+  rate          Decimal  @db.Decimal(5, 4)
+  effectiveFrom DateTime @unique @map("effective_from") @db.Date
+
+  @@map("vat_rates")
+}
+
+/// The `mock` invoice adapter's own record (development and tests): the number and date it gave each idempotency
+/// key, so the same key always gets the same document, as a real provider would. Numbers come from the sequences
+/// `mock_invoice_seq` / `mock_credit_note_seq` (migration invoices).
+model MockInvoiceDocument {
+  idempotencyKey String      @id @map("idempotency_key")
+  type           InvoiceType
+  number         String      @unique
+  issuedAt       DateTime    @default(now()) @map("issued_at")
+
+  @@map("mock_invoice_documents")
 }

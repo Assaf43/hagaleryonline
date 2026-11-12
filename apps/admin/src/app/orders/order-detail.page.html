@@ -187,6 +187,26 @@
       </ul>
     </section>
 
+    <section class="panel documents" aria-labelledby="documents-title">
+      <h2 id="documents-title">מסמכים</h2>
+      <ul class="document-list">
+        @for (d of o.invoices; track d.id) {
+          <li>
+            @if (canExport()) {
+              <a [href]="documentUrl(d.id)" target="_blank" rel="noopener"
+                >{{ invoiceLabels[d.type] }} <bdi>{{ d.number }}</bdi></a
+              >
+            } @else {
+              {{ invoiceLabels[d.type] }} <bdi>{{ d.number }}</bdi>
+            }
+            <span class="muted"> · {{ d.issuedAt | date: 'd.M.yyyy' }}</span>
+          </li>
+        } @empty {
+          <li class="muted">אין מסמכים עדיין.</li>
+        }
+      </ul>
+    </section>
+
     <section class="panel" aria-labelledby="timeline-title">
       <h2 id="timeline-title">היסטוריה</h2>
       <hga-status-timeline

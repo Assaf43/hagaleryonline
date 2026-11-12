@@ -7,6 +7,8 @@
  */
 export abstract class StorageProvider {
   abstract put(key: string, data: Buffer, visibility: 'public' | 'private'): Promise<void>;
+  /** The file's content, or null when there is no such file (e.g. a private invoice document). */
+  abstract read(key: string, visibility: 'public' | 'private'): Promise<Buffer | null>;
   /** Deletes the files; missing files are ignored. */
   abstract remove(keys: { key: string; visibility: 'public' | 'private' }[]): Promise<void>;
   /** URL the site uses for a public file. */

@@ -2,7 +2,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { ORDER_STATUS_LABELS_HE, type AdminOrderDetail, type AdminOrderPage, type ProvidersStatus } from '@hg/models';
+import {
+  ORDER_STATUS_LABELS_HE,
+  type AdminOrderDetail,
+  type AdminOrderPage,
+  type Permission,
+  type ProvidersStatus,
+} from '@hg/models';
+import { AuthService } from '../core/auth.service';
 import { ProvidersPage } from '../settings/providers.page';
 import { OrderDetailPage } from './order-detail.page';
 import { OrdersPage } from './orders.page';
@@ -82,6 +89,7 @@ const DETAIL: AdminOrderDetail = {
   canCancel: true,
   nextStatuses: [],
   statusEvents: [],
+  invoices: [],
   needsAttention: true,
   attentionReasons: ['stock_shortage', 'amount_mismatch'],
   paymentProvider: 'sandbox',
@@ -317,6 +325,63 @@ describe('admin orders screens', () => {
     expect(el.querySelector('[role=status]')).toBeNull();
     expect(el.querySelector('.payment')?.textContent).toContain('תשלום אחד');
     expect(el.querySelector('.payment')?.textContent).toContain('ok-123');
+  });
+
+  describe('documents (CHK-08)', () => {
+    const INVOICES: AdminOrderDetail['invoices'] = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        type: 'tax_invoice_receipt',
+        number: 'MOCK-INV-000042',
+        issuedAt: '2026-11-09T10:05:00.000Z',
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        type: 'credit_note',
+        number: 'MOCK-CN-000007',
+        issuedAt: '2026-11-10T09:00:00.000Z',
+      },
+    ];
+    const mount = async (permissions: Permission[], invoices = INVOICES) => {
+      vi.spyOn(TestBed.inject(AuthService), 'can').mockImplementation((p) => permissions.includes(p));
+      const fixture = TestBed.createComponent(OrderDetailPage);
+      fixture.componentRef.setInput('number', '100002');
+      fixture.detectChanges();
+      http.expectOne('/api/admin/orders/100002').flush({ ...DETAIL, invoices });
+      await settle(fixture);
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('lists the documents with links to the admin document endpoint (invoices.export)', async () => {
+      const el = await mount(['orders.view', 'invoices.export']);
+      const section = el.querySelector('.documents')!;
+      expect(section.querySelector('h2')?.textContent?.trim()).toBe('מסמכים');
+      const links = [...section.querySelectorAll<HTMLAnchorElement>('a')];
+      expect(links.map((a) => a.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+        'חשבונית מס/קבלה MOCK-INV-000042',
+        'חשבונית זיכוי MOCK-CN-000007',
+      ]);
+      expect(links[0].getAttribute('href')).toBe('/api/admin/invoices/11111111-1111-4111-8111-111111111111/document');
+      expect(links[1].getAttribute('href')).toBe('/api/admin/invoices/22222222-2222-4222-8222-222222222222/document');
+      for (const a of links) {
+        expect(a.getAttribute('target')).toBe('_blank');
+        expect(a.getAttribute('rel')).toBe('noopener');
+        expect(a.querySelector('bdi')?.textContent).toMatch(/^MOCK-/);
+      }
+      expect(section.textContent).toContain('9.11.2026');
+    });
+
+    it('without invoices.export shows the documents as text, without links', async () => {
+      const el = await mount(['orders.view']);
+      const section = el.querySelector('.documents')!;
+      expect(section.querySelectorAll('a')).toHaveLength(0);
+      expect(section.textContent).toContain('MOCK-INV-000042');
+    });
+
+    it('says when there are no documents yet', async () => {
+      const el = await mount(['orders.view', 'invoices.export'], []);
+      expect(el.querySelector('.documents')?.textContent).toContain('אין מסמכים');
+    });
   });
 
   it('providers page shows the test-mode badge only in test mode', async () => {

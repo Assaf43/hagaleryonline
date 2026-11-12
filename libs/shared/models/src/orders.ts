@@ -219,8 +219,35 @@ export interface DeliveryAnswerRequest {
   note?: string;
 }
 
+// ---------- Invoices (Phase 5b, spec §5.4, CHK-08, decision 81) ----------
+
+/** A tax invoice / receipt when the order is paid; a credit note for each succeeded refund. */
+export type InvoiceType = 'tax_invoice_receipt' | 'credit_note';
+
+/** How the storefront and the admin name each document (followed by its number). */
+export const INVOICE_TYPE_LABELS_HE: Record<InvoiceType, string> = {
+  tax_invoice_receipt: 'חשבונית מס/קבלה',
+  credit_note: 'חשבונית זיכוי',
+};
+
+/**
+ * One issued document of an order, oldest first. The customer opens it at
+ * `GET /api/orders/:number/invoices/:id?t=<order token>`, staff at `GET /api/admin/invoices/:id/document`
+ * (`invoices.export`).
+ */
+export interface OrderInvoiceView {
+  id: string;
+  type: InvoiceType;
+  /** The provider's document number, e.g. `MOCK-INV-000042`. */
+  number: string;
+  /** ISO time. */
+  issuedAt: string;
+}
+
 /** GET /api/orders/:number?t=<token> — the confirmation page. */
 export interface OrderView {
+  /** The order's tax invoice and credit notes, oldest first (empty until the first one is issued). */
+  invoices: OrderInvoiceView[];
   number: number;
   status: OrderStatus;
   /** Hebrew label of `status` (ORDER_STATUS_LABELS_HE). */
@@ -397,6 +424,8 @@ export interface AdminOrderDetail {
   nextStatuses: OrderStatus[];
   /** Status changes, oldest first. */
   statusEvents: AdminOrderStatusEvent[];
+  /** The order's tax invoice and credit notes, oldest first. */
+  invoices: OrderInvoiceView[];
 }
 
 export type RefundStatus = 'pending' | 'succeeded' | 'failed';

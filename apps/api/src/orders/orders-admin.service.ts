@@ -25,6 +25,7 @@ import {
   type Prisma,
 } from '../generated/prisma/client.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/payment-provider.js';
+import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-provider.js';
 import { currentSlotView } from './delivery-slot.js';
@@ -215,6 +216,7 @@ export class OrdersAdminService {
         slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
         events: { orderBy: { id: 'asc' } },
         refunds: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+        ...ORDER_INVOICES,
         ...FAILED_JOBS,
       },
     });
@@ -285,6 +287,7 @@ export class OrdersAdminService {
         note: e.note,
         createdAt: e.createdAt.toISOString(),
       })),
+      invoices: invoiceViews(order.invoices),
     };
   }
 

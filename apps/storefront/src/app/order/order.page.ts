@@ -16,7 +16,7 @@ import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
-import type { OrderStatus, OrderView } from '@hg/models';
+import { INVOICE_TYPE_LABELS_HE, type OrderStatus, type OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
@@ -113,7 +113,14 @@ export class OrderPage {
     return e ? deliveryEstimateText(e.leadTimeDays) : '';
   });
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
+  protected readonly invoiceLabels = INVOICE_TYPE_LABELS_HE;
   protected readonly price = formatPrice;
+
+  /** The document opens through the API with the order token, like the page itself (spec §5.4). */
+  protected documentUrl(id: string): string {
+    const number = encodeURIComponent(this.number());
+    return `/api/orders/${number}/invoices/${encodeURIComponent(id)}?t=${encodeURIComponent(this.t() ?? '')}`;
+  }
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pollStart = 0;

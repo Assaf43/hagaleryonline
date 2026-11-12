@@ -52,6 +52,7 @@ function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
     canCancel: status === 'pending_payment',
     refundedTotal: 0,
     deliverySlot: null,
+    invoices: [],
     ...extra,
   };
 }
@@ -442,5 +443,76 @@ describe('OrderPage', () => {
   it('says the order was not found for a wrong token', async () => {
     await setup(404);
     expect(el().querySelector('h1')?.textContent).toContain('ההזמנה לא נמצאה');
+  });
+
+  describe('documents (CHK-08)', () => {
+    const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+    const NOTE_ID = '22222222-2222-4222-8222-222222222222';
+
+    it('lists the invoice and the credit notes, each opening the document with the token in a new tab', async () => {
+      await setup(
+        order('cancelled', {
+          refundedTotal: 20000,
+          invoices: [
+            {
+              id: INVOICE_ID,
+              type: 'tax_invoice_receipt',
+              number: 'MOCK-INV-000042',
+              issuedAt: '2026-11-10T10:05:00.000Z',
+            },
+            { id: NOTE_ID, type: 'credit_note', number: 'MOCK-CN-000007', issuedAt: '2026-11-11T09:00:00.000Z' },
+          ],
+        }),
+      );
+      const section = el().querySelector('section.documents')!;
+      expect(section.querySelector('h2')?.textContent?.trim()).toBe('מסמכים');
+      const links = [...section.querySelectorAll<HTMLAnchorElement>('a')];
+      expect(links.map((a) => a.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+        'חשבונית מס/קבלה MOCK-INV-000042',
+        'חשבונית זיכוי MOCK-CN-000007',
+      ]);
+      expect(links[0].getAttribute('href')).toBe(`/api/orders/100001/invoices/${INVOICE_ID}?t=tok`);
+      expect(links[1].getAttribute('href')).toBe(`/api/orders/100001/invoices/${NOTE_ID}?t=tok`);
+      for (const a of links) {
+        expect(a.getAttribute('target')).toBe('_blank');
+        expect(a.getAttribute('rel')).toBe('noopener');
+        expect(a.querySelector('bdi')?.textContent).toMatch(/^MOCK-/);
+      }
+    });
+
+    it('encodes the token in the document link', async () => {
+      vi.useFakeTimers();
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      });
+      http = TestBed.inject(HttpTestingController);
+      fixture = TestBed.createComponent(OrderPage);
+      fixture.componentRef.setInput('number', '100001');
+      fixture.componentRef.setInput('t', 'a b&c');
+      fixture.detectChanges();
+      http
+        .expectOne((r) => r.url === URL)
+        .flush(
+          order('paid', {
+            invoices: [
+              {
+                id: INVOICE_ID,
+                type: 'tax_invoice_receipt',
+                number: 'MOCK-INV-000042',
+                issuedAt: '2026-11-10T10:05:00.000Z',
+              },
+            ],
+          }),
+        );
+      await render();
+      expect(el().querySelector('section.documents a')?.getAttribute('href')).toBe(
+        `/api/orders/100001/invoices/${INVOICE_ID}?t=a%20b%26c`,
+      );
+    });
+
+    it('has no documents section before any document is issued', async () => {
+      await setup(order('paid'));
+      expect(el().querySelector('section.documents')).toBeNull();
+    });
   });
 });

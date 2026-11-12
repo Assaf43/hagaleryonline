@@ -50,6 +50,7 @@ const DETAIL: AdminOrderDetail = {
   canCancel: true,
   nextStatuses: ['processing', 'delivery_scheduled', 'shipped', 'delivered'],
   statusEvents: [],
+  invoices: [],
   needsAttention: false,
   attentionReasons: [],
   paymentProvider: 'sandbox',

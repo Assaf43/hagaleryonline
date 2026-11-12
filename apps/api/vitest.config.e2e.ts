@@ -42,6 +42,8 @@ export default defineConfig({
       EMAIL_PROVIDER: 'mock',
       SMS_PROVIDER: 'mock',
       EMAIL_FROM: 'NESTO <no-reply@example.test>',
+      // Invoices (Phase 5b): the mock numbers documents MOCK-INV-… / MOCK-CN-… and keeps them under MEDIA_DIR/private.
+      INVOICE_PROVIDER: 'mock',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
       // Outbox (Phase 5b): no background worker; the tests call OutboxService.runDue() themselves.
       OUTBOX_WORKER: 'off',
