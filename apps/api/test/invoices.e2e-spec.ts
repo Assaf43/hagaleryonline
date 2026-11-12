@@ -15,10 +15,12 @@ import {
   PaymentStatus,
 } from './../src/generated/prisma/client.js';
 import { InvoicingService } from './../src/invoicing/invoicing.service.js';
+import { israelDate } from './../src/invoicing/vat.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const SECRET = process.env.PAYMENT_SANDBOX_SECRET ?? '';
 const MINUTE = 60_000;
@@ -46,13 +48,21 @@ describe('Invoices (e2e, CHK-08)', () => {
 
   const http = () => request(app.getHttpServer() as App);
   const cleanup = async () => {
-    await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+    // Invoices restrict deleting their order and refund (tax documents): the helper removes them first.
+    await deleteOrders(prisma, TEST_ORDERS);
     await prisma.outboxJob.deleteMany({});
     await prisma.notificationLog.deleteMany({});
   };
   const runJobs = () => outbox.runDue(100);
   const dueNow = () =>
     prisma.$executeRaw`UPDATE outbox_jobs SET run_after = (now() AT TIME ZONE 'UTC') - interval '1 second' WHERE state = 'pending'`;
+  /** What the outbox hands a handler: the job's dedupe key and its creation time (the event's moment). */
+  const job = (dedupeKey: string, createdAt = new Date()) => ({ dedupeKey, createdAt });
+  /** "13.11.2026": how the mock document writes the Israel date. */
+  const docDate = (at: Date) => {
+    const [y, m, d] = israelDate(at).split('-');
+    return `${Number(d)}.${Number(m)}.${y}`;
+  };
   const invoices = (orderId: string) =>
     prisma.invoice.findMany({ where: { orderId }, orderBy: [{ issuedAt: 'asc' }, { id: 'asc' }] });
 
@@ -185,8 +195,10 @@ describe('Invoices (e2e, CHK-08)', () => {
     expect(
       await prisma.notificationLog.count({ where: { orderId: order.id, template: 'order_paid', status: 'SENT' } }),
     ).toBe(1);
-    const job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `invoice.issue:${order.id}` } });
-    expect(job.state).toBe(OutboxJobState.DONE);
+    const issueJob = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `invoice.issue:${order.id}` } });
+    expect(issueJob.state).toBe(OutboxJobState.DONE);
+    // The issue date is the event's moment (the job's creation), not the run's.
+    expect(invoice.issuedAt.toISOString()).toBe(issueJob.createdAt.toISOString());
 
     // The private file: Hebrew RTL, seller, escaped buyer, lines, VAT and total; never under the public folder.
     const path = join(MEDIA_DIR, 'private', 'invoices', `${invoice.number}.html`);
@@ -204,10 +216,11 @@ describe('Invoices (e2e, CHK-08)', () => {
     expect(html).toContain('הובלה');
     expect(html).toContain('קופון WINTER');
     expect(html).toContain('18%');
+    expect(html).toContain(docDate(invoice.issuedAt));
 
     // Running the job again (as after a crash before DONE) finds the invoice and issues nothing new.
     await prisma.outboxJob.update({
-      where: { id: job.id },
+      where: { id: issueJob.id },
       data: { state: OutboxJobState.PENDING, runAfter: new Date(Date.now() - 1000) },
     });
     await runJobs();
@@ -217,22 +230,93 @@ describe('Invoices (e2e, CHK-08)', () => {
   it('two parallel runs of the same job leave one invoice and both succeed', async () => {
     const order = await makeOrder('parallel', OrderStatus.PAID);
     const key = `invoice.issue:${order.id}`;
+    const paidAt = new Date(Date.now() - 60_000);
     await Promise.all([
-      invoicing.issueInvoice({ orderId: order.id }, key),
-      invoicing.issueInvoice({ orderId: order.id }, key),
-      invoicing.issueInvoice({ orderId: order.id }, key),
+      invoicing.issueInvoice({ orderId: order.id }, job(key, paidAt)),
+      invoicing.issueInvoice({ orderId: order.id }, job(key, paidAt)),
+      invoicing.issueInvoice({ orderId: order.id }, job(key, paidAt)),
     ]);
     const rows = await invoices(order.id);
     expect(rows).toHaveLength(1);
     expect(rows[0].amount).toBe(TOTAL);
   });
 
+  it('after a crash between the provider and the row, the re-run gets the same number, date and VAT', async () => {
+    const order = await paidOrder('crash');
+    const [first] = await invoices(order.id);
+    const html = readFileSync(join(MEDIA_DIR, 'private', 'invoices', `${first.number}.html`), 'utf8');
+    // The provider issued the document, but the row was never written.
+    await prisma.invoice.delete({ where: { id: first.id } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await prisma.outboxJob.updateMany({
+      where: { dedupeKey: `invoice.issue:${order.id}` },
+      data: { state: OutboxJobState.PENDING, runAfter: new Date(Date.now() - 1000) },
+    });
+    await runJobs();
+
+    const [again] = await invoices(order.id);
+    expect(again).toMatchObject({
+      number: first.number,
+      issuedAt: first.issuedAt,
+      vatAmount: first.vatAmount,
+      amount: first.amount,
+    });
+    expect(Number(again.vatRate)).toBe(Number(first.vatRate));
+    expect(readFileSync(join(MEDIA_DIR, 'private', 'invoices', `${again.number}.html`), 'utf8')).toBe(html);
+  });
+
+  it('a ₪0 order gets no tax document: the job ends DONE without issuing', async () => {
+    const order = await makeOrder('zero', OrderStatus.PAID, 0);
+    await prisma.$transaction((tx) =>
+      outbox.enqueue(tx, {
+        type: 'invoice.issue',
+        dedupeKey: `invoice.issue:${order.id}`,
+        payload: { orderId: order.id },
+        orderId: order.id,
+      }),
+    );
+    await runJobs();
+    const done = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `invoice.issue:${order.id}` } });
+    expect(done.state).toBe(OutboxJobState.DONE);
+    expect(await invoices(order.id)).toHaveLength(0);
+  });
+
   it('never issues a tax document whose lines do not add up to the order total', async () => {
     const order = await makeOrder('mismatch', OrderStatus.PAID, TOTAL + 100);
-    await expect(invoicing.issueInvoice({ orderId: order.id }, `invoice.issue:${order.id}`)).rejects.toThrow(
+    await expect(invoicing.issueInvoice({ orderId: order.id }, job(`invoice.issue:${order.id}`))).rejects.toThrow(
       /do not add up/,
     );
     expect(await invoices(order.id)).toHaveLength(0);
+  });
+
+  it('the database refuses to delete an order or a refund that has a tax document', async () => {
+    const order = await paidOrder('restrict');
+    await owner.post(`/orders/${order.number}/refunds`, { amount: 10_000, reason: 'בדיקה' }).expect(200);
+    await runJobs();
+    expect(await invoices(order.id)).toHaveLength(2);
+    await expect(prisma.order.delete({ where: { id: order.id } })).rejects.toThrow();
+    const refund = await prisma.refund.findFirstOrThrow({ where: { orderId: order.id } });
+    await expect(prisma.refund.delete({ where: { id: refund.id } })).rejects.toThrow();
+    expect(await prisma.order.count({ where: { id: order.id } })).toBe(1);
+    expect(await invoices(order.id)).toHaveLength(2);
+  });
+
+  it('a credit note keeps the VAT rate of the order tax invoice, even after the rate changed', async () => {
+    const order = await paidOrder('rate');
+    const [invoice] = await invoices(order.id);
+    expect(Number(invoice.vatRate)).toBe(0.18);
+    // A new rate in force from today, so after the invoice's own rate.
+    const today = new Date(`${israelDate(new Date())}T00:00:00.000Z`);
+    const added = await prisma.vatRate.create({ data: { rate: 0.2, effectiveFrom: today } });
+    try {
+      await owner.post(`/orders/${order.number}/refunds`, { amount: 11_800, reason: 'בדיקה' }).expect(200);
+      await runJobs();
+    } finally {
+      await prisma.vatRate.delete({ where: { id: added.id } });
+    }
+    const note = (await invoices(order.id)).find((i) => i.type === InvoiceType.CREDIT_NOTE);
+    expect(note).toMatchObject({ amount: 11_800, vatAmount: 1_800 });
+    expect(Number(note?.vatRate)).toBe(0.18);
   });
 
   it('every succeeded refund issues a credit note for its amount; a failed refund issues none', async () => {
@@ -276,12 +360,18 @@ describe('Invoices (e2e, CHK-08)', () => {
     await owner.post(`/orders/${order.number}/refunds`, { amount: 10_000, reason: 'בדיקה' }).expect(200);
     await runJobs();
     const refund = await prisma.refund.findFirstOrThrow({ where: { orderId: order.id } });
-    const job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `invoice.credit_note:${refund.id}` } });
-    expect(job).toMatchObject({ state: OutboxJobState.PENDING, attempts: 1 });
-    expect(job.lastError).toMatch(/tax invoice/);
+    const noteJob = await prisma.outboxJob.findUniqueOrThrow({
+      where: { dedupeKey: `invoice.credit_note:${refund.id}` },
+    });
+    expect(noteJob).toMatchObject({ state: OutboxJobState.PENDING, attempts: 1 });
+    expect(noteJob.lastError).toMatch(/tax invoice/);
     expect(await invoices(order.id)).toHaveLength(0);
 
-    await invoicing.issueInvoice({ orderId: order.id }, `invoice.issue:${order.id}`);
+    // Paid before the refund: the invoice's event time is earlier than the credit note's.
+    await invoicing.issueInvoice(
+      { orderId: order.id },
+      job(`invoice.issue:${order.id}`, new Date(Date.now() - 60_000)),
+    );
     await dueNow();
     await runJobs();
     expect((await invoices(order.id)).map((i) => i.type)).toEqual([
@@ -309,8 +399,11 @@ describe('Invoices (e2e, CHK-08)', () => {
     expect(res.headers['content-disposition']).toBe('inline');
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(res.headers['x-robots-tag']).toBe('noindex');
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.text).toContain(invoice.number);
     expect(res.text).toContain('NESTO');
+    expect(res.text).toContain(docDate(invoice.issuedAt));
 
     await http().get(url).expect(404);
     await http().get(url).query({ t: 'wrong' }).expect(404);
@@ -337,6 +430,8 @@ describe('Invoices (e2e, CHK-08)', () => {
     const res = await owner.get(url).expect(200);
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.text).toContain(invoice.number);
     await service.get(url).expect(403);
     await http().get(`/api/admin${url}`).expect(401);

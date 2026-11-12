@@ -49,6 +49,11 @@ describe('orderInvoiceLines', () => {
     expect(lines.map((l) => l.description)).not.toContain('קומה');
   });
 
+  it('throws when an item line is not unit price × quantity', () => {
+    const items = [{ ...ORDER.items[0], lineTotal: 79_999 }, ORDER.items[1]];
+    expect(() => orderInvoiceLines({ ...ORDER, items, total: 104_999 })).toThrow(/unit price × quantity/);
+  });
+
   it('throws when the lines do not add up to the order total (no tax document is issued)', () => {
     expect(() => orderInvoiceLines({ ...ORDER, total: 105_001 })).toThrow(/do not add up/);
     expect(() => orderInvoiceLines({ ...ORDER, shippingLines: 'bad' })).toThrow(/shipping lines/);

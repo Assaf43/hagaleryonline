@@ -11,6 +11,7 @@ import { EMAIL_PROVIDER, type EmailProvider } from './../src/notifications/notif
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 const SECRET = process.env.PAYMENT_SANDBOX_SECRET ?? '';
@@ -30,7 +31,7 @@ describe('Notifications (e2e, CHK-07)', () => {
 
   const http = () => request(app.getHttpServer() as App);
   const cleanup = async () => {
-    await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+    await deleteOrders(prisma, TEST_ORDERS);
     await prisma.outboxJob.deleteMany({});
     await prisma.notificationLog.deleteMany({});
   };

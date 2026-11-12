@@ -26,6 +26,10 @@ export interface InvoiceOrderSource {
  */
 export function orderInvoiceLines(order: InvoiceOrderSource): InvoiceLine[] {
   const lines: InvoiceLine[] = order.items.map((i) => {
+    if (i.unitPrice * i.quantity !== i.lineTotal)
+      throw new Error(
+        `Order ${order.number}: line ${i.modelName} total ${i.lineTotal} is not unit price × quantity (${i.unitPrice} × ${i.quantity})`,
+      );
     const options = Array.isArray(i.optionLabels) ? (i.optionLabels as unknown[]).map(String).join(', ') : '';
     return {
       description: [i.modelName, i.nameHe, options].filter((part) => part.trim() !== '').join(' '),

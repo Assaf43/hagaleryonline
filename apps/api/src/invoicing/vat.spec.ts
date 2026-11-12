@@ -1,4 +1,4 @@
-import { israelDate, vatOf, vatRateOn } from './vat.js';
+import { assertDocumentAmounts, israelDate, vatOf, vatRateOn } from './vat.js';
 
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const RATES = [
@@ -44,6 +44,21 @@ describe('vatRateOn', () => {
   it('throws when no rate is in force on the date', () => {
     expect(() => vatRateOn(RATES, new Date('2010-01-01T12:00:00Z'))).toThrow(/VAT rate/);
     expect(() => vatRateOn([], new Date())).toThrow(/VAT rate/);
+  });
+});
+
+describe('assertDocumentAmounts', () => {
+  it('accepts a positive amount with its VAT inside it', () => {
+    expect(() => assertDocumentAmounts(11800, 1800)).not.toThrow();
+    expect(() => assertDocumentAmounts(1, 0)).not.toThrow();
+  });
+
+  it('refuses a zero or negative amount, a negative VAT, or a VAT not below the amount', () => {
+    expect(() => assertDocumentAmounts(0, 0)).toThrow(/amount/);
+    expect(() => assertDocumentAmounts(-100, 0)).toThrow(/amount/);
+    expect(() => assertDocumentAmounts(100, -1)).toThrow(/VAT/);
+    expect(() => assertDocumentAmounts(100, 100)).toThrow(/VAT/);
+    expect(() => assertDocumentAmounts(100.5, 10)).toThrow(/amount/);
   });
 });
 

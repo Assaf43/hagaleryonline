@@ -2,6 +2,9 @@ import { Controller, Get, Header, Param, Query, StreamableFile, UseGuards } from
 import { AdminAuthGuard, RequirePermission, SameOriginGuard } from '../auth/guards.js';
 import { InvoicingService, type InvoiceDocument } from './invoicing.service.js';
 
+/** A stored document runs nothing and loads nothing: only its inline styles and data: images. */
+const DOCUMENT_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
 /** The document opens in the browser tab; never cached, never indexed. */
 const stream = (doc: InvoiceDocument) =>
   new StreamableFile(doc.content, { type: doc.contentType, disposition: 'inline' });
@@ -17,6 +20,8 @@ export class InvoicesController {
   @Get(':number/invoices/:id')
   @Header('Cache-Control', 'private, no-store')
   @Header('X-Robots-Tag', 'noindex')
+  @Header('Content-Security-Policy', DOCUMENT_CSP)
+  @Header('X-Content-Type-Options', 'nosniff')
   async document(
     @Param('number') number: string,
     @Param('id') id: string,
@@ -36,6 +41,8 @@ export class InvoicesAdminController {
   @RequirePermission('invoices.export')
   @Header('Cache-Control', 'private, no-store')
   @Header('X-Robots-Tag', 'noindex')
+  @Header('Content-Security-Policy', DOCUMENT_CSP)
+  @Header('X-Content-Type-Options', 'nosniff')
   async document(@Param('id') id: string): Promise<StreamableFile> {
     return stream(await this.invoicing.documentForAdmin(id));
   }

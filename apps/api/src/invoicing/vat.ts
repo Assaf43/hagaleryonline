@@ -27,6 +27,16 @@ export function vatRateOn(rates: readonly VatRateRow[], at: Date): number {
   return best.rate;
 }
 
+/**
+ * A tax document's amounts, checked before the provider is called: a whole positive amount in agorot and a whole VAT
+ * with 0 ≤ VAT < amount (the database CHECKs say the same, but by then the provider would already have issued it).
+ */
+export function assertDocumentAmounts(amount: number, vatAmount: number): void {
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error(`Invalid document amount ${amount}: must be > 0`);
+  if (!Number.isInteger(vatAmount) || vatAmount < 0 || vatAmount >= amount)
+    throw new Error(`Invalid VAT ${vatAmount} for amount ${amount}: must be 0 ≤ VAT < amount`);
+}
+
 /** The VAT inside a gross (VAT-included) amount in agorot, rounded to whole agorot: round(gross − gross / (1 + rate)). */
 export function vatOf(grossAgorot: number, rate: number): number {
   return Math.round(grossAgorot - grossAgorot / (1 + rate));

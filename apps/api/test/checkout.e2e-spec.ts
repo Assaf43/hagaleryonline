@@ -23,6 +23,7 @@ import { sign } from './../src/payments/webhook-signature.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, type AdminBrowser } from './admin-session.js';
+import { deleteOrders } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -171,7 +172,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
   const invalidateCatalog = () => app.get(CacheStore).invalidate('catalog:');
 
   const cleanup = async () => {
-    await prisma.order.deleteMany();
+    await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await resetAdminData(prisma);
     await prisma.category.deleteMany({ where: { slug: { startsWith: 'zz-chk' } } });

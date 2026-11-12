@@ -4,12 +4,12 @@ import { InvoiceType, PaymentStatus, Prisma, RefundStatus } from '../generated/p
 import { StorageProvider } from '../media/storage.js';
 import { parseOrderNumber } from '../orders/order-number.js';
 import { tokenMatches } from '../orders/orders.service.js';
-import { OutboxService } from '../outbox/outbox.service.js';
+import { OutboxService, type OutboxJobRow } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { creditNoteLines, orderInvoiceLines } from './invoice-lines.js';
 import { INVOICE_PROVIDER, type InvoiceLine, type InvoiceProvider } from './invoice-provider.js';
 import { INVOICE_TYPE_DB } from './invoice-view.js';
-import { vatOf, vatRateOn } from './vat.js';
+import { assertDocumentAmounts, vatOf, vatRateOn } from './vat.js';
 
 interface InvoiceJob {
   orderId: string;
@@ -17,6 +17,8 @@ interface InvoiceJob {
 interface CreditNoteJob extends InvoiceJob {
   refundId: string;
 }
+/** The outbox job being run: its dedupe key is the invoice's idempotency key, its creation the document date. */
+export type IssueJob = Pick<OutboxJobRow, 'dedupeKey' | 'createdAt'>;
 
 /** A stored document, ready to send to the browser. */
 export interface InvoiceDocument {
@@ -48,12 +50,16 @@ export class InvoicingService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    this.outbox.register<InvoiceJob>('invoice.issue', (p, job) => this.issueInvoice(p, job.dedupeKey));
-    this.outbox.register<CreditNoteJob>('invoice.credit_note', (p, job) => this.issueCreditNote(p, job.dedupeKey));
+    this.outbox.register<InvoiceJob>('invoice.issue', (p, job) => this.issueInvoice(p, job));
+    this.outbox.register<CreditNoteJob>('invoice.credit_note', (p, job) => this.issueCreditNote(p, job));
   }
 
-  /** The tax invoice / receipt of a paid order: its items, shipping and discount lines; amount = order total. */
-  async issueInvoice({ orderId }: InvoiceJob, idempotencyKey: string): Promise<void> {
+  /**
+   * The tax invoice / receipt of a paid order: its items, shipping and discount lines; amount = order total. Dated
+   * when the job was created (the payment), so every retry issues the same document. A ₪0 order gets no document.
+   */
+  async issueInvoice({ orderId }: InvoiceJob, job: IssueJob): Promise<void> {
+    const idempotencyKey = job.dedupeKey;
     if (await this.issued(idempotencyKey)) return;
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -63,11 +69,23 @@ export class InvoicingService implements OnModuleInit {
       this.logger.warn(`Order ${orderId} no longer exists: no invoice is issued`);
       return;
     }
+    if (order.total === 0) {
+      // Nothing was charged (a full discount): there is no receipt to issue.
+      this.logger.log(`Order ${order.number} totals ₪0: no tax invoice is issued`);
+      return;
+    }
     if (!order.payments.some((p) => p.status === PaymentStatus.SUCCEEDED))
       throw new Error(`Order ${order.number} has no successful payment: no tax invoice is issued`);
+    const rates = await this.prisma.vatRate.findMany();
+    const vatRate = vatRateOn(
+      rates.map((r) => ({ rate: r.rate.toNumber(), effectiveFrom: r.effectiveFrom })),
+      job.createdAt,
+    );
     await this.issue({
       type: 'tax_invoice_receipt',
       idempotencyKey,
+      issuedAt: job.createdAt,
+      vatRate,
       order,
       refundId: null,
       lines: orderInvoiceLines(order),
@@ -75,8 +93,12 @@ export class InvoicingService implements OnModuleInit {
     });
   }
 
-  /** The credit note of a succeeded refund: one line, amount = the refund. It waits for the order's tax invoice. */
-  async issueCreditNote({ orderId, refundId }: CreditNoteJob, idempotencyKey: string): Promise<void> {
+  /**
+   * The credit note of a succeeded refund: one line, amount = the refund, dated when the job was created (the
+   * refund). It waits for the order's tax invoice and uses that invoice's VAT rate (it credits that document).
+   */
+  async issueCreditNote({ orderId, refundId }: CreditNoteJob, job: IssueJob): Promise<void> {
+    const idempotencyKey = job.dedupeKey;
     if (await this.issued(idempotencyKey)) return;
     const refund = await this.prisma.refund.findUnique({ where: { id: refundId }, include: { order: true } });
     if (!refund || refund.orderId !== orderId) {
@@ -85,14 +107,17 @@ export class InvoicingService implements OnModuleInit {
     }
     if (refund.status !== RefundStatus.SUCCEEDED)
       throw new Error(`Refund ${refundId} has not succeeded: no credit note is issued`);
-    const invoiced = await this.prisma.invoice.count({
+    const invoice = await this.prisma.invoice.findFirst({
       where: { orderId, type: InvoiceType.TAX_INVOICE_RECEIPT },
+      select: { vatRate: true },
     });
     // A credit note credits a tax invoice: when the invoice job has not run yet (or failed), retry later.
-    if (invoiced === 0) throw new Error(`Order ${refund.order.number} has no tax invoice yet: the credit note waits`);
+    if (!invoice) throw new Error(`Order ${refund.order.number} has no tax invoice yet: the credit note waits`);
     await this.issue({
       type: 'credit_note',
       idempotencyKey,
+      issuedAt: job.createdAt,
+      vatRate: invoice.vatRate.toNumber(),
       order: refund.order,
       refundId,
       lines: creditNoteLines(refund.order.number, refund.amount),
@@ -107,18 +132,17 @@ export class InvoicingService implements OnModuleInit {
   private async issue(doc: {
     type: InvoiceTypeView;
     idempotencyKey: string;
+    issuedAt: Date;
+    vatRate: number;
     order: { id: string; number: number; contact: Prisma.JsonValue };
     refundId: string | null;
     lines: InvoiceLine[];
     amount: number;
   }): Promise<void> {
-    const issuedAt = new Date();
-    const rates = await this.prisma.vatRate.findMany();
-    const vatRate = vatRateOn(
-      rates.map((r) => ({ rate: r.rate.toNumber(), effectiveFrom: r.effectiveFrom })),
-      issuedAt,
-    );
+    const { issuedAt, vatRate } = doc;
     const vatAmount = vatOf(doc.amount, vatRate);
+    // Checked before the provider is called: once it has issued a document, it cannot be taken back.
+    assertDocumentAmounts(doc.amount, vatAmount);
     const contact = (doc.order.contact ?? {}) as { fullName?: unknown; email?: unknown; phone?: unknown };
     const result = await this.provider.issue({
       type: doc.type,
@@ -128,10 +152,13 @@ export class InvoicingService implements OnModuleInit {
       amount: doc.amount,
       vatAmount,
       vatRate,
+      issuedAt,
       idempotencyKey: doc.idempotencyKey,
     });
     let fileKey: string | null = null;
     if (result.file) {
+      // The file is written before the row: a crash in between leaves an orphan file under the document's number.
+      // Harmless — the retry gets the same number from the provider (same key) and overwrites it with the same file.
       fileKey = `invoices/${result.number.replace(/[^A-Za-z0-9._-]/g, '_')}.${isPdf(result.file) ? 'pdf' : 'html'}`;
       await this.storage.put(fileKey, result.file, 'private');
     }

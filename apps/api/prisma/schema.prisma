@@ -907,7 +907,8 @@ enum InvoiceType {
 /// A tax document issued through the InvoiceProvider by an outbox job: a tax invoice / receipt when an order is paid,
 /// a credit note per succeeded refund. `idempotencyKey` is the job's dedupe key (unique), so a repeated job never
 /// issues twice. Amounts in agorot; the VAT is computed once at issue time and never recomputed. CHECKs (migration
-/// invoices): amount > 0, vat_amount >= 0, a refund exactly for credit notes, one tax invoice per order.
+/// invoices): amount > 0, vat_amount >= 0, a refund exactly for credit notes, one tax invoice per order. A tax document
+/// is never deleted with its order or refund: both relations RESTRICT (migration invoices_restrict).
 model Invoice {
   id             String      @id @default(uuid()) @db.Uuid
   orderId        String      @map("order_id") @db.Uuid
@@ -930,8 +931,8 @@ model Invoice {
   idempotencyKey String      @unique @map("idempotency_key")
   createdAt      DateTime    @default(now()) @map("created_at")
 
-  order  Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  refund Refund? @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  order  Order   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refund Refund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
 
   @@unique([provider, number])
   @@index([orderId])
@@ -949,8 +950,8 @@ model VatRate {
   @@map("vat_rates")
 }
 
-/// The `mock` invoice adapter's own record (development and tests): the number and date it gave each idempotency
-/// key, so the same key always gets the same document, as a real provider would. Numbers come from the sequences
+/// The `mock` invoice adapter's own record (development and tests): the number it gave each idempotency key (and the
+/// document date it was asked for), so the same key always gets the same number, as a real provider would. Numbers come from the sequences
 /// `mock_invoice_seq` / `mock_credit_note_seq` (migration invoices).
 model MockInvoiceDocument {
   idempotencyKey String      @id @map("idempotency_key")

@@ -17,6 +17,7 @@ import {
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteOrders } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -142,7 +143,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   const invalidateCatalog = () => app.get(CacheStore).invalidate('catalog:');
 
   const cleanup = async () => {
-    await prisma.order.deleteMany();
+    await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.promotion.deleteMany();
     await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZPROMO' } } });
@@ -215,7 +216,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   });
 
   afterEach(async () => {
-    await prisma.order.deleteMany();
+    await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.promotion.deleteMany();
   });

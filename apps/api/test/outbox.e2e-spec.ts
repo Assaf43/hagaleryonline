@@ -15,6 +15,7 @@ import {
 import { OutboxService, type OutboxJobRow } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -41,7 +42,7 @@ describe('Outbox (e2e, decision 83)', () => {
 
   const http = () => request(app.getHttpServer() as App);
   const cleanup = async () => {
-    await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+    await deleteOrders(prisma, TEST_ORDERS);
     await prisma.outboxJob.deleteMany({});
   };
   const jobs = (orderId: string) =>

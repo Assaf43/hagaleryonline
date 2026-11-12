@@ -12,6 +12,7 @@ import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { adminBrowser, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
 const SECRET = process.env.PAYMENT_SANDBOX_SECRET ?? '';
@@ -33,8 +34,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
   let variantId: number;
 
   const http = () => request(app.getHttpServer() as App);
-  const cleanup = () =>
-    prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+  const cleanup = () => deleteOrders(prisma, TEST_ORDERS);
 
   const makeOrder = async (key: string, status: OrderStatus, opts: { variant?: boolean; reserved?: boolean } = {}) =>
     prisma.order.create({

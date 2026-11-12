@@ -3,6 +3,7 @@ import { BRAND, INVOICE_TYPE_LABELS_HE, type InvoiceType } from '@hg/models';
 import { esc } from '../notifications/templates/layout.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { InvoiceIssueInput, InvoiceIssueResult, InvoiceLine, InvoiceProvider } from './invoice-provider.js';
+import { INVOICE_TYPE_DB } from './invoice-view.js';
 import { israelDate } from './vat.js';
 
 export const MOCK_INVOICE_CODE = 'mock';
@@ -15,7 +16,8 @@ const SERIES: Record<InvoiceType, { sequence: string; prefix: string }> = {
 /**
  * `mock` adapter (development and tests, spec §5.4): running numbers `MOCK-INV-000001` / `MOCK-CN-000001` from a
  * Postgres sequence per type, and a simple self-contained Hebrew HTML document. Like a real provider it remembers each
- * idempotency key (`mock_invoice_documents`), so the same key always returns the same number, date and file. Refuses
+ * idempotency key (`mock_invoice_documents`), so the same key always returns the same number (and, with the same
+ * input, the same file). Refuses
  * to load in production: it issues no real tax document.
  */
 export class MockInvoiceProvider implements InvoiceProvider {
@@ -29,41 +31,46 @@ export class MockInvoiceProvider implements InvoiceProvider {
       throw new Error('INVOICE_PROVIDER = mock cannot run in production: choose a real invoicing provider.');
   }
 
+  /** The document is dated `input.issuedAt` (the event's moment), so a retry renders the same file. */
   async issue(input: InvoiceIssueInput): Promise<InvoiceIssueResult> {
-    const doc = await this.document(input.idempotencyKey, input.type);
-    const html = renderMockDocument({ ...input, number: doc.number, issuedAt: doc.issuedAt });
-    return { number: doc.number, documentUrl: null, file: Buffer.from(html, 'utf8') };
+    const number = await this.number(input.idempotencyKey, input.type, input.issuedAt);
+    const html = renderMockDocument({ ...input, number });
+    return { number, documentUrl: null, file: Buffer.from(html, 'utf8') };
   }
 
-  /** The number and date of this key: the stored ones, or a new number from the type's sequence. */
-  private async document(key: string, type: InvoiceType): Promise<{ number: string; issuedAt: Date }> {
+  /** The number of this key: the stored one, or a new number from the type's sequence. */
+  private async number(key: string, type: InvoiceType, issuedAt: Date): Promise<string> {
     const known = await this.known(key, type);
     if (known) return known;
     const { sequence, prefix } = SERIES[type];
     const [{ n }] = await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT nextval(${sequence}::regclass) AS n`;
-    const number = `${prefix}${String(n).padStart(6, '0')}`;
     // A concurrent call with the same key may insert first: then its number is the one (ours is a gap).
-    await this.prisma.$executeRaw`
-      INSERT INTO mock_invoice_documents (idempotency_key, type, number, issued_at)
-      VALUES (${key}, ${type}::invoice_type, ${number}, (now() AT TIME ZONE 'UTC'))
-      ON CONFLICT (idempotency_key) DO NOTHING`;
+    await this.prisma.mockInvoiceDocument.createMany({
+      data: [
+        {
+          idempotencyKey: key,
+          type: INVOICE_TYPE_DB[type],
+          number: `${prefix}${String(n).padStart(6, '0')}`,
+          issuedAt,
+        },
+      ],
+      skipDuplicates: true,
+    });
     const stored = await this.known(key, type);
     if (!stored) throw new Error(`Mock invoice for ${key} was not stored`);
     return stored;
   }
 
-  private async known(key: string, type: InvoiceType): Promise<{ number: string; issuedAt: Date } | null> {
+  private async known(key: string, type: InvoiceType): Promise<string | null> {
     const row = await this.prisma.mockInvoiceDocument.findUnique({ where: { idempotencyKey: key } });
     if (!row) return null;
-    const storedType: InvoiceType = row.type === 'CREDIT_NOTE' ? 'credit_note' : 'tax_invoice_receipt';
-    if (storedType !== type) throw new Error(`Idempotency key ${key} was used for a ${storedType}`);
-    return { number: row.number, issuedAt: row.issuedAt };
+    if (row.type !== INVOICE_TYPE_DB[type]) throw new Error(`Idempotency key ${key} was used for another type`);
+    return row.number;
   }
 }
 
 export interface MockDocumentData extends Omit<InvoiceIssueInput, 'idempotencyKey'> {
   number: string;
-  issuedAt: Date;
 }
 
 const AMOUNT = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

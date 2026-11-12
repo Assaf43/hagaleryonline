@@ -20,6 +20,11 @@ export interface InvoiceIssueInput {
   vatAmount: number;
   /** The rate `vatAmount` was computed with (0.18), shown on the document. */
   vatRate: number;
+  /**
+   * The document date: the moment of the event (payment or refund), the same on every retry. The stored
+   * `Invoice.issuedAt` and the date on the document are this value.
+   */
+  issuedAt: Date;
   /** The same key always gives the same document: a retry never issues twice. */
   idempotencyKey: string;
 }

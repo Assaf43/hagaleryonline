@@ -6,6 +6,7 @@ import { configureApp } from './../src/configure-app.js';
 import { OrderShippingMethod, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, adminBrowser, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -22,8 +23,7 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
   let seller: AdminBrowser;
   const numbers: Record<string, number> = {};
 
-  const cleanup = () =>
-    prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+  const cleanup = () => deleteOrders(prisma, TEST_ORDERS);
 
   const makeOrder = async (
     key: string,
@@ -178,7 +178,7 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
         expect(mine.map((i) => [i.customerName, i.status])).toEqual([[`ZZ life-${key}`, key]]);
       }
     } finally {
-      await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ life-' } } });
+      await deleteOrders(prisma, { contact: { path: ['fullName'], string_starts_with: 'ZZ life-' } });
     }
   });
 

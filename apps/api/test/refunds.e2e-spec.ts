@@ -9,6 +9,7 @@ import { FulfillmentMode, OrderShippingMethod, OrderStatus, PaymentStatus } from
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -29,7 +30,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
 
   const http = () => request(app.getHttpServer() as App);
   const cleanup = async () => {
-    await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+    await deleteOrders(prisma, TEST_ORDERS);
     await prisma.cart.deleteMany({ where: { tokenHash: { startsWith: 'zz-' } } });
   };
   const stock = async () => (await prisma.variant.findUniqueOrThrow({ where: { id: variantId } })).stock;
