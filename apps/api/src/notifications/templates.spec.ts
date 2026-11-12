@@ -42,8 +42,30 @@ describe('e-mail templates (spec §5.2)', () => {
     expect(m.text).toContain(LINK);
   });
 
+  it('order_paid points to the tax invoice on the order page, in html and text', () => {
+    const m = renderEmail('order_paid', paid);
+    expect(m.html).toContain('החשבונית זמינה בעמוד ההזמנה.');
+    expect(m.text).toContain('החשבונית זמינה בעמוד ההזמנה.');
+  });
+
+  it('refund with a credit note points to it on the order page; without one it does not', () => {
+    const base = { number: 100123, customerName: 'דנה', link: LINK, amount: 474_000 };
+    const withNote = renderEmail('refund', { ...base, creditNote: true });
+    expect(withNote.html).toContain('חשבונית הזיכוי זמינה בעמוד ההזמנה.');
+    expect(withNote.text).toContain('חשבונית הזיכוי זמינה בעמוד ההזמנה.');
+    const without = renderEmail('refund', { ...base, creditNote: false });
+    expect(without.html).not.toContain('חשבונית הזיכוי');
+    expect(without.text).not.toContain('חשבונית הזיכוי');
+  });
+
   it('refund shows the formatted amount in subject, html and text', () => {
-    const m = renderEmail('refund', { number: 100123, customerName: 'דנה', link: LINK, amount: 474_000 });
+    const m = renderEmail('refund', {
+      number: 100123,
+      customerName: 'דנה',
+      link: LINK,
+      amount: 474_000,
+      creditNote: true,
+    });
     expect(m.subject).toBe(`בוצע החזר של ${formatPrice(474_000)}`);
     expect(m.html).toContain('dir="rtl"');
     expect(m.html).toContain(formatPrice(474_000));

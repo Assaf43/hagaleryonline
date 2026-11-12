@@ -147,6 +147,7 @@ describe('Notifications (e2e, CHK-07)', () => {
     expect(rows[0].body).toContain('dir="rtl"');
     expect(rows[0].body).toContain(`${SITE}/order/${order.number}?t=${order.publicToken}`);
     expect(rows[0].body).toContain('ZZ ALBA');
+    expect(rows[0].body).toContain('החשבונית זמינה בעמוד ההזמנה.');
     // The full address is never stored outside the mock body.
     expect(rows[0].recipientMasked).not.toContain('zz@example.test');
     const job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `email.order_paid:${order.id}` } });
@@ -191,6 +192,35 @@ describe('Notifications (e2e, CHK-07)', () => {
     const refund = rows.find((r) => r.template === 'refund');
     expect(refund?.subject).toBe('בוצע החזר של 1,000 ₪');
     expect(refund?.body).toContain('1,000 ₪');
+    expect(refund?.body).toContain('חשבונית הזיכוי זמינה בעמוד ההזמנה.');
+  });
+
+  it('a late-payment refund e-mail does not promise a credit note', async () => {
+    const order = await makeOrder('late', OrderStatus.CANCELLED);
+    const payment = await prisma.payment.findFirstOrThrow({ where: { orderId: order.id } });
+    const refund = await prisma.refund.create({
+      data: {
+        orderId: order.id,
+        paymentId: payment.id,
+        amount: TOTAL,
+        reason: 'late_payment',
+        provider: 'sandbox',
+        status: 'SUCCEEDED',
+        idempotencyKey: `zz-ntf-late-${order.id}`,
+      },
+    });
+    await prisma.$transaction((tx) =>
+      outbox.enqueue(tx, {
+        type: 'email.refund',
+        dedupeKey: `email.refund:${refund.id}`,
+        payload: { orderId: order.id, refundId: refund.id },
+        orderId: order.id,
+      }),
+    );
+    await runJobs();
+    const rows = await logs(order.id);
+    expect(rows.map((r) => r.template)).toEqual(['refund']);
+    expect(rows[0].body).not.toContain('חשבונית הזיכוי');
   });
 
   describe('a cancel before the jobs run', () => {

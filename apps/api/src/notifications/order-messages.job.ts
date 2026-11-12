@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { OrderStatus } from '../generated/prisma/client.js';
+import { LATE_PAYMENT_REASON } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
@@ -108,11 +109,21 @@ export class OrderMessagesJob implements OnModuleInit {
   async refund({ orderId, refundId }: RefundJob): Promise<void> {
     const loaded = await this.load(orderId);
     if (!loaded) return;
-    const refund = await this.prisma.refund.findUnique({ where: { id: refundId }, select: { amount: true } });
+    const refund = await this.prisma.refund.findUnique({
+      where: { id: refundId },
+      select: { amount: true, reason: true },
+    });
     if (!refund) {
       this.logger.warn(`Refund ${refundId} no longer exists: its e-mail is skipped`);
       return;
     }
-    await this.notifications.email('refund', loaded.to, { ...loaded.base, amount: refund.amount }, loaded.order.id);
+    // A late payment's refund gets no credit note (refund.service onRefundSucceeded), so the e-mail names none.
+    const creditNote = refund.reason !== LATE_PAYMENT_REASON;
+    await this.notifications.email(
+      'refund',
+      loaded.to,
+      { ...loaded.base, amount: refund.amount, creditNote },
+      loaded.order.id,
+    );
   }
 }

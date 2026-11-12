@@ -31,9 +31,14 @@ export interface OrderPaidData extends OrderLinkData {
 export interface RefundData extends OrderLinkData {
   /** Agorot. */
   amount: number;
+  /** True when a credit note is issued for this refund (every refund except a late payment's). */
+  creditNote: boolean;
 }
 
 const VIEW_ORDER = 'לצפייה בהזמנה ובמעקב אחריה';
+/** The tax documents are not attached: the customer opens them on the order page (decision 81). */
+const INVOICE_ON_PAGE = 'החשבונית זמינה בעמוד ההזמנה.';
+const CREDIT_NOTE_ON_PAGE = 'חשבונית הזיכוי זמינה בעמוד ההזמנה.';
 
 const lineName = (l: OrderPaidLine): string => [l.nameHe, ...l.optionLabels].join(' · ');
 const hello = (name: string | undefined): string => (name?.trim() ? `שלום ${name.trim()},` : 'שלום,');
@@ -67,6 +72,7 @@ export function orderPaid(d: OrderPaidData): RenderedEmail {
       totalRow('סה״כ כולל מע״מ', formatPrice(d.total), true),
       `</table>`,
       estimate ? paragraph(esc(estimate)) : '',
+      paragraph(esc(INVOICE_ON_PAGE)),
       button(d.link, VIEW_ORDER),
     ].join('\n'),
   );
@@ -83,20 +89,39 @@ export function orderPaid(d: OrderPaidData): RenderedEmail {
     `סה״כ כולל מע״מ: ${formatPrice(d.total)}`,
     ...(estimate ? ['', estimate] : []),
     '',
+    INVOICE_ON_PAGE,
     `${VIEW_ORDER}: ${d.link}`,
   ].join('\n');
   return { subject, html, text };
 }
 
-/** A short status e-mail: one sentence (given the order number or amount already formatted), then the order link. */
-function simple(d: OrderLinkData, subject: string, sentence: (number: string, wrap: (v: string) => string) => string) {
+/**
+ * A short status e-mail: one sentence (given the order number or amount already formatted), then the order link,
+ * with an optional plain-text note just before it.
+ */
+function simple(
+  d: OrderLinkData,
+  subject: string,
+  sentence: (number: string, wrap: (v: string) => string) => string,
+  note?: string,
+) {
   const html = emailLayout(
     subject,
-    [greeting(d.customerName), paragraph(sentence(String(d.number), bdi)), button(d.link, VIEW_ORDER)].join('\n'),
+    [
+      greeting(d.customerName),
+      paragraph(sentence(String(d.number), bdi)),
+      ...(note ? [paragraph(esc(note))] : []),
+      button(d.link, VIEW_ORDER),
+    ].join('\n'),
   );
-  const text = [hello(d.customerName), '', sentence(String(d.number), (v) => v), '', `${VIEW_ORDER}: ${d.link}`].join(
-    '\n',
-  );
+  const text = [
+    hello(d.customerName),
+    '',
+    sentence(String(d.number), (v) => v),
+    '',
+    ...(note ? [note] : []),
+    `${VIEW_ORDER}: ${d.link}`,
+  ].join('\n');
   return { subject, html, text } satisfies RenderedEmail;
 }
 
@@ -115,5 +140,6 @@ export function refund(d: RefundData): RenderedEmail {
     d,
     `בוצע החזר של ${price}`,
     (n, w) => `בוצע החזר של ${w(price)} על הזמנה ${w(n)}. הסכום יופיע בחשבונך בהתאם לחברת האשראי.`,
+    d.creditNote ? CREDIT_NOTE_ON_PAGE : undefined,
   );
 }
