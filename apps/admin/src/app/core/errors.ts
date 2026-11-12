@@ -154,6 +154,8 @@ export function catalogIssueText(code: CatalogErrorCode): string {
 const ORDER_CODES: Record<string, string> = {
   invalid_transition: 'אי אפשר לעבור לסטטוס הזה',
   refund_exceeds_paid: 'הסכום גדול מהיתרה להחזר',
+  // "משימות שנכשלו": the job was already retried (another tab or user).
+  not_failed: 'המשימה כבר לא במצב "נכשלה". רעננו את הדף.',
 };
 
 const ORDER_FIELDS: Record<string, string> = {

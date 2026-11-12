@@ -9,6 +9,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import { HealthModule } from './health/health.module.js';
 import { MediaModule } from './media/media.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { OutboxModule } from './outbox/outbox.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ShippingModule } from './shipping/shipping.module.js';
 
@@ -26,6 +27,7 @@ import { ShippingModule } from './shipping/shipping.module.js';
     CatalogAdminModule,
     CartModule,
     ShippingModule,
+    OutboxModule,
     OrdersModule,
   ],
 })

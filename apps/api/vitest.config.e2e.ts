@@ -38,6 +38,8 @@ export default defineConfig({
       THROTTLE_CANCEL_LIMIT: '100000',
       PAYMENT_PROVIDER: 'sandbox',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
+      // Outbox (Phase 5b): no background worker; the tests call OutboxService.runDue() themselves.
+      OUTBOX_WORKER: 'off',
     },
   },
 });

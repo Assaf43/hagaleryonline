@@ -15,6 +15,8 @@ import { AdminUsersService } from './auth/admin-users.service.js';
 const [command, ...rest] = process.argv.slice(2);
 const { values } = parseArgs({ args: rest, options: { email: { type: 'string' }, name: { type: 'string' } } });
 
+// The CLI never runs outbox jobs: that is the API's worker.
+process.env.OUTBOX_WORKER = 'off';
 const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
 try {
   const users = app.get(AdminUsersService);

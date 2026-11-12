@@ -95,6 +95,15 @@
           <svg lucidePlugZap></svg>
           ספקים
         </a>
+        <a
+          class="nav-link"
+          routerLink="/settings/failed-jobs"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideListX></svg>
+          משימות שנכשלו
+        </a>
       }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">

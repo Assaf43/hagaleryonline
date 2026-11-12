@@ -100,6 +100,12 @@ export const routes: Routes = [
         title: 'ספקים',
       },
       {
+        path: 'settings/failed-jobs',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/failed-jobs.page').then((m) => m.FailedJobsPage),
+        title: 'משימות שנכשלו',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),

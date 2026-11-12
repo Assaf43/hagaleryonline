@@ -7,7 +7,8 @@ import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
 import { PAID_OR_LATER } from '../orders/order-transitions.js';
-import { LATE_PAYMENT_MANUAL_NOTE, LATE_PAYMENT_REASON, RefundService } from '../orders/refund.service.js';
+import { LATE_PAYMENT_MANUAL_NOTE } from '../orders/refund.service.js';
+import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import {
@@ -62,7 +63,7 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly dispatcher: WebhookDispatcher,
     private readonly promotions: PromotionsService,
-    private readonly refunds: RefundService,
+    private readonly outbox: OutboxService,
     private readonly audit: AuditService,
   ) {}
 
@@ -139,8 +140,8 @@ export class PaymentsService {
    *   success is recorded `paid_twice` for staff (no stock, no status change, no promotion use);
    * - success with an amount other than the one asked → payment flagged `amount_mismatch`, order stays as it is;
    * - success on a CANCELLED order (the customer cancelled while paying) → payment recorded `late_payment`, the order
-   *   stays cancelled, no stock is taken, it is flagged for staff, and the payment is refunded in full after commit
-   *   (the note says "refund by hand" until the refund succeeds; it stays so when the refund does not fit);
+   *   stays cancelled, no stock is taken, it is flagged for staff, and the outbox job `refund.late_payment` (queued
+   *   here) refunds the payment in full after commit (the note says "refund by hand" until the refund succeeds; it stays so when the refund does not fit);
    * - success → payment succeeded, order paid, in-stock stock taken (never below 0; a shortfall flags the order
    *   `stockShortage`), the order's lines removed from its cart unless a newer order of that cart exists;
    * - failure / cancel → payment failed / cancelled (a CANCELLED order is left as it is); the order fails (releasing its reservation) only when this is
@@ -151,7 +152,6 @@ export class PaymentsService {
     // transaction would lock it after the order (order → cart), the reverse of checkout and retry (cart → order),
     // and deadlock with a checkout of the same cart.
     let clearCouponOf: string | null = null;
-    let late: { orderId: string; amount: number } | null = null;
     const outcome = await this.prisma.$transaction(async (tx): Promise<WebhookOutcome> => {
       const [locked] = await tx.$queryRaw<{ id: string; order_id: string }[]>`
         SELECT id, order_id FROM payments WHERE transaction_id = ${result.transactionId} FOR UPDATE`;
@@ -216,7 +216,13 @@ export class PaymentsService {
             tx,
           );
           this.logger.warn(`Order ${order.number} was cancelled and then paid (transaction ${payment.transactionId})`);
-          late = { orderId: order.id, amount: payment.amount };
+          // The refund is an outbox job written with this payment (decision 83): it runs after commit, with retries.
+          await this.outbox.enqueue(tx, {
+            type: 'refund.late_payment',
+            dedupeKey: `refund.late_payment:${payment.id}`,
+            payload: { orderId: order.id, paymentId: payment.id, amount: payment.amount },
+            orderId: order.id,
+          });
           return 'late_payment';
         }
         // A newer order of the same cart is still live — waiting for its payment within its reservation, or paid —
@@ -252,7 +258,7 @@ export class PaymentsService {
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
         await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
-        await this.onPaid(tx, order.promotionId);
+        await this.onPaid(tx, order, newer === 0);
         return 'paid';
       }
 
@@ -277,18 +283,6 @@ export class PaymentsService {
       await this.prisma.cart
         .updateMany({ where: { id: cartId }, data: { couponCode: null } })
         .catch((error: unknown) => this.logger.error(`Could not clear the coupon of cart ${cartId}`, error));
-    }
-    if (late) {
-      const { orderId, amount }: { orderId: string; amount: number } = late;
-      // Outside the transaction (the provider call). A refund the provider refuses stays FAILED with the order
-      // flagged for staff ("נסה שוב"); one that does not fit what is refundable (409 refund_exceeds_paid) leaves the
-      // "refund by hand" note. The webhook is still answered 200, since the payment itself was recorded.
-      // TODO(Task 6): move into the outbox (job `refund.late_payment`).
-      await this.refunds.create(orderId, amount, LATE_PAYMENT_REASON, null).catch((error: unknown) => {
-        if (error instanceof CheckoutError && error.code === 'refund_exceeds_paid')
-          this.logger.warn(`The late payment of order ${orderId} cannot be refunded here: refund it by hand`);
-        else this.logger.error(`Refund of the late payment of order ${orderId} failed`, error);
-      });
     }
     return outcome;
   }
@@ -325,11 +319,35 @@ export class PaymentsService {
 
   /**
    * Runs inside the webhook transaction when an order becomes paid (once: a paid order is never paid again). The
-   * order's promotion counts one more use — even past a coupon's limit, since the order is honored (spec §6, Review
-   * Focus 5). The atomic increment locks the promotion row last: payment → order → variants → promotion.
+   * order confirmation e-mail and its invoice are queued in the outbox (spec §5.3, §5.4, decision 83) when `notify`:
+   * not for a `superseded_paid` payment (staff sort that order out first; ledger ruling), and never for `paid_twice`
+   * or `late_payment`, which do not reach here. The order's promotion counts
+   * one more use — even past a coupon's limit, since the order is honored (spec §6, Review Focus 5). The atomic
+   * increment locks the promotion row last: payment → order → variants → promotion.
    */
-  private async onPaid(tx: Prisma.TransactionClient, promotionId: number | null): Promise<void> {
-    if (promotionId !== null) await this.promotions.countUse(tx, promotionId);
+  private async onPaid(
+    tx: Prisma.TransactionClient,
+    order: { id: string; promotionId: number | null },
+    notify: boolean,
+  ): Promise<void> {
+    if (notify) await this.enqueuePaidJobs(tx, order.id);
+    if (order.promotionId !== null) await this.promotions.countUse(tx, order.promotionId);
+  }
+
+  private async enqueuePaidJobs(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
+    const payload = { orderId };
+    await this.outbox.enqueue(tx, {
+      type: 'email.order_paid',
+      dedupeKey: `email.order_paid:${orderId}`,
+      payload,
+      orderId,
+    });
+    await this.outbox.enqueue(tx, {
+      type: 'invoice.issue',
+      dedupeKey: `invoice.issue:${orderId}`,
+      payload,
+      orderId,
+    });
   }
 
   // ---------- Sandbox (development only, CHK-10) ----------

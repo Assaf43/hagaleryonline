@@ -279,7 +279,9 @@ export type OrderAttentionReason =
   /** A payment that arrived after the order was cancelled (it is refunded in full). */
   | 'late_payment'
   /** Staff-visible flag with a note: a failed refund, a late payment on a cancelled order (`attentionNote`). */
-  | 'flagged';
+  | 'flagged'
+  /** An outbox job of the order (e-mail, SMS, invoice, refund) failed after all its retries. */
+  | 'job_failed';
 
 /** Hebrew label of each attention reason, shown next to the order in the admin. */
 export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
@@ -289,6 +291,7 @@ export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
   superseded_paid: 'שולמה למרות שנוצרה הזמנה חדשה מאותו סל',
   late_payment: 'תשלום התקבל אחרי ביטול',
   flagged: 'דורשת טיפול',
+  job_failed: 'משימה אוטומטית נכשלה',
 };
 
 /** One row of GET /api/admin/orders. */

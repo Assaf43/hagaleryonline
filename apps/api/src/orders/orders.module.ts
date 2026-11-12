@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { OutboxModule } from '../outbox/outbox.module.js';
 import { PAYMENT_PROVIDER, selectPaymentProvider } from '../payments/payment-provider.js';
 import { PaymentsController } from '../payments/payments.controller.js';
 import { PaymentsService } from '../payments/payments.service.js';
@@ -12,6 +13,7 @@ import { PromotionsModule } from '../promotions/promotions.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
+import { LatePaymentRefundJob } from './late-payment.job.js';
 import { OrderLifecycleService } from './order-lifecycle.service.js';
 import { RefundService } from './refund.service.js';
 import { OrdersAdminController } from './orders-admin.controller.js';
@@ -26,7 +28,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
  * address stops the API only when it is the configured provider.
  */
 @Module({
-  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule, WriteThrottleModule],
+  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule, WriteThrottleModule, OutboxModule],
   controllers: [CheckoutController, OrdersController, PaymentsController, OrdersAdminController],
   providers: [
     CheckoutService,
@@ -34,6 +36,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     OrdersAdminService,
     OrderLifecycleService,
     RefundService,
+    LatePaymentRefundJob,
     PaymentsService,
     { provide: WebhookDispatcher, useClass: HttpWebhookDispatcher },
     {

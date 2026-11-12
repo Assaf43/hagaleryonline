@@ -1,0 +1,84 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+h1,
+.page-intro {
+  margin: 0;
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
+.jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+// Phones: a card per job. From desktop width the same cells line up in one row.
+.job {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.type {
+  font-weight: 700;
+}
+
+.order a {
+  color: inherit;
+}
+
+.attempts,
+.updated,
+.error {
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.error {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.empty {
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+@media (width >= 1024px) {
+  .job {
+    grid-template-columns: 12rem 9rem 6rem 9rem minmax(0, 1fr) auto;
+    gap: var(--space-3);
+  }
+
+  .error,
+  .actions {
+    grid-column: auto;
+  }
+}

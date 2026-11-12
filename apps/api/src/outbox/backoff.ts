@@ -1,0 +1,10 @@
+/** Attempts before a job is FAILED (spec §5.1: 8 attempts over several hours). */
+export const MAX_ATTEMPTS = 8;
+
+const FIRST_DELAY_MS = 30_000;
+const MAX_DELAY_MS = 3_600_000;
+
+/** Milliseconds to wait after failed attempt number `attempt` (1-based): 30 s, doubling, at most one hour. */
+export function backoff(attempt: number): number {
+  return Math.min(FIRST_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS);
+}

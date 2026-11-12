@@ -6,6 +6,7 @@ import type { AdminOrderDetail } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import { FulfillmentMode, OrderShippingMethod, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
+import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
@@ -104,6 +105,9 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
       .set('x-sandbox-signature', sign(body, SECRET))
       .send(body);
   };
+
+  /** The late-payment refund is an outbox job (decision 83); the worker is off in e2e, so the tests run it. */
+  const runJobs = () => app.get(OutboxService).runDue(100);
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -378,6 +382,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     await customerCancel(order);
 
     await webhook('sbx_zz_late', TOTAL).expect(200);
+    await runJobs();
     const row = await prisma.order.findUniqueOrThrow({
       where: { id: order.id },
       include: { payments: true, refunds: true },
@@ -400,6 +405,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
 
     // The same webhook again changes nothing (no second refund).
     await webhook('sbx_zz_late', TOTAL).expect(200);
+    await runJobs();
     expect(await prisma.refund.count({ where: { orderId: order.id } })).toBe(1);
     expect(await stock()).toBe(before);
     const shown = await detail(order.number);
@@ -413,6 +419,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     process.env.PAYMENT_SANDBOX_FAIL_REFUNDS = 'true';
     try {
       await webhook('sbx_zz_late-fail', TOTAL).expect(200);
+      await runJobs();
     } finally {
       delete process.env.PAYMENT_SANDBOX_FAIL_REFUNDS;
     }
@@ -541,6 +548,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     );
 
     await webhook('sbx_zz_stray-2', TOTAL).expect(200);
+    await runJobs();
     const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { refunds: true } });
     expect(row.status).toBe(OrderStatus.CANCELLED);
     expect(row.needsAttention).toBe(true);
@@ -566,6 +574,7 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     process.env.PAYMENT_SANDBOX_FAIL_REFUNDS = 'true';
     try {
       await webhook('sbx_zz_retry-actor', TOTAL).expect(200);
+      await runJobs();
     } finally {
       delete process.env.PAYMENT_SANDBOX_FAIL_REFUNDS;
     }

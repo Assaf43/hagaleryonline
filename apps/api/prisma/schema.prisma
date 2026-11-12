@@ -631,6 +631,7 @@ model Order {
   events    OrderStatusEvent[]
   refunds   Refund[]
   slots     DeliverySlot[]
+  jobs      OutboxJob[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -756,6 +757,43 @@ model Payment {
 
   @@index([orderId])
   @@map("payments")
+}
+
+// ---------- Outbox (Phase 5b, spec §5.1, decision 83) ----------
+
+enum OutboxJobState {
+  PENDING @map("pending")
+  RUNNING @map("running")
+  DONE    @map("done")
+  FAILED  @map("failed")
+
+  @@map("outbox_job_state")
+}
+
+/// A side effect (e-mail, SMS, invoice, refund) written in the transaction of the change that causes it and run by
+/// the API's worker (apps/api/src/outbox/). `dedupeKey` makes enqueueing idempotent; a failure retries with backoff,
+/// after 8 attempts the job is FAILED (admin "משימות שנכשלו", and the order needs attention).
+model OutboxJob {
+  id        String         @id @default(uuid()) @db.Uuid
+  /// `OutboxJobType` of @hg/models (`email.order_paid`, `invoice.issue`…).
+  type      String
+  dedupeKey String         @unique @map("dedupe_key")
+  payload   Json
+  state     OutboxJobState @default(PENDING)
+  attempts  Int            @default(0)
+  runAfter  DateTime       @default(now()) @map("run_after")
+  lastError String?        @map("last_error")
+  /// The order the job belongs to (its failed jobs flag it); null for jobs of no order.
+  orderId   String?        @map("order_id") @db.Uuid
+  createdAt DateTime       @default(now()) @map("created_at")
+  /// Also the claim time of a RUNNING job (a RUNNING job older than 10 minutes is reclaimed).
+  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([state, runAfter])
+  @@index([orderId])
+  @@map("outbox_jobs")
 }
 
 // ---------- Promotions and coupons (Phase 4d, spec §6, decision 70) ----------
