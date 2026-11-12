@@ -256,15 +256,11 @@ describe('Notifications (e2e, CHK-07)', () => {
       await cancelOrder(order.number);
       await runJobs();
       expect((await logs(order.id)).map((r) => r.template)).toEqual(['delivery_slot', 'order_cancelled']);
-      expect(
-        await prisma.outboxJob.count({ where: { orderId: order.id, type: 'email.status', state: 'DONE' } }),
-      ).toBe(1);
+      expect(await prisma.outboxJob.count({ where: { orderId: order.id, type: 'email.status', state: 'DONE' } })).toBe(
+        1,
+      );
       await http().get(`/api/delivery/${token}`).expect(404);
-      await http()
-        .post(`/api/delivery/${token}`)
-        .set('Origin', SITE)
-        .send({ answer: 'confirm' })
-        .expect(404);
+      await http().post(`/api/delivery/${token}`).set('Origin', SITE).send({ answer: 'confirm' }).expect(404);
     });
 
     it('the delivery SMS job sends nothing for a cancelled order, even with a live slot', async () => {
