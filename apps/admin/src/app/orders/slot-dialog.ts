@@ -79,6 +79,7 @@ export class SlotDialog {
 
   protected async submit(event: Event) {
     event.preventDefault();
+    if (this.busy()) return;
     const slot = { date: this.date(), windowFrom: this.from(), windowTo: this.to() };
     const problem = validateSlot(slot);
     if (problem) {

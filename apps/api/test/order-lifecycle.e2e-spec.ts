@@ -129,10 +129,12 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       state: 'proposed',
     });
     expect(scheduled.nextStatuses).toEqual(['shipped', 'delivered']);
+    expect(scheduled.canCancel).toBe(true);
     await move(owner, n, { to: 'shipped' }).expect(201);
     const done = (await move(owner, n, { to: 'delivered' }).expect(201)).body as AdminOrderDetail;
     expect(done.status).toBe('delivered');
     expect(done.nextStatuses).toEqual([]);
+    expect(done.canCancel).toBe(false);
 
     const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
     expect(row.deliveredAt).not.toBeNull();

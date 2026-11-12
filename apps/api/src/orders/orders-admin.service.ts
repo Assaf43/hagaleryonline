@@ -30,7 +30,7 @@ import { currentSlotView } from './delivery-slot.js';
 import { orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
 import { orderRefundState } from './refund-amount.js';
-import { nextStatuses } from './order-transitions.js';
+import { canCancel, nextStatuses } from './order-transitions.js';
 import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
 export const ADMIN_ORDERS_PAGE_SIZE = 30;
@@ -240,6 +240,7 @@ export class OrdersAdminService {
       attentionNote: order.attentionNote,
       refunds,
       deliverySlot: currentSlotView(order.slots),
+      canCancel: canCancel(effectiveStatus(order), 'admin'),
       nextStatuses: nextStatuses(order.status).map((s) => STATUS_VIEW[s]),
       statusEvents: order.events.map((e) => ({
         fromStatus: e.fromStatus ? STATUS_VIEW[e.fromStatus] : null,

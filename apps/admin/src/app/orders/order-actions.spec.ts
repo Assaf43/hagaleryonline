@@ -46,6 +46,7 @@ const DETAIL: AdminOrderDetail = {
   attentionNote: null,
   refunds: [],
   deliverySlot: null,
+  canCancel: true,
   nextStatuses: ['processing', 'delivery_scheduled', 'shipped', 'delivered'],
   statusEvents: [],
   needsAttention: false,
@@ -390,7 +391,7 @@ describe('order detail actions', () => {
     const none = await mount(['orders.cancel'], { refundable: 0 });
     expect(buttons(none, 'button.refund-order')).toHaveLength(0);
     TestBed.resetTestingModule();
-    const delivered = await mount(['orders.cancel'], { status: 'delivered', nextStatuses: [] });
+    const delivered = await mount(['orders.cancel'], { status: 'delivered', canCancel: false, nextStatuses: [] });
     expect(buttons(delivered, 'button.cancel-order')).toHaveLength(0);
   });
 

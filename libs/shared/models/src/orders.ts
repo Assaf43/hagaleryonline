@@ -363,6 +363,8 @@ export interface AdminOrderDetail {
   refunds: AdminRefund[];
   /** The current (not superseded) delivery slot, or null. */
   deliverySlot: DeliverySlotView | null;
+  /** Staff may cancel it now (with `orders.cancel`): the API's rule, so the admin never repeats it. */
+  canCancel: boolean;
   /** The statuses the order can be advanced to now, in flow order. */
   nextStatuses: OrderStatus[];
   /** Status changes, oldest first. */

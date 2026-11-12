@@ -7,8 +7,3 @@ export function parseShekels(text: string): number | null {
   if (!match) return null;
   return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0') || 0);
 }
-
-/** 25050 agorot → "250.5": the text a shekel input shows. */
-export function agorotToShekelsText(agorot: number): string {
-  return String(agorot / 100);
-}

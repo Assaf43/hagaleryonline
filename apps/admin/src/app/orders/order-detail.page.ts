@@ -22,9 +22,6 @@ import { RefundDialog, type RefundDialogData } from './refund-dialog';
 import { SlotDialog, type SlotDialogData } from './slot-dialog';
 import { StatusTimeline } from './status-timeline';
 
-/** Statuses staff may cancel from (the API's rule, spec §4.2). */
-const CANCELLABLE: readonly OrderStatus[] = ['pending_payment', 'paid', 'processing', 'delivery_scheduled', 'shipped'];
-
 const PAYMENT_LABELS: Record<AdminPaymentStatus, string> = {
   pending: 'ממתין',
   succeeded: 'הצליח',
@@ -111,7 +108,7 @@ export class OrderDetailPage {
   }
 
   protected canCancelOrder(o: AdminOrderDetail): boolean {
-    return this.canCancel() && CANCELLABLE.includes(o.status);
+    return this.canCancel() && o.canCancel;
   }
 
   private openDialog<D>(component: ComponentType<unknown>, data: D) {

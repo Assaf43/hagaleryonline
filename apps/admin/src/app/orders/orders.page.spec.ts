@@ -79,6 +79,7 @@ const DETAIL: AdminOrderDetail = {
   attentionNote: null,
   refunds: [],
   deliverySlot: null,
+  canCancel: true,
   nextStatuses: [],
   statusEvents: [],
   needsAttention: true,
