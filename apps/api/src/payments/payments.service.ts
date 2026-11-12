@@ -258,7 +258,7 @@ export class PaymentsService {
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
         await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
-        await this.onPaid(tx, order, newer === 0);
+        await this.onPaid(tx, order);
         return 'paid';
       }
 
@@ -319,18 +319,14 @@ export class PaymentsService {
 
   /**
    * Runs inside the webhook transaction when an order becomes paid (once: a paid order is never paid again). The
-   * order confirmation e-mail and its invoice are queued in the outbox (spec §5.3, §5.4, decision 83) when `notify`:
-   * not for a `superseded_paid` payment (staff sort that order out first; ledger ruling), and never for `paid_twice`
-   * or `late_payment`, which do not reach here. The order's promotion counts
-   * one more use — even past a coupon's limit, since the order is honored (spec §6, Review Focus 5). The atomic
-   * increment locks the promotion row last: payment → order → variants → promotion.
+   * order confirmation e-mail and its invoice are queued in the outbox (spec §5.3, §5.4, decision 83) — also for a
+   * `superseded_paid` payment, which is a real paid order (review ruling); `paid_twice` and `late_payment` never
+   * reach here. The order's promotion counts one more use — even past a coupon's limit, since the order is honored
+   * (spec §6, Review Focus 5). The atomic increment locks the promotion row last: payment → order → variants →
+   * promotion.
    */
-  private async onPaid(
-    tx: Prisma.TransactionClient,
-    order: { id: string; promotionId: number | null },
-    notify: boolean,
-  ): Promise<void> {
-    if (notify) await this.enqueuePaidJobs(tx, order.id);
+  private async onPaid(tx: Prisma.TransactionClient, order: { id: string; promotionId: number | null }): Promise<void> {
+    await this.enqueuePaidJobs(tx, order.id);
     if (order.promotionId !== null) await this.promotions.countUse(tx, order.promotionId);
   }
 

@@ -217,9 +217,9 @@ describe('Outbox (e2e, decision 83)', () => {
     await outbox.runDue();
     let row = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:fail' } });
     expect(row).toMatchObject({ state: OutboxJobState.PENDING, attempts: 1, lastError: 'provider down 1' });
-    // 30 s after the first failure.
-    expect(row.runAfter.getTime()).toBeGreaterThanOrEqual(before + 29_000);
-    expect(row.runAfter.getTime()).toBeLessThan(Date.now() + 31_000);
+    // 5 minutes after the first failure.
+    expect(row.runAfter.getTime()).toBeGreaterThanOrEqual(before + 299_000);
+    expect(row.runAfter.getTime()).toBeLessThan(Date.now() + 301_000);
     // Not due yet: nothing runs.
     await outbox.runDue();
     expect(runs).toBe(1);
@@ -276,7 +276,7 @@ describe('Outbox (e2e, decision 83)', () => {
 
     await owner.post(`/jobs/${job.id}/retry`).expect(204);
     const retried = await prisma.outboxJob.findUniqueOrThrow({ where: { id: job.id } });
-    expect(retried).toMatchObject({ state: OutboxJobState.PENDING, attempts: 0 });
+    expect(retried).toMatchObject({ state: OutboxJobState.PENDING, attempts: 0, lastError: null });
     expect(retried.runAfter.getTime()).toBeLessThanOrEqual(Date.now());
     const audit = await prisma.auditLog.findFirstOrThrow({ where: { action: 'job.retry' } });
     expect(audit).toMatchObject({ entityType: 'outbox_job', entityId: job.id });
@@ -333,12 +333,34 @@ describe('Outbox (e2e, decision 83)', () => {
 
     expect(await outbox.runDue()).toBe(1);
     expect(runs).toBe(1);
-    expect((await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:stuck' } })).state).toBe(
-      OutboxJobState.DONE,
-    );
+    // The stuck run counts as an attempt.
+    expect(await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:stuck' } })).toMatchObject({
+      state: OutboxJobState.DONE,
+      attempts: 1,
+    });
     expect((await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:busy' } })).state).toBe(
       OutboxJobState.RUNNING,
     );
+  });
+
+  it('a job that keeps getting stuck (a crashing handler) is FAILED once the stuck runs reach 8 attempts', async () => {
+    let runs = 0;
+    outbox.register('email.status', async () => {
+      runs++;
+    });
+    await enqueue('email.status', 'zz:crashing');
+    await prisma.$executeRaw`
+      UPDATE outbox_jobs SET state = 'running', attempts = 7,
+        updated_at = (now() AT TIME ZONE 'UTC') - interval '11 minutes'
+      WHERE dedupe_key = 'zz:crashing'`;
+
+    expect(await outbox.runDue()).toBe(0);
+    expect(runs).toBe(0);
+    expect(await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:crashing' } })).toMatchObject({
+      state: OutboxJobState.FAILED,
+      attempts: 8,
+      lastError: 'reclaimed after a stuck run',
+    });
   });
 
   it('a PAID webhook enqueues the paid jobs in the webhook transaction, once', async () => {
@@ -358,7 +380,7 @@ describe('Outbox (e2e, decision 83)', () => {
     expect(await jobs(order.id)).toHaveLength(2);
   });
 
-  it('no paid jobs for paid_twice or superseded_paid payments', async () => {
+  it('paid jobs: none for paid_twice; a superseded_paid order is a real paid order and gets both', async () => {
     const twice = await makeOrder('twice', OrderStatus.PAID);
     await prisma.payment.create({
       data: { orderId: twice.id, provider: 'sandbox', transactionId: 'sbx_zz_out_twice-2', amount: TOTAL },
@@ -378,7 +400,7 @@ describe('Outbox (e2e, decision 83)', () => {
       expect(
         (await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_out_superseded-old' } })).rawStatus,
       ).toBe('superseded_paid');
-      expect(await jobs(older.id)).toHaveLength(0);
+      expect(await keys(older.id)).toEqual([`email.order_paid:${older.id}`, `invoice.issue:${older.id}`]);
     } finally {
       await prisma.cart.delete({ where: { id: cart.id } });
     }
@@ -521,6 +543,12 @@ describe('Outbox (e2e, decision 83)', () => {
     expect(row.refunds[0]).toMatchObject({ status: RefundStatus.SUCCEEDED, amount: TOTAL, reason: 'late_payment' });
     expect(row.refundedTotal).toBe(TOTAL);
     expect(row.attentionNote).toBe('תשלום התקבל אחרי ביטול — הוחזר');
+    // The order was never invoiced: the late-payment refund gets its e-mail but no credit note.
+    const refundId = row.refunds[0].id;
+    expect(await keys(order.id)).toEqual(
+      [`email.cancelled:${order.id}`, `email.refund:${refundId}`, `refund.late_payment:${payment.id}`].sort(),
+    );
+    expect(await prisma.outboxJob.count({ where: { dedupeKey: { endsWith: refundId } } })).toBe(1);
 
     // Running the same job again (a crash before DONE) never refunds twice.
     await prisma.outboxJob.update({ where: { dedupeKey: key }, data: { state: OutboxJobState.PENDING } });
@@ -528,5 +556,55 @@ describe('Outbox (e2e, decision 83)', () => {
     await outbox.runDue();
     expect(await prisma.refund.count({ where: { orderId: order.id } })).toBe(1);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).refundedTotal).toBe(TOTAL);
+  });
+
+  it('the late-payment job retries while its refund is still in flight, and finishes it once it is stale', async () => {
+    const order = await makeOrder('late-inflight', OrderStatus.PENDING_PAYMENT);
+    await http().post(`/api/orders/${order.number}/cancel?t=${order.publicToken}`).set('Origin', ORIGIN).expect(201);
+    await webhook('sbx_zz_out_late-inflight').expect(200);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_out_late-inflight' } });
+    const key = `refund.late_payment:${payment.id}`;
+    // An earlier run reserved the refund and is still calling the provider (or crashed a moment ago).
+    const inflight = await prisma.refund.create({
+      data: {
+        orderId: order.id,
+        paymentId: payment.id,
+        amount: TOTAL,
+        reason: 'late_payment',
+        provider: 'sandbox',
+        status: RefundStatus.PENDING,
+        idempotencyKey: 'refund:zz-out-inflight',
+      },
+    });
+
+    await outbox.runDue();
+    let job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: key } });
+    expect(job).toMatchObject({ state: OutboxJobState.PENDING, attempts: 1 });
+    expect(job.lastError).toBeTruthy();
+    expect(await prisma.refund.findUniqueOrThrow({ where: { id: inflight.id } })).toMatchObject({ status: 'PENDING' });
+
+    // Later the refund has lost its result: the job executes it with its own key and finishes.
+    await prisma.$executeRaw`
+      UPDATE refunds SET updated_at = (now() AT TIME ZONE 'UTC') - interval '3 minutes' WHERE id = ${inflight.id}::uuid`;
+    await dueNow();
+    await outbox.runDue();
+    job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: key } });
+    expect(job.state).toBe(OutboxJobState.DONE);
+    expect(await prisma.refund.findUniqueOrThrow({ where: { id: inflight.id } })).toMatchObject({
+      status: 'SUCCEEDED',
+      providerRefundId: 'sbx_rf_refund:zz-out-inflight',
+    });
+    expect(await prisma.refund.count({ where: { orderId: order.id } })).toBe(1);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).refundedTotal).toBe(TOTAL);
+  });
+
+  it('a cancel from delivery_scheduled or shipped enqueues the cancel e-mail', async () => {
+    for (const status of [OrderStatus.DELIVERY_SCHEDULED, OrderStatus.SHIPPED]) {
+      const order = await makeOrder(`cancel-from-${status}`, status);
+      await owner
+        .post(`/orders/${order.number}/cancel`, { refund: 'none', reason: 'בוטל על ידי הצוות', restock: false })
+        .expect(200);
+      expect(await keys(order.id)).toEqual([`email.cancelled:${order.id}`]);
+    }
   });
 });

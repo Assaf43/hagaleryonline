@@ -33,6 +33,13 @@ export const STALE_PENDING_MS = 2 * 60_000;
 
 const ERROR_MAX = 500;
 
+/** The late-payment refund is PENDING and not yet stale: its result may still arrive, so the job tries again later. */
+export class LatePaymentRefundInFlight extends Error {
+  constructor(refundId: string) {
+    super(`late-payment refund ${refundId} is still in flight`);
+  }
+}
+
 const exceedsPaid = () => new CheckoutError(HttpStatus.CONFLICT, 'refund_exceeds_paid');
 const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'invalid_transition');
 
@@ -133,7 +140,8 @@ export class RefundService {
   /**
    * The refund of a payment that arrived after the order was cancelled (spec §4.2), run by the outbox job
    * `refund.late_payment` — so it may run more than once: under the order lock, a late-payment refund of that payment
-   * that already exists is never made again (a PENDING one that lost its result is executed again with its own key).
+   * that already exists is never made again. A PENDING one still in flight throws `LatePaymentRefundInFlight` (the
+   * job retries later); once it is stale (lost its result) it is executed again with its own key.
    * 409 `refund_exceeds_paid` when it does not fit (the order keeps the "refund by hand" note).
    */
   async refundLatePayment(orderId: string, paymentId: string, amount: number): Promise<Refund | null> {
@@ -144,9 +152,10 @@ export class RefundService {
         orderBy: { createdAt: 'asc' },
       });
       if (existing) {
-        const lost =
-          existing.status === RefundStatus.PENDING && Date.now() - existing.updatedAt.getTime() >= STALE_PENDING_MS;
-        return lost ? existing : null;
+        if (existing.status !== RefundStatus.PENDING) return null;
+        if (Date.now() - existing.updatedAt.getTime() < STALE_PENDING_MS)
+          throw new LatePaymentRefundInFlight(existing.id);
+        return existing;
       }
       return this.reserve(tx, orderId, amount, LATE_PAYMENT_REASON, null, paymentId);
     });
@@ -307,6 +316,8 @@ export class RefundService {
       payload,
       orderId: refund.orderId,
     });
+    // A late payment's order was cancelled before it was paid, so it has no invoice to credit (review ruling).
+    if (refund.reason === LATE_PAYMENT_REASON) return;
     await this.outbox.enqueue(tx, {
       type: 'invoice.credit_note',
       dedupeKey: `invoice.credit_note:${refund.id}`,

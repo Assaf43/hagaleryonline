@@ -34,6 +34,7 @@ export interface OutboxJobInput {
 /** A RUNNING job not finished within this time is taken to have lost its worker (a crash) and runs again. */
 export const STUCK_RUNNING_MS = 10 * 60_000;
 
+const RECLAIMED_ERROR = 'reclaimed after a stuck run';
 const ERROR_MAX = 1000;
 const FAILED_LIST_MAX = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -111,11 +112,17 @@ export class OutboxService {
     return claimed.length;
   }
 
-  /** A RUNNING job older than `STUCK_RUNNING_MS` lost its worker: it becomes PENDING (its attempts unchanged). */
+  /**
+   * A RUNNING job older than `STUCK_RUNNING_MS` lost its worker. The stuck run counts as an attempt, so a handler that
+   * crashes the process every time ends FAILED like any other: PENDING again (due at once), or FAILED at `MAX_ATTEMPTS`.
+   */
   private async reclaimStuck(): Promise<void> {
     const reclaimed = await this.prisma.$executeRaw`
       UPDATE outbox_jobs
-      SET state = 'pending', updated_at = ${NOW}, last_error = 'reclaimed: still running after 10 minutes'
+      SET attempts = attempts + 1,
+          state = CASE WHEN attempts + 1 >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'pending' END::outbox_job_state,
+          updated_at = ${NOW},
+          last_error = ${RECLAIMED_ERROR}
       WHERE state = 'running' AND updated_at < ${NOW} - make_interval(secs => ${STUCK_RUNNING_MS / 1000})`;
     if (reclaimed > 0) this.logger.warn(`Reclaimed ${reclaimed} outbox job(s) stuck in RUNNING`);
   }
@@ -179,7 +186,7 @@ export class OutboxService {
       if (job.state !== OutboxJobState.FAILED) throw new ConflictException({ statusCode: 409, code: 'not_failed' });
       await tx.outboxJob.update({
         where: { id },
-        data: { state: OutboxJobState.PENDING, attempts: 0, runAfter: new Date() },
+        data: { state: OutboxJobState.PENDING, attempts: 0, runAfter: new Date(), lastError: null },
       });
       await this.audit.record(
         {
