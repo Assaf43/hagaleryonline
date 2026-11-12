@@ -13,6 +13,7 @@ import { ShippingModule } from '../shipping/shipping.module.js';
 import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
 import { OrderLifecycleService } from './order-lifecycle.service.js';
+import { RefundService } from './refund.service.js';
 import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 import { OrdersController } from './orders.controller.js';
@@ -32,6 +33,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     OrdersService,
     OrdersAdminService,
     OrderLifecycleService,
+    RefundService,
     PaymentsService,
     { provide: WebhookDispatcher, useClass: HttpWebhookDispatcher },
     {

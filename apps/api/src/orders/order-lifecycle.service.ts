@@ -1,8 +1,17 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import type { AdminOrderDetail, DeliverySlotInput, OrderStatus as OrderStatusView, OrderView } from '@hg/models';
+import type {
+  AdminCancelRequest,
+  AdminOrderDetail,
+  AdminRefundRequest,
+  CancelRefundChoice,
+  DeliverySlotInput,
+  OrderStatus as OrderStatusView,
+  OrderView,
+} from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import {
   DeliverySlotState,
+  FulfillmentMode,
   OrderActorType,
   OrderStatus,
   PaymentStatus,
@@ -10,16 +19,21 @@ import {
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { parseSlot } from './delivery-slot.js';
-import { lockOrder, lockOrderPayments } from './locks.js';
-import { CheckoutError, invalidInput, orderNotFound } from './order-errors.js';
+import { lockOrder, lockOrderPayments, lockVariants } from './locks.js';
+import { badField, CheckoutError, invalidInput, orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
 import { canAdvance, canCancel } from './order-transitions.js';
+import { parseAmount, parseReason } from './refund-amount.js';
+import { RefundService } from './refund.service.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 import { effectiveStatus, OrdersService, STATUS_VIEW } from './orders.service.js';
 
 const STATUS_FROM_VIEW = new Map<string, OrderStatus>(
   (Object.entries(STATUS_VIEW) as [OrderStatus, OrderStatusView][]).map(([prisma, view]) => [view, prisma]),
 );
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REFUND_CHOICES: readonly CancelRefundChoice[] = ['full', 'partial', 'none'];
 
 const invalidTransition = () => new CheckoutError(HttpStatus.CONFLICT, 'invalid_transition');
 
@@ -36,6 +50,7 @@ export class OrderLifecycleService {
     private readonly audit: AuditService,
     private readonly adminOrders: OrdersAdminService,
     private readonly orders: OrdersService,
+    private readonly refunds: RefundService,
   ) {}
 
   /**
@@ -132,6 +147,146 @@ export class OrderLifecycleService {
     return this.orders.view(numberParam, token);
   }
 
+  /**
+   * POST /api/admin/orders/:number/cancel (`orders.cancel`, decisions 73–74). Everything is checked before anything
+   * changes. In one transaction (payments → order → variants, the webhook's lock order) the order becomes CANCELLED,
+   * pending payments are cancelled, the lines go back to stock (paid orders, unless `restock` is false) and the
+   * refund row is inserted PENDING; the provider is called after commit. A refund the provider refuses leaves the
+   * order cancelled with a FAILED refund and the order flagged. An unpaid order has nothing to refund.
+   */
+  async cancelByAdmin(numberParam: string, raw: unknown, actor: LifecycleActor): Promise<AdminOrderDetail> {
+    const number = parseOrderNumber(numberParam);
+    if (number === null) throw orderNotFound();
+    const input = parseCancel(raw);
+    const found = await this.prisma.order.findUnique({ where: { number }, select: { id: true } });
+    if (!found) throw orderNotFound();
+
+    const refundId = await this.prisma.$transaction(async (tx) => {
+      await lockOrderPayments(tx, found.id);
+      await lockOrder(tx, found.id);
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: found.id },
+        include: { items: { select: { variantId: true, quantity: true } } },
+      });
+      const from = order.status;
+      if (!canCancel(effectiveStatus(order), 'admin')) throw invalidTransition();
+      const unpaid = from === OrderStatus.PENDING_PAYMENT;
+      if (unpaid && input.refund !== 'none') throw badField('refund');
+
+      // The refund is reserved in this transaction, so it fails here, before any change, when it does not fit.
+      let reserved: { id: string; amount: number } | null = null;
+      if (input.refund !== 'none') {
+        const { refundable } = await this.refunds.state(tx, order.id);
+        const amount = input.refund === 'full' ? refundable : input.amount!;
+        // A full cancel of an order that was already refunded in full has nothing left to refund.
+        if (input.refund === 'partial' || amount > 0) {
+          const refund = await this.refunds.reserve(tx, order.id, amount, input.reason, actor.adminId);
+          reserved = { id: refund.id, amount: refund.amount };
+        }
+      }
+
+      if (unpaid)
+        await tx.payment.updateMany({
+          where: { orderId: order.id, status: PaymentStatus.PENDING },
+          data: { status: PaymentStatus.CANCELLED },
+        });
+      const restock = !unpaid && input.restock;
+      if (restock) await this.restock(tx, order.items);
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.CANCELLED, cancelledAt: new Date() },
+      });
+      await tx.orderStatusEvent.create({
+        data: {
+          orderId: order.id,
+          fromStatus: from,
+          toStatus: OrderStatus.CANCELLED,
+          actorType: OrderActorType.ADMIN,
+          actorAdminId: actor.adminId,
+          note: input.reason,
+        },
+      });
+      await this.audit.record(
+        {
+          actorId: actor.adminId,
+          action: 'order.cancel',
+          entityType: 'order',
+          entityId: order.number,
+          before: { status: STATUS_VIEW[from] },
+          after: {
+            status: 'cancelled',
+            reason: input.reason,
+            refund: input.refund,
+            refundAmount: reserved?.amount ?? 0,
+            restock,
+          },
+          ip: actor.ip,
+        },
+        tx,
+      );
+      await this.onStatusChanged(tx, order, from, OrderStatus.CANCELLED);
+      return reserved?.id ?? null;
+    });
+    if (refundId) await this.refunds.execute(refundId, actor.ip);
+    return this.adminOrders.detail(numberParam);
+  }
+
+  /**
+   * POST /api/admin/orders/:number/refunds (`orders.cancel`): a refund without cancelling. 400 `reason` / `amount`,
+   * 409 `refund_exceeds_paid`. A provider failure is not an error here: the detail shows the FAILED refund.
+   */
+  async refundByAdmin(numberParam: string, raw: unknown, actor: LifecycleActor): Promise<AdminOrderDetail> {
+    const number = parseOrderNumber(numberParam);
+    if (number === null) throw orderNotFound();
+    const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<
+      Record<keyof AdminRefundRequest, unknown>
+    >;
+    const reason = parseReason(body.reason);
+    if (reason === null) throw badField('reason');
+    const amount = parseAmount(body.amount);
+    if (amount === null) throw badField('amount');
+    const found = await this.prisma.order.findUnique({ where: { number }, select: { id: true } });
+    if (!found) throw orderNotFound();
+    await this.refunds.create(found.id, amount, reason, actor.adminId, actor.ip);
+    return this.adminOrders.detail(numberParam);
+  }
+
+  /** POST /api/admin/orders/:number/refunds/:id/retry (`orders.cancel`): same idempotency key. */
+  async retryRefund(numberParam: string, refundId: string, actor: LifecycleActor): Promise<AdminOrderDetail> {
+    const number = parseOrderNumber(numberParam);
+    if (number === null || !UUID.test(refundId)) throw orderNotFound();
+    const refund = await this.prisma.refund.findFirst({
+      where: { id: refundId, order: { number } },
+      select: { id: true },
+    });
+    if (!refund) throw orderNotFound();
+    await this.refunds.retry(refund.id, actor.ip);
+    return this.adminOrders.detail(numberParam);
+  }
+
+  /** Adds the lines' quantities back to the stock of in-stock variants (the only ones that keep a count). */
+  private async restock(
+    tx: Prisma.TransactionClient,
+    items: { variantId: number | null; quantity: number }[],
+  ): Promise<void> {
+    const quantities = new Map<number, number>();
+    for (const item of items)
+      if (item.variantId !== null)
+        quantities.set(item.variantId, (quantities.get(item.variantId) ?? 0) + item.quantity);
+    // After the order lock, by ascending id (locks.ts).
+    await lockVariants(tx, [...quantities.keys()]);
+    const variants = await tx.variant.findMany({
+      where: { id: { in: [...quantities.keys()] }, fulfillment: FulfillmentMode.IN_STOCK },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+    for (const variant of variants)
+      await tx.variant.update({
+        where: { id: variant.id },
+        data: { stock: { increment: quantities.get(variant.id)! } },
+      });
+  }
+
   /** Supersedes the live slot, then inserts the new one (the partial unique index allows one live slot). */
   private async replaceSlot(tx: Prisma.TransactionClient, orderId: string, slot: DeliverySlotInput): Promise<void> {
     await tx.deliverySlot.updateMany({
@@ -158,4 +313,31 @@ export class OrderLifecycleService {
   ): Promise<void> {
     return Promise.resolve();
   }
+}
+
+interface CancelInput {
+  refund: CancelRefundChoice;
+  amount?: number;
+  reason: string;
+  restock: boolean;
+}
+
+/** Validates the cancel body: 400 with the first bad `field` (`refund`, `reason`, `amount`, `restock`). */
+function parseCancel(raw: unknown): CancelInput {
+  const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<
+    Record<keyof AdminCancelRequest, unknown>
+  >;
+  if (typeof body.refund !== 'string' || !(REFUND_CHOICES as readonly string[]).includes(body.refund))
+    throw badField('refund');
+  const refund = body.refund as CancelRefundChoice;
+  const reason = parseReason(body.reason);
+  if (reason === null) throw badField('reason');
+  let amount: number | undefined;
+  if (refund === 'partial') {
+    const parsed = parseAmount(body.amount);
+    if (parsed === null) throw badField('amount');
+    amount = parsed;
+  }
+  if (body.restock !== undefined && typeof body.restock !== 'boolean') throw badField('restock');
+  return { refund, amount, reason, restock: body.restock ?? true };
 }

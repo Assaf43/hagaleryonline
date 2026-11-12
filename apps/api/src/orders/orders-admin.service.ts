@@ -4,6 +4,7 @@ import type {
   AdminOrderPage,
   AdminOrderPayment,
   AdminPaymentStatus,
+  AdminRefund,
   OrderAddressView,
   OrderActorType as OrderActorView,
   OrderAttentionReason,
@@ -19,6 +20,7 @@ import {
   OrderShippingMethod,
   OrderStatus,
   PaymentStatus,
+  RefundStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/payment-provider.js';
@@ -27,6 +29,7 @@ import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-p
 import { currentSlotView } from './delivery-slot.js';
 import { orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
+import { orderRefundState } from './refund-amount.js';
 import { nextStatuses } from './order-transitions.js';
 import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
@@ -89,15 +92,23 @@ const ATTENTION_RAW: Record<string, OrderAttentionReason> = {
   paid_twice: 'paid_twice',
   amount_mismatch: 'amount_mismatch',
   superseded_paid: 'superseded_paid',
+  late_payment: 'late_payment',
+};
+const REFUND_VIEW: Record<RefundStatus, AdminRefund['status']> = {
+  PENDING: 'pending',
+  SUCCEEDED: 'succeeded',
+  FAILED: 'failed',
 };
 
-/** The reasons an order needs staff: a stock shortage or a flagged payment. */
+/** The reasons an order needs staff: a stock shortage, a flagged payment, or the order's own flag (a failed refund). */
 export function attentionReasons(order: {
   stockShortage: boolean;
+  needsAttention: boolean;
   payments: { rawStatus: string | null }[];
 }): OrderAttentionReason[] {
   const reasons = new Set<OrderAttentionReason>();
   if (order.stockShortage) reasons.add('stock_shortage');
+  if (order.needsAttention) reasons.add('flagged');
   for (const p of order.payments) {
     const reason = p.rawStatus ? ATTENTION_RAW[p.rawStatus] : undefined;
     if (reason) reasons.add(reason);
@@ -106,7 +117,11 @@ export function attentionReasons(order: {
 }
 
 const ATTENTION_WHERE: Prisma.OrderWhereInput = {
-  OR: [{ stockShortage: true }, { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } }],
+  OR: [
+    { stockShortage: true },
+    { needsAttention: true },
+    { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } },
+  ],
 };
 
 /** Read-only orders for the admin (spec §5.5, ADM-13); status changes and refunds are Phase 5. */
@@ -165,6 +180,7 @@ export class OrdersAdminService {
         payments: { orderBy: { createdAt: 'asc' } },
         slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
         events: { orderBy: { id: 'asc' } },
+        refunds: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
       },
     });
     if (!order) throw orderNotFound();
@@ -178,6 +194,16 @@ export class OrdersAdminService {
       createdAt: p.createdAt.toISOString(),
     }));
     const reasons = attentionReasons(order);
+    const refunds: AdminRefund[] = order.refunds.map((r) => ({
+      id: r.id,
+      amount: r.amount,
+      reason: r.reason,
+      status: REFUND_VIEW[r.status],
+      provider: r.provider,
+      adminUserId: r.adminUserId,
+      error: r.error,
+      createdAt: r.createdAt.toISOString(),
+    }));
     return {
       number: order.number,
       status: STATUS_VIEW[effectiveStatus(order)],
@@ -210,6 +236,9 @@ export class OrdersAdminService {
       shippingProvider: order.shippingProvider,
       payments,
       refundedTotal: order.refundedTotal,
+      refundable: orderRefundState(order).refundable,
+      attentionNote: order.attentionNote,
+      refunds,
       deliverySlot: currentSlotView(order.slots),
       nextStatuses: nextStatuses(order.status).map((s) => STATUS_VIEW[s]),
       statusEvents: order.events.map((e) => ({

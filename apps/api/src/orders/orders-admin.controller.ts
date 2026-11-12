@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Header, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import type { AdminOrderDetail, OrderStatus, AdminOrderPage, ProvidersStatus } from '@hg/models';
 import type { RequestMeta } from '../auth/auth.service.js';
 import {
@@ -65,6 +77,45 @@ export class OrdersAdminController {
     const { to, slot } = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
     if (typeof to !== 'string') throw invalid('to');
     return this.lifecycle.advance(number, to as OrderStatus, { adminId: admin.user.id, ip: client.ip }, slot);
+  }
+
+  /** Cancels a paid or unpaid order and refunds as decided (decisions 73–74); `orders.cancel`. */
+  @Post('orders/:number/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('orders.cancel')
+  cancel(
+    @Param('number') number: string,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminOrderDetail> {
+    return this.lifecycle.cancelByAdmin(number, body, { adminId: admin.user.id, ip: client.ip });
+  }
+
+  /** A refund without cancelling (a delivered order whose return was closed). */
+  @Post('orders/:number/refunds')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('orders.cancel')
+  refund(
+    @Param('number') number: string,
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminOrderDetail> {
+    return this.lifecycle.refundByAdmin(number, body, { adminId: admin.user.id, ip: client.ip });
+  }
+
+  /** "נסה שוב" on a failed (or lost) refund: the same idempotency key. */
+  @Post('orders/:number/refunds/:id/retry')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('orders.cancel')
+  retryRefund(
+    @Param('number') number: string,
+    @Param('id') id: string,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<AdminOrderDetail> {
+    return this.lifecycle.retryRefund(number, id, { adminId: admin.user.id, ip: client.ip });
   }
 
   /** The Super Admin holds every permission, so `orders.manage` covers both. */

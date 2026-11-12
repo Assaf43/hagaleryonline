@@ -1,10 +1,12 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { SandboxCompleteRequest, SandboxCompleteResponse, SandboxPaymentView } from '@hg/models';
+import { AuditService } from '../audit/audit.service.js';
 import { FulfillmentMode, OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
+import { RefundService } from '../orders/refund.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import {
@@ -36,7 +38,10 @@ const VIEW_STATUS: Record<PaymentStatus, SandboxPaymentView['status']> = {
 };
 
 /** What happened to a webhook: applied, or recognized as a repeat / out-of-order call and ignored. */
-export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored';
+export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored' | 'late_payment';
+
+/** The note on an order whose payment came after it was cancelled (spec §4.2). */
+export const LATE_PAYMENT_NOTE = 'תשלום התקבל אחרי ביטול — הוחזר';
 
 /** The order fields needed to open a payment page. */
 export interface PayableOrder {
@@ -59,6 +64,8 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly dispatcher: WebhookDispatcher,
     private readonly promotions: PromotionsService,
+    private readonly refunds: RefundService,
+    private readonly audit: AuditService,
   ) {}
 
   get providerCode(): string {
@@ -132,6 +139,8 @@ export class PaymentsService {
    * - the same status again → no-op;
    * - a paid order never changes (a later failure is ignored);
    * - success with an amount other than the one asked → payment flagged `amount_mismatch`, order stays as it is;
+   * - success on a CANCELLED order (the customer cancelled while paying) → payment recorded `late_payment`, the order
+   *   stays cancelled, no stock is taken, it is flagged for staff, and the payment is refunded in full after commit;
    * - success → payment succeeded, order paid, in-stock stock taken (never below 0; a shortfall flags the order
    *   `stockShortage`), the order's lines removed from its cart unless a newer order of that cart exists;
    * - failure / cancel → payment failed / cancelled; the order fails (releasing its reservation) only when this is
@@ -142,6 +151,7 @@ export class PaymentsService {
     // transaction would lock it after the order (order → cart), the reverse of checkout and retry (cart → order),
     // and deadlock with a checkout of the same cart.
     let clearCouponOf: string | null = null;
+    let lateOrderId: string | null = null;
     const outcome = await this.prisma.$transaction(async (tx): Promise<WebhookOutcome> => {
       const [locked] = await tx.$queryRaw<{ id: string; order_id: string }[]>`
         SELECT id, order_id FROM payments WHERE transaction_id = ${result.transactionId} FOR UPDATE`;
@@ -181,6 +191,31 @@ export class PaymentsService {
             `Order ${order.number}: paid ${result.amount} instead of ${payment.amount} (transaction ${payment.transactionId})`,
           );
           return 'amount_mismatch';
+        }
+        // The customer cancelled while the payment page was open: the money arrived anyway. Never charge for a
+        // cancelled order — record the payment, keep the order cancelled, take no stock, and refund it after commit.
+        if (order.status === OrderStatus.CANCELLED) {
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: next, installments, rawStatus: 'late_payment' },
+          });
+          await tx.order.update({
+            where: { id: order.id },
+            data: { needsAttention: true, attentionNote: LATE_PAYMENT_NOTE },
+          });
+          await this.audit.record(
+            {
+              actorId: null,
+              action: 'order.late_payment',
+              entityType: 'order',
+              entityId: order.number,
+              after: { transactionId: payment.transactionId, amount: payment.amount },
+            },
+            tx,
+          );
+          this.logger.warn(`Order ${order.number} was cancelled and then paid (transaction ${payment.transactionId})`);
+          lateOrderId = order.id;
+          return 'late_payment';
         }
         // A newer order of the same cart is still live — waiting for its payment within its reservation, or paid —
         // so both could be paid: the payment is flagged for staff ("needs attention") and the cart keeps the lines
@@ -238,6 +273,14 @@ export class PaymentsService {
       await this.prisma.cart
         .updateMany({ where: { id: cartId }, data: { couponCode: null } })
         .catch((error: unknown) => this.logger.error(`Could not clear the coupon of cart ${cartId}`, error));
+    }
+    if (lateOrderId) {
+      const orderId: string = lateOrderId;
+      // Outside the transaction (the provider call). A refund the provider refuses stays FAILED with the order
+      // flagged for staff ("נסה שוב"); the webhook is still answered 200, since the payment itself was recorded.
+      await this.refunds
+        .refundFull(orderId, 'late_payment')
+        .catch((error: unknown) => this.logger.error(`Refund of the late payment of order ${orderId} failed`, error));
     }
     return outcome;
   }
