@@ -150,7 +150,7 @@ export class OrderLifecycleService {
   /**
    * POST /api/admin/orders/:number/cancel (`orders.cancel`, decisions 73–74). Everything is checked before anything
    * changes. In one transaction (payments → order → variants, the webhook's lock order) the order becomes CANCELLED,
-   * pending payments are cancelled, the lines go back to stock (paid orders, unless `restock` is false) and the
+   * every pending payment is cancelled (paid orders too), the lines go back to stock (paid orders, unless `restock` is false) and the
    * refund row is inserted PENDING; the provider is called after commit. A refund the provider refuses leaves the
    * order cancelled with a FAILED refund and the order flagged. An unpaid order has nothing to refund.
    */
@@ -185,11 +185,12 @@ export class OrderLifecycleService {
         }
       }
 
-      if (unpaid)
-        await tx.payment.updateMany({
-          where: { orderId: order.id, status: PaymentStatus.PENDING },
-          data: { status: PaymentStatus.CANCELLED },
-        });
+      // Every open payment page of the order is closed, paid orders included (the payment locks are held): a
+      // payment that still goes through is a late payment (refunded, or flagged for a manual refund).
+      await tx.payment.updateMany({
+        where: { orderId: order.id, status: PaymentStatus.PENDING },
+        data: { status: PaymentStatus.CANCELLED },
+      });
       const restock = !unpaid && input.restock;
       if (restock) await this.restock(tx, order.items);
       await tx.order.update({
@@ -227,7 +228,7 @@ export class OrderLifecycleService {
       await this.onStatusChanged(tx, order, from, OrderStatus.CANCELLED);
       return reserved?.id ?? null;
     });
-    if (refundId) await this.refunds.execute(refundId, actor.ip);
+    if (refundId) await this.refunds.execute(refundId, actor);
     return this.adminOrders.detail(numberParam);
   }
 
@@ -260,7 +261,7 @@ export class OrderLifecycleService {
       select: { id: true },
     });
     if (!refund) throw orderNotFound();
-    await this.refunds.retry(refund.id, actor.ip);
+    await this.refunds.retry(refund.id, actor);
     return this.adminOrders.detail(numberParam);
   }
 

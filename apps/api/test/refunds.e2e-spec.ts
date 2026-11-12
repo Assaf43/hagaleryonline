@@ -27,15 +27,18 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
   let initialStock: number;
 
   const http = () => request(app.getHttpServer() as App);
-  const cleanup = () =>
-    prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+  const cleanup = async () => {
+    await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ' } } });
+    await prisma.cart.deleteMany({ where: { tokenHash: { startsWith: 'zz-' } } });
+  };
   const stock = async () => (await prisma.variant.findUniqueOrThrow({ where: { id: variantId } })).stock;
 
-  const makeOrder = (key: string, status: OrderStatus, opts: { variant?: boolean } = {}) =>
+  const makeOrder = (key: string, status: OrderStatus, opts: { variant?: boolean; cartId?: string } = {}) =>
     prisma.order.create({
       data: {
         publicToken: `zz-token-${key}`,
         status,
+        cartId: opts.cartId,
         contact: { fullName: `ZZ ${key}`, phone: '0501234567', email: 'zz@example.test' },
         address: {
           localityId: 5000,
@@ -86,6 +89,11 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
   const cancel = (b: AdminBrowser, number: number, body: object) => b.post(`/orders/${number}/cancel`, body);
   const refund = (b: AdminBrowser, number: number, body: object) => b.post(`/orders/${number}/refunds`, body);
   const retry = (b: AdminBrowser, number: number, id: string) => b.post(`/orders/${number}/refunds/${id}/retry`);
+  /** A second payment page of the order, still open (e.g. a retry started in another tab). */
+  const addPendingPayment = (orderId: string, transactionId: string) =>
+    prisma.payment.create({ data: { orderId, provider: 'sandbox', transactionId, amount: TOTAL } });
+  const ownerId = async () =>
+    (await prisma.adminUser.findUniqueOrThrow({ where: { email: 'owner@example.test' }, select: { id: true } })).id;
   const customerCancel = (order: { number: number; publicToken: string }) =>
     http().post(`/api/orders/${order.number}/cancel?t=${order.publicToken}`).set('Origin', ORIGIN).expect(201);
   const webhook = (transactionId: string, amount: number, status = 'succeeded') => {
@@ -472,5 +480,106 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     const shown = await detail(order.number);
     expect(shown).toMatchObject({ needsAttention: true, attentionNote: 'בדיקה', refunds: [], refundable: TOTAL });
     expect(shown.deliverySlot).toBeNull();
+  });
+
+  // A paid order never changes, whatever step of the flow it reached (Phase 4 paid_twice, spec §4.1).
+  it('a second successful payment on a shipped order: stays shipped, no stock taken, flagged paid_twice', async () => {
+    const order = await makeOrder('twice-shipped', OrderStatus.PAID, { variant: true });
+    await owner.post(`/orders/${order.number}/status`, { to: 'shipped' }).expect(201);
+    await addPendingPayment(order.id, 'sbx_zz_twice-shipped-2');
+    const before = await stock();
+
+    await webhook('sbx_zz_twice-shipped-2', TOTAL).expect(200);
+    const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(row.status).toBe(OrderStatus.SHIPPED);
+    expect(row.stockShortage).toBe(false);
+    expect(await stock()).toBe(before);
+    const second = await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_twice-shipped-2' } });
+    expect(second).toMatchObject({ status: PaymentStatus.SUCCEEDED, rawStatus: 'paid_twice' });
+    expect((await detail(order.number)).attentionReasons).toContain('paid_twice');
+    const events = await prisma.orderStatusEvent.findMany({ where: { orderId: order.id } });
+    expect(events.map((e) => e.toStatus)).toEqual(['SHIPPED']);
+
+    // The same holds for every status after paid.
+    for (const status of [OrderStatus.PROCESSING, OrderStatus.DELIVERY_SCHEDULED, OrderStatus.DELIVERED]) {
+      const other = await makeOrder(`twice-${status}`, status, { variant: true });
+      await addPendingPayment(other.id, `sbx_zz_twice-${status}-2`);
+      const stockBefore = await stock();
+      await webhook(`sbx_zz_twice-${status}-2`, TOTAL).expect(200);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: other.id } })).status).toBe(status);
+      expect(await stock()).toBe(stockBefore);
+      expect(
+        (await prisma.payment.findUniqueOrThrow({ where: { transactionId: `sbx_zz_twice-${status}-2` } })).rawStatus,
+      ).toBe('paid_twice');
+    }
+  });
+
+  it('a newer order of the same cart already in processing: the older order payment is flagged superseded_paid', async () => {
+    const cart = await prisma.cart.create({ data: { tokenHash: 'zz-superseded' } });
+    await prisma.cartItem.create({ data: { cartId: cart.id, variantId, quantity: 2, unitPriceAtAdd: 50_000 } });
+    const older = await makeOrder('superseded-old', OrderStatus.PENDING_PAYMENT, { variant: true, cartId: cart.id });
+    const newer = await makeOrder('superseded-new', OrderStatus.PAID, { variant: true, cartId: cart.id });
+    await owner.post(`/orders/${newer.number}/status`, { to: 'processing' }).expect(201);
+
+    await webhook('sbx_zz_superseded-old', TOTAL).expect(200);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_superseded-old' } });
+    expect(payment.rawStatus).toBe('superseded_paid');
+    // The cart keeps its lines: they belong to the newer order's customer session.
+    expect(await prisma.cartItem.count({ where: { cartId: cart.id } })).toBe(1);
+    expect((await detail(older.number)).attentionReasons).toContain('superseded_paid');
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: newer.id } })).status).toBe(OrderStatus.PROCESSING);
+  });
+
+  // The refund is capped at the order total (ledger ruling): a second charge after a full refund is refunded by hand.
+  it('staff full-refund cancel, then a stray pending payment succeeds: manual-refund note, flagged, no second refund', async () => {
+    const order = await makeOrder('stray', OrderStatus.PAID);
+    await addPendingPayment(order.id, 'sbx_zz_stray-2');
+    await cancel(owner, order.number, { refund: 'full', reason: 'הלקוח ביקש', restock: false }).expect(200);
+    // Any staff cancel closes the order's open payment pages.
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_stray-2' } })).status).toBe(
+      PaymentStatus.CANCELLED,
+    );
+
+    await webhook('sbx_zz_stray-2', TOTAL).expect(200);
+    const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { refunds: true } });
+    expect(row.status).toBe(OrderStatus.CANCELLED);
+    expect(row.needsAttention).toBe(true);
+    expect(row.attentionNote).toBe('תשלום נוסף אחרי ביטול — יש להחזיר ידנית מול ספק התשלום');
+    expect(row.refunds).toHaveLength(1);
+    expect(row.refundedTotal).toBe(TOTAL);
+    const stray = await prisma.payment.findUniqueOrThrow({ where: { transactionId: 'sbx_zz_stray-2' } });
+    expect(stray).toMatchObject({ status: PaymentStatus.SUCCEEDED, rawStatus: 'late_payment' });
+    expect((await detail(order.number)).attentionReasons).toEqual(expect.arrayContaining(['flagged', 'late_payment']));
+  });
+
+  it('staff cancel of a paid order without a refund cancels its pending payments', async () => {
+    const order = await makeOrder('paid-pending', OrderStatus.PAID);
+    await addPendingPayment(order.id, 'sbx_zz_paid-pending-2');
+    await cancel(owner, order.number, { refund: 'none', reason: 'בדיקה', restock: false }).expect(200);
+    const payments = await prisma.payment.findMany({ where: { orderId: order.id }, orderBy: { createdAt: 'asc' } });
+    expect(payments.map((p) => p.status)).toEqual([PaymentStatus.SUCCEEDED, PaymentStatus.CANCELLED]);
+  });
+
+  it('a retried refund names the retrying admin; the retry itself is audited with its actor', async () => {
+    const order = await makeOrder('retry-actor', OrderStatus.PENDING_PAYMENT);
+    await customerCancel(order);
+    process.env.PAYMENT_SANDBOX_FAIL_REFUNDS = 'true';
+    try {
+      await webhook('sbx_zz_retry-actor', TOTAL).expect(200);
+    } finally {
+      delete process.env.PAYMENT_SANDBOX_FAIL_REFUNDS;
+    }
+    const failed = await prisma.refund.findFirstOrThrow({ where: { orderId: order.id } });
+    expect(failed).toMatchObject({ status: 'FAILED', adminUserId: null });
+    await retry(owner, order.number, failed.id).expect(200);
+
+    const audit = await prisma.auditLog.findMany({ where: { entityId: String(order.number) }, orderBy: { id: 'asc' } });
+    const id = await ownerId();
+    expect(audit.map((a) => [a.action, a.actorId])).toEqual([
+      ['order.late_payment', null],
+      ['order.refund_failed', null],
+      ['order.refund_retry', id],
+      ['order.refund', id],
+    ]);
   });
 });

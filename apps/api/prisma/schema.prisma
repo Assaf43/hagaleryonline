@@ -705,7 +705,8 @@ model Refund {
   @@map("refunds")
 }
 
-/// An agreed delivery date and window (spec §3); one non-superseded slot per order. The link token is stored hashed.
+/// An agreed delivery date and window (spec §3); one non-superseded slot per order, enforced by a partial unique
+/// index (migration order_lifecycle). The link token is stored hashed.
 model DeliverySlot {
   id          Int               @id @default(autoincrement())
   orderId     String            @map("order_id") @db.Uuid

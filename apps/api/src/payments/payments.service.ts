@@ -6,7 +6,8 @@ import { FulfillmentMode, OrderStatus, PaymentStatus, type Prisma } from '../gen
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
-import { RefundService } from '../orders/refund.service.js';
+import { PAID_OR_LATER } from '../orders/order-transitions.js';
+import { LATE_PAYMENT_MANUAL_NOTE, LATE_PAYMENT_REASON, RefundService } from '../orders/refund.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import {
@@ -39,9 +40,6 @@ const VIEW_STATUS: Record<PaymentStatus, SandboxPaymentView['status']> = {
 
 /** What happened to a webhook: applied, or recognized as a repeat / out-of-order call and ignored. */
 export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored' | 'late_payment';
-
-/** The note on an order whose payment came after it was cancelled (spec §4.2). */
-export const LATE_PAYMENT_NOTE = 'תשלום התקבל אחרי ביטול — הוחזר';
 
 /** The order fields needed to open a payment page. */
 export interface PayableOrder {
@@ -137,10 +135,12 @@ export class PaymentsService {
    * Applies a verified result (spec §5.4) in one transaction, with the payment and then its order locked, so
    * repeated or concurrent deliveries are applied once:
    * - the same status again → no-op;
-   * - a paid order never changes (a later failure is ignored);
+   * - a paid order never changes, at any step after paid (`PAID_OR_LATER`): a later failure is ignored, a second
+   *   success is recorded `paid_twice` for staff (no stock, no status change, no promotion use);
    * - success with an amount other than the one asked → payment flagged `amount_mismatch`, order stays as it is;
    * - success on a CANCELLED order (the customer cancelled while paying) → payment recorded `late_payment`, the order
-   *   stays cancelled, no stock is taken, it is flagged for staff, and the payment is refunded in full after commit;
+   *   stays cancelled, no stock is taken, it is flagged for staff, and the payment is refunded in full after commit
+   *   (the note says "refund by hand" until the refund succeeds; it stays so when the refund does not fit);
    * - success → payment succeeded, order paid, in-stock stock taken (never below 0; a shortfall flags the order
    *   `stockShortage`), the order's lines removed from its cart unless a newer order of that cart exists;
    * - failure / cancel → payment failed / cancelled (a CANCELLED order is left as it is); the order fails (releasing its reservation) only when this is
@@ -151,7 +151,7 @@ export class PaymentsService {
     // transaction would lock it after the order (order → cart), the reverse of checkout and retry (cart → order),
     // and deadlock with a checkout of the same cart.
     let clearCouponOf: string | null = null;
-    let lateOrderId: string | null = null;
+    let late: { orderId: string; amount: number } | null = null;
     const outcome = await this.prisma.$transaction(async (tx): Promise<WebhookOutcome> => {
       const [locked] = await tx.$queryRaw<{ id: string; order_id: string }[]>`
         SELECT id, order_id FROM payments WHERE transaction_id = ${result.transactionId} FOR UPDATE`;
@@ -168,7 +168,7 @@ export class PaymentsService {
 
       if (payment.status === next) return 'duplicate';
 
-      if (order.status === OrderStatus.PAID) {
+      if (PAID_OR_LATER.has(order.status)) {
         if (next === PaymentStatus.SUCCEEDED) {
           // Another attempt of an order that is already paid also went through: keep it for staff to refund.
           await tx.payment.update({
@@ -194,6 +194,8 @@ export class PaymentsService {
         }
         // The customer cancelled while the payment page was open: the money arrived anyway. Never charge for a
         // cancelled order — record the payment, keep the order cancelled, take no stock, and refund it after commit.
+        // Until that refund succeeds (it may not fit: refunds are capped at the order total, so a second charge after
+        // a full refund is not refundable here) the note asks staff to refund by hand; a succeeded refund replaces it.
         if (order.status === OrderStatus.CANCELLED) {
           await tx.payment.update({
             where: { id: payment.id },
@@ -201,7 +203,7 @@ export class PaymentsService {
           });
           await tx.order.update({
             where: { id: order.id },
-            data: { needsAttention: true, attentionNote: LATE_PAYMENT_NOTE },
+            data: { needsAttention: true, attentionNote: LATE_PAYMENT_MANUAL_NOTE },
           });
           await this.audit.record(
             {
@@ -214,7 +216,7 @@ export class PaymentsService {
             tx,
           );
           this.logger.warn(`Order ${order.number} was cancelled and then paid (transaction ${payment.transactionId})`);
-          lateOrderId = order.id;
+          late = { orderId: order.id, amount: payment.amount };
           return 'late_payment';
         }
         // A newer order of the same cart is still live — waiting for its payment within its reservation, or paid —
@@ -226,7 +228,7 @@ export class PaymentsService {
                 cartId: order.cartId,
                 number: { gt: order.number },
                 OR: [
-                  { status: OrderStatus.PAID },
+                  { status: { in: [...PAID_OR_LATER] } },
                   { status: OrderStatus.PENDING_PAYMENT, reservedUntil: { gt: new Date() } },
                 ],
               },
@@ -276,13 +278,17 @@ export class PaymentsService {
         .updateMany({ where: { id: cartId }, data: { couponCode: null } })
         .catch((error: unknown) => this.logger.error(`Could not clear the coupon of cart ${cartId}`, error));
     }
-    if (lateOrderId) {
-      const orderId: string = lateOrderId;
+    if (late) {
+      const { orderId, amount }: { orderId: string; amount: number } = late;
       // Outside the transaction (the provider call). A refund the provider refuses stays FAILED with the order
-      // flagged for staff ("נסה שוב"); the webhook is still answered 200, since the payment itself was recorded.
-      await this.refunds
-        .refundFull(orderId, 'late_payment')
-        .catch((error: unknown) => this.logger.error(`Refund of the late payment of order ${orderId} failed`, error));
+      // flagged for staff ("נסה שוב"); one that does not fit what is refundable (409 refund_exceeds_paid) leaves the
+      // "refund by hand" note. The webhook is still answered 200, since the payment itself was recorded.
+      // TODO(Task 6): move into the outbox (job `refund.late_payment`).
+      await this.refunds.create(orderId, amount, LATE_PAYMENT_REASON, null).catch((error: unknown) => {
+        if (error instanceof CheckoutError && error.code === 'refund_exceeds_paid')
+          this.logger.warn(`The late payment of order ${orderId} cannot be refunded here: refund it by hand`);
+        else this.logger.error(`Refund of the late payment of order ${orderId} failed`, error);
+      });
     }
     return outcome;
   }

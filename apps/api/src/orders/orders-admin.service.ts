@@ -63,7 +63,17 @@ const PAYMENT_VIEW: Record<PaymentStatus, AdminPaymentStatus> = {
 };
 
 /** The `status` query values, as the models name them. */
-export const ORDER_STATUS_FILTERS = ['pending_payment', 'paid', 'payment_failed', 'expired'] as const;
+export const ORDER_STATUS_FILTERS = [
+  'pending_payment',
+  'paid',
+  'payment_failed',
+  'expired',
+  'processing',
+  'delivery_scheduled',
+  'shipped',
+  'delivered',
+  'cancelled',
+] as const;
 export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
 
 /**
@@ -84,6 +94,16 @@ export function statusWhere(status: OrderStatusFilter | undefined, now: Date): P
       return { status: OrderStatus.PAID };
     case 'payment_failed':
       return { status: OrderStatus.PAYMENT_FAILED };
+    case 'processing':
+      return { status: OrderStatus.PROCESSING };
+    case 'delivery_scheduled':
+      return { status: OrderStatus.DELIVERY_SCHEDULED };
+    case 'shipped':
+      return { status: OrderStatus.SHIPPED };
+    case 'delivered':
+      return { status: OrderStatus.DELIVERED };
+    case 'cancelled':
+      return { status: OrderStatus.CANCELLED };
   }
 }
 

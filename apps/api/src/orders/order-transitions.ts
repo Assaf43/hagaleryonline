@@ -9,6 +9,12 @@ export const FLOW: readonly OrderStatus[] = [
   OrderStatus.DELIVERED,
 ];
 
+/**
+ * An order that was paid, at any step of the flow after it. A payment webhook never changes such an order: a second
+ * success is flagged `paid_twice`, and it counts as a live newer order for `superseded_paid`.
+ */
+export const PAID_OR_LATER: ReadonlySet<OrderStatus> = new Set(FLOW);
+
 /** Statuses staff may cancel from (with `orders.cancel`); the customer only from `PENDING_PAYMENT`. */
 const ADMIN_CANCELLABLE: readonly OrderStatus[] = [
   OrderStatus.PENDING_PAYMENT,

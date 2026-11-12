@@ -1,5 +1,5 @@
 import { OrderStatus } from '../generated/prisma/client.js';
-import { canAdvance, canCancel, nextStatuses } from './order-transitions.js';
+import { canAdvance, canCancel, nextStatuses, PAID_OR_LATER } from './order-transitions.js';
 
 const S = OrderStatus;
 
@@ -8,6 +8,10 @@ describe('order transitions (spec §4.1)', () => {
     expect(canAdvance(S.PAID, S.PROCESSING)).toBe(true);
     expect(canAdvance(S.PROCESSING, S.SHIPPED)).toBe(true);
     expect(canAdvance(S.PAID, S.DELIVERED)).toBe(true);
+  });
+
+  it('PAID_OR_LATER is paid and every step after it, nothing else', () => {
+    expect(PAID_OR_LATER).toEqual(new Set([S.PAID, S.PROCESSING, S.DELIVERY_SCHEDULED, S.SHIPPED, S.DELIVERED]));
   });
 
   it('never goes backward or stays', () => {

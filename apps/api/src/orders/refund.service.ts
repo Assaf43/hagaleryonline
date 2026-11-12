@@ -11,6 +11,22 @@ import { orderRefundState } from './refund-amount.js';
 /** The order's "needs attention" note after a refund the provider did not make. */
 export const REFUND_FAILED_NOTE = 'ההחזר הכספי נכשל — יש לנסות שוב';
 
+/** The reason of the automatic refund of a payment that arrived after the order was cancelled (spec §4.2). */
+export const LATE_PAYMENT_REASON = 'late_payment';
+/** The note once that refund succeeded. */
+export const LATE_PAYMENT_NOTE = 'תשלום התקבל אחרי ביטול — הוחזר';
+/**
+ * The note until it succeeds, and for good when it cannot be made here: refunds are capped at the order total (the
+ * `refunded_total <= total` CHECK), so a second charge after a full refund is refunded by staff at the provider.
+ */
+export const LATE_PAYMENT_MANUAL_NOTE = 'תשלום נוסף אחרי ביטול — יש להחזיר ידנית מול ספק התשלום';
+
+/** Who acts on a refund: the admin (null for the system) and their IP, for the audit log. */
+export interface RefundActor {
+  adminId: number | null;
+  ip?: string;
+}
+
 /** A PENDING refund untouched this long is taken to have lost its result (a crash): it can be retried. */
 export const STALE_PENDING_MS = 2 * 60_000;
 
@@ -105,19 +121,15 @@ export class RefundService {
       if (!(await lockOrder(tx, orderId))) throw orderNotFound();
       return this.reserve(tx, orderId, amount, reason, adminId);
     });
-    return this.execute(refund.id, ip);
-  }
-
-  /** Refunds everything refundable (a late payment on a cancelled order, spec §4.2). */
-  refundFull(orderId: string, reason: string): Promise<Refund> {
-    return this.create(orderId, 'full', reason, null);
+    return this.execute(refund.id, { adminId, ip });
   }
 
   /**
    * Calls the provider for a PENDING refund (outside any transaction) and settles it. A provider that throws counts
-   * as a failure: the row ends FAILED and the order is flagged, never left PENDING by an exception.
+   * as a failure: the row ends FAILED and the order is flagged, never left PENDING by an exception. `actor` is who
+   * the audit entries name (the admin who asked, or who retried).
    */
-  async execute(refundId: string, ip?: string): Promise<Refund> {
+  async execute(refundId: string, actor: RefundActor): Promise<Refund> {
     const refund = await this.prisma.refund.findUniqueOrThrow({
       where: { id: refundId },
       include: { payment: { select: { transactionId: true } } },
@@ -134,16 +146,20 @@ export class RefundService {
       this.logger.error(`Refund ${refund.id} threw at the provider`, error);
       result = { providerRefundId: '', status: 'failed', error: error instanceof Error ? error.message : 'error' };
     }
-    return this.settle(refund.id, result, ip);
+    return this.settle(refund.id, result, actor);
   }
 
   /**
    * Retry of a FAILED refund, or of a PENDING one that lost its result (older than `STALE_PENDING_MS`), with the
    * same idempotency key. A FAILED one is checked against what is refundable now; it goes back to PENDING first, so
-   * a second retry at the same moment finds it in flight (409).
+   * a second retry at the same moment finds it in flight (409). The retry is audited with the retrying admin, who
+   * is also the actor of the refund's result.
    */
-  async retry(refundId: string, ip?: string): Promise<Refund> {
-    const found = await this.prisma.refund.findUnique({ where: { id: refundId }, select: { orderId: true } });
+  async retry(refundId: string, actor: RefundActor): Promise<Refund> {
+    const found = await this.prisma.refund.findUnique({
+      where: { id: refundId },
+      select: { orderId: true, order: { select: { number: true } } },
+    });
     if (!found) throw orderNotFound();
     await this.prisma.$transaction(async (tx) => {
       await lockOrder(tx, found.orderId);
@@ -158,12 +174,24 @@ export class RefundService {
       }
       // Also restarts the stale clock of a PENDING one.
       await tx.refund.update({ where: { id: refund.id }, data: { status: RefundStatus.PENDING, error: null } });
+      await this.audit.record(
+        {
+          actorId: actor.adminId,
+          action: 'order.refund_retry',
+          entityType: 'order',
+          entityId: found.order.number,
+          before: { refundId: refund.id, status: refund.status === RefundStatus.FAILED ? 'failed' : 'pending' },
+          after: { refundId: refund.id, amount: refund.amount },
+          ip: actor.ip,
+        },
+        tx,
+      );
     });
-    return this.execute(refundId, ip);
+    return this.execute(refundId, actor);
   }
 
   /** Transaction 2: the result under the order lock. Settling twice (two retries) changes the order once. */
-  private async settle(refundId: string, result: RefundResult, ip?: string): Promise<Refund> {
+  private async settle(refundId: string, result: RefundResult, actor: RefundActor): Promise<Refund> {
     return this.prisma.$transaction(async (tx) => {
       const { orderId } = await tx.refund.findUniqueOrThrow({ where: { id: refundId }, select: { orderId: true } });
       await lockOrder(tx, orderId);
@@ -180,14 +208,21 @@ export class RefundService {
           data: { refundedTotal: { increment: refund.amount } },
         });
         // The flag of a failed refund goes once none is left failed; other notes (a late payment) stay for staff.
-        if (order.needsAttention && order.attentionNote === REFUND_FAILED_NOTE) {
+        // A late payment's refund that went through says so (the order stays flagged: staff should know).
+        const late = refund.reason === LATE_PAYMENT_REASON;
+        if (late || (order.needsAttention && order.attentionNote === REFUND_FAILED_NOTE)) {
           const stillFailed = await tx.refund.count({ where: { orderId, status: RefundStatus.FAILED } });
           if (stillFailed === 0)
-            await tx.order.update({ where: { id: orderId }, data: { needsAttention: false, attentionNote: null } });
+            await tx.order.update({
+              where: { id: orderId },
+              data: late
+                ? { needsAttention: true, attentionNote: LATE_PAYMENT_NOTE }
+                : { needsAttention: false, attentionNote: null },
+            });
         }
         await this.audit.record(
           {
-            actorId: refund.adminUserId,
+            actorId: actor.adminId,
             action: 'order.refund',
             entityType: 'order',
             entityId: order.number,
@@ -199,7 +234,7 @@ export class RefundService {
               reason: refund.reason,
               provider: refund.provider,
             },
-            ip,
+            ip: actor.ip,
           },
           tx,
         );
@@ -221,12 +256,12 @@ export class RefundService {
       });
       await this.audit.record(
         {
-          actorId: refund.adminUserId,
+          actorId: actor.adminId,
           action: 'order.refund_failed',
           entityType: 'order',
           entityId: order.number,
           after: { refundId: refund.id, amount: refund.amount, reason: refund.reason, provider: refund.provider },
-          ip,
+          ip: actor.ip,
         },
         tx,
       );

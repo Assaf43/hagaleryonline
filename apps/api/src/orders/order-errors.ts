@@ -3,7 +3,11 @@ import { PROMOTION_ENDED_MESSAGE_HE, type CheckoutErrorCode } from '@hg/models';
 
 /** Errors of checkout, orders and payments: `{ statusCode, code, ...details }` (models `CheckoutErrorCode`). */
 export class CheckoutError extends HttpException {
-  constructor(status: HttpStatus, code: CheckoutErrorCode, extra: Record<string, unknown> = {}) {
+  constructor(
+    status: HttpStatus,
+    readonly code: CheckoutErrorCode,
+    extra: Record<string, unknown> = {},
+  ) {
     super({ statusCode: status, code, ...extra }, status);
   }
 }
