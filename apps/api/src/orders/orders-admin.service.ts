@@ -25,6 +25,11 @@ export const ADMIN_ORDERS_PAGE_SIZE = 30;
 const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
   PENDING_PAYMENT: 'pending_payment',
   PAID: 'paid',
+  PROCESSING: 'processing',
+  DELIVERY_SCHEDULED: 'delivery_scheduled',
+  SHIPPED: 'shipped',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
   PAYMENT_FAILED: 'payment_failed',
   EXPIRED: 'expired',
 };

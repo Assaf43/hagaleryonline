@@ -152,7 +152,16 @@ export interface CheckoutShortage {
 }
 
 /** `expired`: was waiting for payment and its 20-minute reservation passed (decision 69). */
-export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'expired';
+export type OrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'processing'
+  | 'delivery_scheduled'
+  | 'shipped'
+  | 'delivered'
+  | 'cancelled'
+  | 'payment_failed'
+  | 'expired';
 
 export interface OrderLine {
   /** Null when the variant was deleted since. */
@@ -225,6 +234,11 @@ export interface SandboxPaymentView {
 export const ORDER_STATUS_LABELS_HE: Record<OrderStatus, string> = {
   pending_payment: 'ממתינה לתשלום',
   paid: 'שולמה',
+  processing: 'בהכנה',
+  delivery_scheduled: 'אספקה מתואמת',
+  shipped: 'במשלוח',
+  delivered: 'סופקה',
+  cancelled: 'בוטלה',
   payment_failed: 'התשלום נכשל',
   expired: 'פג תוקף',
 };

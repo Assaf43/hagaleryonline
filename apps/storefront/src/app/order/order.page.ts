@@ -33,6 +33,11 @@ const POLL_FOR_MS = 60_000;
 const STATUS_TITLES: Record<OrderStatus, string> = {
   paid: 'ההזמנה התקבלה ושולמה',
   pending_payment: 'ממתינים לאישור התשלום…',
+  processing: 'ההזמנה בהכנה',
+  delivery_scheduled: 'מועד האספקה תואם',
+  shipped: 'ההזמנה במשלוח',
+  delivered: 'ההזמנה סופקה',
+  cancelled: 'ההזמנה בוטלה',
   payment_failed: 'התשלום לא הושלם',
   expired: 'זמן התשלום עבר',
 };

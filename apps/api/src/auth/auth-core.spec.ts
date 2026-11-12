@@ -110,4 +110,11 @@ describe('effective permissions (decision 49)', () => {
     expect(effectivePermissions({ ...base, isSuperAdmin: true, template: null })).toContain('audit.view');
     expect(effectivePermissions({ ...base, template: 'pirate' })).toEqual([]);
   });
+
+  it('keeps orders.cancel from the Super Admin until they opt in (decision 73)', () => {
+    const owner = { ...base, isSuperAdmin: true, template: null };
+    expect(effectivePermissions(owner)).not.toContain('orders.cancel');
+    expect(effectivePermissions({ ...owner, extraPermissions: ['orders.cancel'] })).toContain('orders.cancel');
+    expect(effectivePermissions({ ...base, template: 'manager' })).toContain('orders.cancel');
+  });
 });

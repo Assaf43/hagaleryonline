@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import type { AdminUserInput, AdminUserRow, AuditPage, OneTimeLink } from '@hg/models';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import type { AdminUserInput, AdminUserRow, AuditPage, OneTimeLink, SuperAdminOptInRequest } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import { AdminUsersService, type AdminUserPatch } from './admin-users.service.js';
 import type { RequestMeta } from './auth.service.js';
@@ -29,6 +29,12 @@ export class UsersController {
   @Post()
   create(@Body() body: AdminUserInput, @Admin() admin: AdminContext, @ClientMeta() meta: RequestMeta) {
     return this.users.create(body ?? ({} as AdminUserInput), admin.user.id, meta.ip);
+  }
+
+  /** The Super Admin adds permissions they do not hold by role, e.g. `orders.cancel` (decision 73). */
+  @Put('me/opt-in')
+  optIn(@Body() body: SuperAdminOptInRequest, @Admin() admin: AdminContext, @ClientMeta() meta: RequestMeta) {
+    return this.users.setOptIn(admin.user.id, body?.permissions, meta.ip);
   }
 
   @Patch(':id')

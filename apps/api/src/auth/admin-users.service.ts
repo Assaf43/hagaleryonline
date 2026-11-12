@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import {
   PERMISSION_KEYS,
   PERMISSION_TEMPLATES,
+  SUPER_ADMIN_OPT_IN,
   effectivePermissions,
   type AdminUserInput,
   type AdminUserRow,
@@ -139,6 +140,31 @@ export class AdminUsersService {
     await this.findEditable(id);
     await this.sessions.revokeAll(id);
     await this.audit.record({ actorId, action: 'user.sessions_revoked', entityType: 'admin_user', entityId: id, ip });
+  }
+
+  /**
+   * The Super Admin's own opt-in to permissions they do not hold by role (decision 73, e.g. `orders.cancel`).
+   * Separate from `update`, which never touches the Super Admin. Replaces their `extraPermissions`.
+   */
+  async setOptIn(actorId: number, permissions: unknown, ip?: string): Promise<AdminUserRow> {
+    if (!Array.isArray(permissions) || !permissions.every((p) => SUPER_ADMIN_OPT_IN.includes(p as Permission)))
+      throw new BadRequestException('invalid permissions');
+    const before = await this.findUser(actorId);
+    if (!before.isSuperAdmin) throw new BadRequestException('Only the Super Admin can opt in');
+    const after = await this.prisma.adminUser.update({
+      where: { id: actorId },
+      data: { extraPermissions: [...new Set(permissions as Permission[])] },
+    });
+    await this.audit.record({
+      actorId,
+      action: 'user.opt_in',
+      entityType: 'admin_user',
+      entityId: actorId,
+      before: auditView(before),
+      after: auditView(after),
+      ip,
+    });
+    return toRow(after);
   }
 
   // ---------- CLI only ----------
