@@ -136,6 +136,7 @@ export class OrderLifecycleService {
         where: { id: order.id },
         data: { status: OrderStatus.CANCELLED, cancelledAt: new Date() },
       });
+      await this.supersedeSlot(tx, order.id);
       await tx.orderStatusEvent.create({
         data: {
           orderId: order.id,
@@ -199,6 +200,8 @@ export class OrderLifecycleService {
         where: { id: order.id },
         data: { status: OrderStatus.CANCELLED, cancelledAt: new Date() },
       });
+      // The delivery link sent to the customer stops working with the cancel.
+      await this.supersedeSlot(tx, order.id);
       await tx.orderStatusEvent.create({
         data: {
           orderId: order.id,
@@ -290,12 +293,17 @@ export class OrderLifecycleService {
       });
   }
 
-  /** Supersedes the live slot, then inserts the new one (the partial unique index allows one live slot). */
-  private async replaceSlot(tx: Prisma.TransactionClient, orderId: string, slot: DeliverySlotInput): Promise<void> {
+  /** Supersedes the order's live delivery slot, if any (its link then answers 404). */
+  private async supersedeSlot(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
     await tx.deliverySlot.updateMany({
       where: { orderId, state: { not: DeliverySlotState.SUPERSEDED } },
       data: { state: DeliverySlotState.SUPERSEDED },
     });
+  }
+
+  /** Supersedes the live slot, then inserts the new one (the partial unique index allows one live slot). */
+  private async replaceSlot(tx: Prisma.TransactionClient, orderId: string, slot: DeliverySlotInput): Promise<void> {
+    await this.supersedeSlot(tx, orderId);
     await tx.deliverySlot.create({
       data: {
         orderId,

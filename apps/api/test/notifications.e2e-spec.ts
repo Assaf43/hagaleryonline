@@ -193,6 +193,61 @@ describe('Notifications (e2e, CHK-07)', () => {
     expect(refund?.body).toContain('1,000 ₪');
   });
 
+  describe('a cancel before the jobs run', () => {
+    const slot = {
+      date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(Date.now() + 3 * 86_400_000),
+      windowFrom: '09:00',
+      windowTo: '13:00',
+    };
+    const move = (number: number, body: object) => owner.post(`/orders/${number}/status`, body).expect(201);
+    const cancelOrder = (number: number) =>
+      owner.post(`/orders/${number}/cancel`, { refund: 'none', reason: 'הלקוח ביקש', restock: false }).expect(200);
+
+    it('schedule then cancel: the slot is superseded, no delivery SMS, only the cancelled e-mail', async () => {
+      const order = await makeOrder('cancel-slot', OrderStatus.PROCESSING);
+      await move(order.number, { to: 'delivery_scheduled', slot });
+      await cancelOrder(order.number);
+      expect((await prisma.deliverySlot.findFirstOrThrow({ where: { orderId: order.id } })).state).toBe('SUPERSEDED');
+      await runJobs();
+      expect((await logs(order.id)).map((r) => r.template)).toEqual(['order_cancelled']);
+      expect(
+        await prisma.outboxJob.count({ where: { orderId: order.id, type: 'sms.delivery_slot', state: 'DONE' } }),
+      ).toBe(1);
+    });
+
+    it('shipped then cancel: no status e-mail, and the delivery link sent earlier answers 404', async () => {
+      const order = await makeOrder('cancel-shipped', OrderStatus.PROCESSING);
+      await move(order.number, { to: 'delivery_scheduled', slot });
+      await runJobs();
+      const sms = (await logs(order.id)).find((r) => r.template === 'delivery_slot');
+      const token = /\/delivery\/([\w-]+)/.exec(sms?.body ?? '')![1];
+      await http().get(`/api/delivery/${token}`).expect(200);
+      await move(order.number, { to: 'shipped' });
+      await cancelOrder(order.number);
+      await runJobs();
+      expect((await logs(order.id)).map((r) => r.template)).toEqual(['delivery_slot', 'order_cancelled']);
+      expect(
+        await prisma.outboxJob.count({ where: { orderId: order.id, type: 'email.status', state: 'DONE' } }),
+      ).toBe(1);
+      await http().get(`/api/delivery/${token}`).expect(404);
+      await http()
+        .post(`/api/delivery/${token}`)
+        .set('Origin', SITE)
+        .send({ answer: 'confirm' })
+        .expect(404);
+    });
+
+    it('the delivery SMS job sends nothing for a cancelled order, even with a live slot', async () => {
+      const order = await makeOrder('cancel-live', OrderStatus.PROCESSING);
+      await move(order.number, { to: 'delivery_scheduled', slot });
+      // An order cancelled without superseding its slot (data from before the cancel did it).
+      await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } });
+      await runJobs();
+      expect(await logs(order.id)).toEqual([]);
+      expect((await prisma.deliverySlot.findFirstOrThrow({ where: { orderId: order.id } })).tokenHash).toBeNull();
+    });
+  });
+
   it('a provider error fails the job, logs a failed row, and the retry sends it', async () => {
     const order = await makeOrder('retry', OrderStatus.PENDING_PAYMENT);
     const spy = vi.spyOn(email, 'sendEmail').mockRejectedValueOnce(new Error('smtp down'));

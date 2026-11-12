@@ -1,4 +1,5 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { OrderStatus } from '../generated/prisma/client.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { NotificationsService } from './notifications.service.js';
@@ -90,6 +91,11 @@ export class OrderMessagesJob implements OnModuleInit {
     if (status !== 'shipped' && status !== 'delivered') throw new Error(`No e-mail for status "${status}"`);
     const loaded = await this.load(orderId);
     if (!loaded) return;
+    // Cancelled before the job ran: a "shipped" / "delivered" e-mail would contradict the cancel e-mail.
+    if (loaded.order.status === OrderStatus.CANCELLED) {
+      this.logger.log(`Order ${loaded.order.number} was cancelled: no "${status}" e-mail`);
+      return;
+    }
     await this.notifications.email(`status_${status}`, loaded.to, loaded.base, loaded.order.id);
   }
 
