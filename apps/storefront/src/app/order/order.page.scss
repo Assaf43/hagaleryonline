@@ -110,3 +110,30 @@ h2 {
   font-weight: 700;
   font-size: var(--font-h3);
 }
+
+.refunded {
+  font-weight: 600;
+}
+
+.support a {
+  color: inherit;
+}
+
+.cancel-dialog {
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  max-inline-size: min(420px, 90vw);
+
+  &::backdrop {
+    background: var(--color-overlay);
+  }
+}
+
+.cancel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
