@@ -39,6 +39,32 @@
               <a routerLink="/cart" class="btn btn-primary">לסל הקניות</a>
             }
           }
+          @if (o.status === 'cancelled' && o.refundedTotal > 0) {
+            <p class="refunded">
+              הוחזרו <bdi class="num">{{ price(o.refundedTotal) }}</bdi>
+            </p>
+          }
+          @if (showSlot() && o.deliverySlot; as slot) {
+            <p class="slot">
+              האספקה מתואמת ל־<bdi>{{ slotDate() }}</bdi> בין <bdi>{{ slot.windowFrom }}</bdi> ל־<bdi>{{
+                slot.windowTo
+              }}</bdi>
+            </p>
+          }
+          @if (o.canCancel) {
+            <button type="button" class="btn btn-secondary cancel-order" (click)="openCancel()">ביטול ההזמנה</button>
+          } @else if (contactSupport()) {
+            <p class="support muted">
+              לביטול ההזמנה פנו לשירות הלקוחות:
+              <bdi dir="ltr"
+                ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
+              >
+              ·
+              <bdi dir="ltr"
+                ><a [href]="'mailto:' + support.email">{{ support.email }}</a></bdi
+              >
+            </p>
+          }
           <p class="retry-error" role="alert">{{ retryError() }}</p>
         </div>
 
@@ -116,6 +142,21 @@
             </section>
           </div>
         </div>
+        <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title" (close)="cancelling.set(false)">
+          <h2 id="cancel-title">לבטל את ההזמנה?</h2>
+          <div class="cancel-actions">
+            <button
+              type="button"
+              class="btn btn-primary confirm-cancel"
+              [disabled]="cancelling()"
+              (click)="confirmCancel()"
+            >
+              כן, לבטל
+            </button>
+            <!-- The safe choice is focused first (not the destructive one). -->
+            <button type="button" class="btn btn-secondary" autofocus (click)="closeCancel()">חזרה</button>
+          </div>
+        </dialog>
       }
     }
   }

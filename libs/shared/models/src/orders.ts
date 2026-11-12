@@ -114,6 +114,7 @@ export interface CheckoutResponse {
  * - `promotion_ended` (409): retry refused — the order's promotion or coupon ended, is inactive or used up;
  *   `messageHe`;
  * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
+ * - `invalid_transition` (409): the move is not allowed from the order's status (or the customer cannot cancel it);
  * - `not_found` (404): unknown order or transaction, or the token does not match;
  * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook.
  */
@@ -133,6 +134,8 @@ export type CheckoutErrorCode =
   | 'not_retryable'
   | 'promotion_ended'
   | 'superseded'
+  | 'invalid_transition'
+  | 'refund_exceeds_paid'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */
@@ -152,7 +155,16 @@ export interface CheckoutShortage {
 }
 
 /** `expired`: was waiting for payment and its 20-minute reservation passed (decision 69). */
-export type OrderStatus = 'pending_payment' | 'paid' | 'payment_failed' | 'expired';
+export type OrderStatus =
+  | 'pending_payment'
+  | 'paid'
+  | 'processing'
+  | 'delivery_scheduled'
+  | 'shipped'
+  | 'delivered'
+  | 'cancelled'
+  | 'payment_failed'
+  | 'expired';
 
 export interface OrderLine {
   /** Null when the variant was deleted since. */
@@ -170,10 +182,30 @@ export interface OrderAddressView extends CheckoutAddress {
   localityNameHe: string;
 }
 
+export type DeliverySlotState = 'proposed' | 'confirmed' | 'change_requested' | 'superseded';
+
+/** The delivery date and time window staff set for an order (Phase 5, spec §4.1). */
+export interface DeliverySlotView {
+  /** Israel-time calendar date, YYYY-MM-DD. */
+  date: string;
+  /** Local 24-hour times, HH:MM. */
+  windowFrom: string;
+  windowTo: string;
+  state: DeliverySlotState;
+}
+
 /** GET /api/orders/:number?t=<token> — the confirmation page. */
 export interface OrderView {
   number: number;
   status: OrderStatus;
+  /** Hebrew label of `status` (ORDER_STATUS_LABELS_HE). */
+  statusLabelHe: string;
+  /** The customer may cancel it now (only while waiting for payment, spec §4.2). */
+  canCancel: boolean;
+  /** Agorot refunded so far. */
+  refundedTotal: number;
+  /** The current (not superseded) delivery slot, or null. */
+  deliverySlot: DeliverySlotView | null;
   /** ISO time. */
   createdAt: string;
   /** ISO time until which the stock is held while waiting for payment. */
@@ -225,6 +257,11 @@ export interface SandboxPaymentView {
 export const ORDER_STATUS_LABELS_HE: Record<OrderStatus, string> = {
   pending_payment: 'ממתינה לתשלום',
   paid: 'שולמה',
+  processing: 'בהכנה',
+  delivery_scheduled: 'אספקה מתואמת',
+  shipped: 'במשלוח',
+  delivered: 'סופקה',
+  cancelled: 'בוטלה',
   payment_failed: 'התשלום נכשל',
   expired: 'פג תוקף',
 };
@@ -234,7 +271,15 @@ export const ORDER_STATUS_LABELS_HE: Record<OrderStatus, string> = {
  * `amount_mismatch` (the provider reported another amount), `superseded_paid` (paid although a newer order of the
  * same cart exists, so the customer may pay twice).
  */
-export type OrderAttentionReason = 'stock_shortage' | 'paid_twice' | 'amount_mismatch' | 'superseded_paid';
+export type OrderAttentionReason =
+  | 'stock_shortage'
+  | 'paid_twice'
+  | 'amount_mismatch'
+  | 'superseded_paid'
+  /** A payment that arrived after the order was cancelled (it is refunded in full). */
+  | 'late_payment'
+  /** Staff-visible flag with a note: a failed refund, a late payment on a cancelled order (`attentionNote`). */
+  | 'flagged';
 
 /** Hebrew label of each attention reason, shown next to the order in the admin. */
 export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
@@ -242,6 +287,8 @@ export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
   paid_twice: 'שולמה פעמיים',
   amount_mismatch: 'סכום התשלום לא תואם להזמנה',
   superseded_paid: 'שולמה למרות שנוצרה הזמנה חדשה מאותו סל',
+  late_payment: 'תשלום התקבל אחרי ביטול',
+  flagged: 'דורשת טיפול',
 };
 
 /** One row of GET /api/admin/orders. */
@@ -306,6 +353,88 @@ export interface AdminOrderDetail {
   paymentProvider: string;
   shippingProvider: string;
   payments: AdminOrderPayment[];
+  /** Agorot refunded so far. */
+  refundedTotal: number;
+  /** Agorot that can still be refunded now: paid − refunded − pending refunds. */
+  refundable: number;
+  /** The note of the order's "needs attention" flag (failed refund, late payment), or null. */
+  attentionNote: string | null;
+  /** Refunds, oldest first. */
+  refunds: AdminRefund[];
+  /** The current (not superseded) delivery slot, or null. */
+  deliverySlot: DeliverySlotView | null;
+  /** Staff may cancel it now (with `orders.cancel`): the API's rule, so the admin never repeats it. */
+  canCancel: boolean;
+  /** The statuses the order can be advanced to now, in flow order. */
+  nextStatuses: OrderStatus[];
+  /** Status changes, oldest first. */
+  statusEvents: AdminOrderStatusEvent[];
+}
+
+export type RefundStatus = 'pending' | 'succeeded' | 'failed';
+
+/** One refund of an order (spec §4.3). */
+export interface AdminRefund {
+  id: string;
+  /** Agorot. */
+  amount: number;
+  reason: string;
+  status: RefundStatus;
+  provider: string;
+  adminUserId: number | null;
+  error: string | null;
+  /** ISO time. */
+  createdAt: string;
+}
+
+/** What staff decide on a cancel of a paid order (decision 74). */
+export type CancelRefundChoice = 'full' | 'partial' | 'none';
+
+/** POST /api/admin/orders/:number/cancel */
+export interface AdminCancelRequest {
+  refund: CancelRefundChoice;
+  /** Agorot; required for `partial`. */
+  amount?: number;
+  /** 3–500 characters. */
+  reason: string;
+  /** Return the lines' quantities to stock (paid orders only; default true). */
+  restock?: boolean;
+}
+
+/** POST /api/admin/orders/:number/refunds */
+export interface AdminRefundRequest {
+  /** Agorot. */
+  amount: number;
+  reason: string;
+}
+
+export type OrderActorType = 'admin' | 'customer' | 'system';
+
+export interface AdminOrderStatusEvent {
+  fromStatus: OrderStatus | null;
+  toStatus: OrderStatus;
+  actorType: OrderActorType;
+  actorAdminId: number | null;
+  note: string | null;
+  /** ISO time. */
+  createdAt: string;
+}
+
+/** The delivery slot sent with a move to `delivery_scheduled`. */
+export interface DeliverySlotInput {
+  /** YYYY-MM-DD, Israel time, not before today. */
+  date: string;
+  /** HH:MM, 24 hours; `windowFrom` < `windowTo`. */
+  windowFrom: string;
+  windowTo: string;
+  note?: string;
+}
+
+/** POST /api/admin/orders/:number/status (permission orders.manage). */
+export interface AdvanceOrderRequest {
+  to: OrderStatus;
+  /** Required when `to` is `delivery_scheduled`. */
+  slot?: DeliverySlotInput;
 }
 
 /** GET /api/admin/providers */

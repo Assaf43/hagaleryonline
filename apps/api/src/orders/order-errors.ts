@@ -3,7 +3,11 @@ import { PROMOTION_ENDED_MESSAGE_HE, type CheckoutErrorCode } from '@hg/models';
 
 /** Errors of checkout, orders and payments: `{ statusCode, code, ...details }` (models `CheckoutErrorCode`). */
 export class CheckoutError extends HttpException {
-  constructor(status: HttpStatus, code: CheckoutErrorCode, extra: Record<string, unknown> = {}) {
+  constructor(
+    status: HttpStatus,
+    readonly code: CheckoutErrorCode,
+    extra: Record<string, unknown> = {},
+  ) {
     super({ statusCode: status, code, ...extra }, status);
   }
 }
@@ -30,3 +34,5 @@ export const notRetryable = () => new CheckoutError(HttpStatus.CONFLICT, 'not_re
 export const superseded = () => new CheckoutError(HttpStatus.CONFLICT, 'superseded');
 export const orderNotFound = () => new CheckoutError(HttpStatus.NOT_FOUND, 'not_found');
 export const invalidInput = () => new CheckoutError(HttpStatus.BAD_REQUEST, 'invalid_input');
+/** 400 naming the bad body field of an admin write: `{ code: 'invalid_input', field }`. */
+export const badField = (field: string) => new CheckoutError(HttpStatus.BAD_REQUEST, 'invalid_input', { field });

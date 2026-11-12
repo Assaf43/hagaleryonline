@@ -127,3 +127,40 @@ describe('selectPaymentProvider', () => {
       expect(() => selectPaymentProvider(code, factories)).toThrow(/PAYMENT_PROVIDER is not set/);
   });
 });
+
+describe('SandboxPaymentProvider.refund (spec §4.3)', () => {
+  const sandbox = () =>
+    new SandboxPaymentProvider(config({ PAYMENT_SANDBOX_SECRET: SECRET, SITE_URL: 'https://x.test/' }));
+  const input = { transactionId: 'sbx_t1', amount: 5_000, idempotencyKey: 'refund:abc' };
+
+  afterEach(() => {
+    delete process.env.PAYMENT_SANDBOX_FAIL_REFUNDS;
+  });
+
+  it('succeeds with providerRefundId = sbx_rf_ + key', async () => {
+    expect(await sandbox().refund(input)).toEqual({ providerRefundId: 'sbx_rf_refund:abc', status: 'succeeded' });
+  });
+
+  it('is idempotent by key: the same key gives the same result', async () => {
+    const provider = sandbox();
+    const first = await provider.refund(input);
+    expect(await provider.refund({ ...input, amount: 9_999 })).toEqual(first);
+    expect((await provider.refund({ ...input, idempotencyKey: 'refund:other' })).providerRefundId).toBe(
+      'sbx_rf_refund:other',
+    );
+  });
+
+  it('fails while PAYMENT_SANDBOX_FAIL_REFUNDS=true (read at call time) and succeeds again once it is unset', async () => {
+    const provider = sandbox();
+    process.env.PAYMENT_SANDBOX_FAIL_REFUNDS = 'true';
+    const failed = await provider.refund(input);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toBeTruthy();
+    delete process.env.PAYMENT_SANDBOX_FAIL_REFUNDS;
+    expect((await provider.refund(input)).status).toBe('succeeded');
+  });
+
+  it('rejects a non-positive or fractional amount', async () => {
+    for (const amount of [0, -1, 1.5]) expect((await sandbox().refund({ ...input, amount })).status).toBe('failed');
+  });
+});

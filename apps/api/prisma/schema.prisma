@@ -521,12 +521,51 @@ model ZoneLocality {
 
 /// Order status (spec §5.2). A pending order past `reservedUntil` reads as expired (and is written so on its next update).
 enum OrderStatus {
-  PENDING_PAYMENT @map("pending_payment")
-  PAID            @map("paid")
-  PAYMENT_FAILED  @map("payment_failed")
-  EXPIRED         @map("expired")
+  PENDING_PAYMENT    @map("pending_payment")
+  PAID               @map("paid")
+  PAYMENT_FAILED     @map("payment_failed")
+  EXPIRED            @map("expired")
+  /// Phase 5 lifecycle (decision 75): paid → processing → delivery_scheduled → shipped → delivered, or cancelled.
+  PROCESSING         @map("processing")
+  DELIVERY_SCHEDULED @map("delivery_scheduled")
+  SHIPPED            @map("shipped")
+  DELIVERED          @map("delivered")
+  CANCELLED          @map("cancelled")
 
   @@map("order_status")
+}
+
+enum OrderChannel {
+  WEB   @map("web")
+  /// Seller-assisted orders (Phase 6).
+  STORE @map("store")
+
+  @@map("order_channel")
+}
+
+enum OrderActorType {
+  ADMIN    @map("admin")
+  CUSTOMER @map("customer")
+  SYSTEM   @map("system")
+
+  @@map("order_actor_type")
+}
+
+enum RefundStatus {
+  PENDING   @map("pending")
+  SUCCEEDED @map("succeeded")
+  FAILED    @map("failed")
+
+  @@map("refund_status")
+}
+
+enum DeliverySlotState {
+  PROPOSED         @map("proposed")
+  CONFIRMED        @map("confirmed")
+  CHANGE_REQUESTED @map("change_requested")
+  SUPERSEDED       @map("superseded")
+
+  @@map("delivery_slot_state")
 }
 
 /// Shipping method of an order (spec §4.1).
@@ -574,13 +613,24 @@ model Order {
   /// Paid while an in-stock line no longer had enough stock (a late payment after its reservation expired):
   /// stock was floored at 0 and staff must sort it out.
   stockShortage    Boolean             @default(false) @map("stock_shortage")
+  channel          OrderChannel        @default(WEB)
+  /// Agorot refunded so far; CHECK refunded_total BETWEEN 0 AND total (migration order_lifecycle).
+  refundedTotal    Int                 @default(0) @map("refunded_total")
+  deliveredAt      DateTime?           @map("delivered_at")
+  cancelledAt      DateTime?           @map("cancelled_at")
+  /// Staff must look at it for a reason outside the Phase 4 flags (failed refund, late payment on a cancelled order…).
+  needsAttention   Boolean             @default(false) @map("needs_attention")
+  attentionNote    String?             @map("attention_note")
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  cart      Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  promotion Promotion?  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  cart      Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  promotion Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
   items     OrderItem[]
   payments  Payment[]
+  events    OrderStatusEvent[]
+  refunds   Refund[]
+  slots     DeliverySlot[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -612,6 +662,70 @@ model OrderItem {
   @@map("order_items")
 }
 
+/// One status move of an order (spec §3, §4.1).
+model OrderStatusEvent {
+  id           Int            @id @default(autoincrement())
+  orderId      String         @map("order_id") @db.Uuid
+  fromStatus   OrderStatus?   @map("from_status")
+  toStatus     OrderStatus    @map("to_status")
+  actorType    OrderActorType @map("actor_type")
+  actorAdminId Int?           @map("actor_admin_id")
+  note         String?
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_events")
+}
+
+/// A refund through PaymentProvider.refund (spec §4.3). `refundedTotal` of the order grows only on SUCCEEDED.
+model Refund {
+  id               String       @id @default(uuid()) @db.Uuid
+  orderId          String       @map("order_id") @db.Uuid
+  paymentId        String       @map("payment_id") @db.Uuid
+  /// Agorot.
+  amount           Int
+  reason           String
+  adminUserId      Int?         @map("admin_user_id")
+  /// Code of the provider that handled it.
+  provider         String
+  providerRefundId String?      @map("provider_refund_id")
+  status           RefundStatus @default(PENDING)
+  idempotencyKey   String       @unique @map("idempotency_key")
+  error            String?
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+/// An agreed delivery date and window (spec §3); one non-superseded slot per order, enforced by a partial unique
+/// index (migration order_lifecycle). The link token is stored hashed.
+model DeliverySlot {
+  id          Int               @id @default(autoincrement())
+  orderId     String            @map("order_id") @db.Uuid
+  date        DateTime          @db.Date
+  /// Local times, 'HH:MM'.
+  windowFrom  String            @map("window_from")
+  windowTo    String            @map("window_to")
+  tokenHash   String?           @unique @map("token_hash")
+  state       DeliverySlotState @default(PROPOSED)
+  note        String?
+  respondedAt DateTime?         @map("responded_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("delivery_slots")
+}
+
 enum PaymentStatus {
   PENDING   @map("pending")
   SUCCEEDED @map("succeeded")
@@ -637,7 +751,8 @@ model Payment {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  refunds Refund[]
 
   @@index([orderId])
   @@map("payments")

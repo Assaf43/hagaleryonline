@@ -51,6 +51,13 @@ export class CheckoutApi {
     );
   }
 
+  /** Customer cancel; allowed only while the view says `canCancel` (409 otherwise). */
+  cancelOrder(number: string, token: string) {
+    return firstValueFrom(
+      this.http.post<void>(`/api/orders/${encodeURIComponent(number)}/cancel`, null, { params: { t: token } }),
+    );
+  }
+
   sandboxPayment(transactionId: string) {
     return firstValueFrom(
       this.http.get<SandboxPaymentView>(`/api/payments/sandbox/${encodeURIComponent(transactionId)}`),

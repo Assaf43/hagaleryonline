@@ -1,6 +1,9 @@
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import type { ComponentType } from '@angular/cdk/portal';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDialog } from '@angular/material/dialog';
 import {
   FULFILLMENT_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
@@ -8,10 +11,17 @@ import {
   SHIPPING_METHOD_LABELS_HE,
   type AdminOrderDetail,
   type AdminPaymentStatus,
+  type OrderStatus,
 } from '@hg/models';
 import { formatAmount, formatPrice } from '../catalog/catalog-format';
+import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
+import { CancelDialog, type CancelDialogData } from './cancel-dialog';
+import { ConfirmDialog, type ConfirmDialogData } from './confirm-dialog';
+import { RefundDialog, type RefundDialogData } from './refund-dialog';
+import { SlotDialog, type SlotDialogData } from './slot-dialog';
+import { StatusTimeline } from './status-timeline';
 
 const PAYMENT_LABELS: Record<AdminPaymentStatus, string> = {
   pending: 'ממתין',
@@ -27,16 +37,21 @@ const RAW_STATUS_LABELS: Record<string, string> = {
   superseded_paid: 'שולם אחרי שנוצרה הזמנה חדשה מאותו סל',
 };
 
-/** One order in full (spec §5.5, permission orders.view): read-only. The route's `:number` is bound to the input. */
+/**
+ * One order in full (spec §4.4, §5.5, permission orders.view) with its status actions (`orders.manage`) and cancel /
+ * refund (`orders.cancel`). The route's `:number` is bound to the input.
+ */
 @Component({
   selector: 'hga-order-detail-page',
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, MatButtonModule, StatusTimeline],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './order-detail.page.html',
   styleUrl: './order-detail.page.scss',
 })
 export class OrderDetailPage {
   private readonly api = inject(OrdersApi);
+  private readonly auth = inject(AuthService);
+  private readonly dialog = inject(MatDialog);
 
   /** Increases with every request (the route may change the number): only the latest answer is shown. */
   private requestSeq = 0;
@@ -56,12 +71,101 @@ export class OrderDetailPage {
   protected readonly loading = signal(true);
   protected readonly attentionLabels = ORDER_ATTENTION_LABELS_HE;
   protected readonly rawStatusLabels = RAW_STATUS_LABELS;
+  protected readonly acting = signal(false);
+  protected readonly actionError = signal('');
+  protected readonly canManage = computed(() => this.auth.can('orders.manage'));
+  protected readonly canCancel = computed(() => this.auth.can('orders.cancel'));
+  protected readonly currentAdmin = computed(() => {
+    const me = this.auth.me();
+    return me ? { id: me.id, name: me.name } : null;
+  });
 
   constructor() {
     effect(() => {
       const number = this.number();
       void this.load(number);
     });
+  }
+
+  /**
+   * Moving to `delivered` (final) or more than one step at once (`nextStatuses` is in flow order, so any target but
+   * the first skips a step) asks first; ordinary one-step moves stay one click.
+   */
+  protected advance(o: AdminOrderDetail, to: OrderStatus) {
+    const go = () => {
+      if (to === 'delivery_scheduled') this.openSlot(o);
+      else void this.run(() => this.api.advance(o.number, { to }));
+    };
+    if (to !== 'delivered' && o.nextStatuses.indexOf(to) <= 0) return go();
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data: { message: `לסמן את ההזמנה כ${this.statusLabels[to]}? אי אפשר לחזור אחורה.` },
+        width: '28rem',
+        maxWidth: '95vw',
+      })
+      .afterClosed()
+      .subscribe((yes) => {
+        if (yes === true) go();
+      });
+  }
+
+  protected openSlot(o: AdminOrderDetail) {
+    this.openDialog<SlotDialogData>(SlotDialog, { number: o.number, slot: o.deliverySlot });
+  }
+
+  protected openCancel(o: AdminOrderDetail) {
+    this.openDialog<CancelDialogData>(CancelDialog, { number: o.number, refundable: o.refundable, status: o.status });
+  }
+
+  protected openRefund(o: AdminOrderDetail) {
+    this.openDialog<RefundDialogData>(RefundDialog, { number: o.number, refundable: o.refundable });
+  }
+
+  protected retryRefund(o: AdminOrderDetail, refundId: string) {
+    void this.run(() => this.api.retryRefund(o.number, refundId));
+  }
+
+  protected canCancelOrder(o: AdminOrderDetail): boolean {
+    return this.canCancel() && o.canCancel;
+  }
+
+  private openDialog<D>(component: ComponentType<unknown>, data: D) {
+    this.dialog
+      .open<unknown, D, AdminOrderDetail | undefined>(component, { data, width: '32rem', maxWidth: '95vw' })
+      .afterClosed()
+      .subscribe((order) => {
+        if (order) this.order.set(order);
+      });
+  }
+
+  /**
+   * An action answers with the fresh order; a refusal is shown above the actions. A 409 `invalid_transition` means
+   * the order changed meanwhile (another tab, another admin): it is reloaded so the buttons match its real status.
+   */
+  private async run(action: () => Promise<AdminOrderDetail>) {
+    if (this.acting()) return;
+    this.acting.set(true);
+    this.actionError.set('');
+    try {
+      this.order.set(await action());
+    } catch (e) {
+      this.actionError.set(errorMessage(e));
+      const { status, error } = e as { status?: number; error?: { code?: string } };
+      if (status === 409 && error?.code === 'invalid_transition') await this.refresh();
+    } finally {
+      this.acting.set(false);
+    }
+  }
+
+  /** Reloads the shown order in place (the page keeps its content while it loads). */
+  private async refresh() {
+    const seq = ++this.requestSeq;
+    try {
+      const order = await this.api.detail(this.number());
+      if (seq === this.requestSeq) this.order.set(order);
+    } catch {
+      // The refusal is already shown; the order stays as it was.
+    }
   }
 
   private async load(number: string) {

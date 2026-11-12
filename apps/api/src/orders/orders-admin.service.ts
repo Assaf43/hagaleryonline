@@ -4,7 +4,9 @@ import type {
   AdminOrderPage,
   AdminOrderPayment,
   AdminPaymentStatus,
+  AdminRefund,
   OrderAddressView,
+  OrderActorType as OrderActorView,
   OrderAttentionReason,
   OrderStatus as OrderStatusView,
   OrderView,
@@ -12,12 +14,23 @@ import type {
   ShippingMethod,
   ShippingQuoteLine,
 } from '@hg/models';
-import { OrderShippingMethod, OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
+import {
+  DeliverySlotState,
+  OrderActorType,
+  OrderShippingMethod,
+  OrderStatus,
+  PaymentStatus,
+  RefundStatus,
+  type Prisma,
+} from '../generated/prisma/client.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/payment-provider.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SHIPPING_PROVIDER, type ShippingProvider } from '../shipping/shipping-provider.js';
+import { currentSlotView } from './delivery-slot.js';
 import { orderNotFound } from './order-errors.js';
 import { parseOrderNumber } from './order-number.js';
+import { orderRefundState } from './refund-amount.js';
+import { canCancel, nextStatuses } from './order-transitions.js';
 import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
 export const ADMIN_ORDERS_PAGE_SIZE = 30;
@@ -25,12 +38,22 @@ export const ADMIN_ORDERS_PAGE_SIZE = 30;
 const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
   PENDING_PAYMENT: 'pending_payment',
   PAID: 'paid',
+  PROCESSING: 'processing',
+  DELIVERY_SCHEDULED: 'delivery_scheduled',
+  SHIPPED: 'shipped',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
   PAYMENT_FAILED: 'payment_failed',
   EXPIRED: 'expired',
 };
 const METHOD_VIEW: Record<OrderShippingMethod, ShippingMethod> = {
   CURBSIDE: 'curbside',
   FULL_SERVICE: 'full_service',
+};
+const ACTOR_VIEW: Record<OrderActorType, OrderActorView> = {
+  ADMIN: 'admin',
+  CUSTOMER: 'customer',
+  SYSTEM: 'system',
 };
 const PAYMENT_VIEW: Record<PaymentStatus, AdminPaymentStatus> = {
   PENDING: 'pending',
@@ -40,7 +63,17 @@ const PAYMENT_VIEW: Record<PaymentStatus, AdminPaymentStatus> = {
 };
 
 /** The `status` query values, as the models name them. */
-export const ORDER_STATUS_FILTERS = ['pending_payment', 'paid', 'payment_failed', 'expired'] as const;
+export const ORDER_STATUS_FILTERS = [
+  'pending_payment',
+  'paid',
+  'payment_failed',
+  'expired',
+  'processing',
+  'delivery_scheduled',
+  'shipped',
+  'delivered',
+  'cancelled',
+] as const;
 export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
 
 /**
@@ -61,6 +94,16 @@ export function statusWhere(status: OrderStatusFilter | undefined, now: Date): P
       return { status: OrderStatus.PAID };
     case 'payment_failed':
       return { status: OrderStatus.PAYMENT_FAILED };
+    case 'processing':
+      return { status: OrderStatus.PROCESSING };
+    case 'delivery_scheduled':
+      return { status: OrderStatus.DELIVERY_SCHEDULED };
+    case 'shipped':
+      return { status: OrderStatus.SHIPPED };
+    case 'delivered':
+      return { status: OrderStatus.DELIVERED };
+    case 'cancelled':
+      return { status: OrderStatus.CANCELLED };
   }
 }
 
@@ -69,15 +112,23 @@ const ATTENTION_RAW: Record<string, OrderAttentionReason> = {
   paid_twice: 'paid_twice',
   amount_mismatch: 'amount_mismatch',
   superseded_paid: 'superseded_paid',
+  late_payment: 'late_payment',
+};
+const REFUND_VIEW: Record<RefundStatus, AdminRefund['status']> = {
+  PENDING: 'pending',
+  SUCCEEDED: 'succeeded',
+  FAILED: 'failed',
 };
 
-/** The reasons an order needs staff: a stock shortage or a flagged payment. */
+/** The reasons an order needs staff: a stock shortage, a flagged payment, or the order's own flag (a failed refund). */
 export function attentionReasons(order: {
   stockShortage: boolean;
+  needsAttention: boolean;
   payments: { rawStatus: string | null }[];
 }): OrderAttentionReason[] {
   const reasons = new Set<OrderAttentionReason>();
   if (order.stockShortage) reasons.add('stock_shortage');
+  if (order.needsAttention) reasons.add('flagged');
   for (const p of order.payments) {
     const reason = p.rawStatus ? ATTENTION_RAW[p.rawStatus] : undefined;
     if (reason) reasons.add(reason);
@@ -86,7 +137,11 @@ export function attentionReasons(order: {
 }
 
 const ATTENTION_WHERE: Prisma.OrderWhereInput = {
-  OR: [{ stockShortage: true }, { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } }],
+  OR: [
+    { stockShortage: true },
+    { needsAttention: true },
+    { payments: { some: { rawStatus: { in: Object.keys(ATTENTION_RAW) } } } },
+  ],
 };
 
 /** Read-only orders for the admin (spec §5.5, ADM-13); status changes and refunds are Phase 5. */
@@ -140,7 +195,13 @@ export class OrdersAdminService {
     if (number === null) throw orderNotFound();
     const order = await this.prisma.order.findUnique({
       where: { number },
-      include: { items: { orderBy: { id: 'asc' } }, payments: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        items: { orderBy: { id: 'asc' } },
+        payments: { orderBy: { createdAt: 'asc' } },
+        slots: { where: { state: { not: DeliverySlotState.SUPERSEDED } } },
+        events: { orderBy: { id: 'asc' } },
+        refunds: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+      },
     });
     if (!order) throw orderNotFound();
     const payments: AdminOrderPayment[] = order.payments.map((p) => ({
@@ -153,6 +214,16 @@ export class OrdersAdminService {
       createdAt: p.createdAt.toISOString(),
     }));
     const reasons = attentionReasons(order);
+    const refunds: AdminRefund[] = order.refunds.map((r) => ({
+      id: r.id,
+      amount: r.amount,
+      reason: r.reason,
+      status: REFUND_VIEW[r.status],
+      provider: r.provider,
+      adminUserId: r.adminUserId,
+      error: r.error,
+      createdAt: r.createdAt.toISOString(),
+    }));
     return {
       number: order.number,
       status: STATUS_VIEW[effectiveStatus(order)],
@@ -184,6 +255,21 @@ export class OrdersAdminService {
       paymentProvider: order.paymentProvider,
       shippingProvider: order.shippingProvider,
       payments,
+      refundedTotal: order.refundedTotal,
+      refundable: orderRefundState(order).refundable,
+      attentionNote: order.attentionNote,
+      refunds,
+      deliverySlot: currentSlotView(order.slots),
+      canCancel: canCancel(effectiveStatus(order), 'admin'),
+      nextStatuses: nextStatuses(order.status).map((s) => STATUS_VIEW[s]),
+      statusEvents: order.events.map((e) => ({
+        fromStatus: e.fromStatus ? STATUS_VIEW[e.fromStatus] : null,
+        toStatus: STATUS_VIEW[e.toStatus],
+        actorType: ACTOR_VIEW[e.actorType],
+        actorAdminId: e.actorAdminId,
+        note: e.note,
+        createdAt: e.createdAt.toISOString(),
+      })),
     };
   }
 

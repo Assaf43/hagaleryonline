@@ -6,11 +6,11 @@ import { IpThrottle } from '../auth/login-throttle.js';
 import { CheckoutError } from './order-errors.js';
 
 /** The public write endpoints that are rate limited per IP (a window of 15 minutes each). */
-export type ThrottleBucket = 'checkout' | 'retry' | 'sandbox' | 'coupon';
+export type ThrottleBucket = 'checkout' | 'retry' | 'sandbox' | 'coupon' | 'cancel';
 
 const WINDOW_MS = 15 * 60_000;
 /** Production defaults per IP per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
-const DEFAULT_LIMITS: Record<ThrottleBucket, number> = { checkout: 20, retry: 20, sandbox: 60, coupon: 20 };
+const DEFAULT_LIMITS: Record<ThrottleBucket, number> = { checkout: 20, retry: 20, sandbox: 60, coupon: 20, cancel: 20 };
 
 /**
  * Per-IP limits of the public writes that reserve stock or open payments (NFR-12): without them a script could hold

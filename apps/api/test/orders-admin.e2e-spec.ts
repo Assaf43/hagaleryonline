@@ -162,6 +162,26 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
     await viewer.get('/orders?status=bogus').expect(400);
   });
 
+  it('filters by each lifecycle status (Phase 5a)', async () => {
+    const lifecycle: [string, OrderStatus][] = [
+      ['processing', OrderStatus.PROCESSING],
+      ['delivery_scheduled', OrderStatus.DELIVERY_SCHEDULED],
+      ['shipped', OrderStatus.SHIPPED],
+      ['delivered', OrderStatus.DELIVERED],
+      ['cancelled', OrderStatus.CANCELLED],
+    ];
+    try {
+      for (const [key, status] of lifecycle) await makeOrder(`life-${key}`, status, { stockShortage: false });
+      for (const [key] of lifecycle) {
+        const page = (await viewer.get(`/orders?status=${key}`).expect(200)).body as AdminOrderPage;
+        const mine = page.items.filter((i) => i.customerName.startsWith('ZZ'));
+        expect(mine.map((i) => [i.customerName, i.status])).toEqual([[`ZZ life-${key}`, key]]);
+      }
+    } finally {
+      await prisma.order.deleteMany({ where: { contact: { path: ['fullName'], string_starts_with: 'ZZ life-' } } });
+    }
+  });
+
   it('pages: page 2 and an invalid page', async () => {
     const all = (await viewer.get('/orders').expect(200)).body as AdminOrderPage;
     const second = (await viewer.get('/orders?page=2').expect(200)).body as AdminOrderPage;

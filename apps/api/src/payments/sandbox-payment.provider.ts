@@ -9,6 +9,8 @@ import {
   type PaymentOutcome,
   type PaymentProvider,
   type PaymentResult,
+  type RefundInput,
+  type RefundResult,
 } from './payment-provider.js';
 import { SANDBOX_SIGNATURE_HEADER, sign, verify } from './webhook-signature.js';
 
@@ -35,6 +37,8 @@ export class SandboxPaymentProvider implements PaymentProvider {
   readonly testMode = true;
   private readonly secret: string;
   private readonly siteUrl: string;
+  /** Succeeded refunds by idempotency key: the same key gives the same result (a failure is not remembered). */
+  private readonly refunds = new Map<string, RefundResult>();
 
   constructor(config: ConfigService) {
     if (config.get<string>('NODE_ENV') === 'production')
@@ -69,6 +73,23 @@ export class SandboxPaymentProvider implements PaymentProvider {
       body,
       headers: { 'content-type': 'application/json', [SANDBOX_SIGNATURE_HEADER]: sign(body, this.secret) },
     };
+  }
+
+  /**
+   * Always succeeds (`providerRefundId = sbx_rf_<key>`), the same key giving the same result, unless
+   * `PAYMENT_SANDBOX_FAIL_REFUNDS=true` — read at every call so an e2e test can flip it between calls.
+   */
+  refund(input: RefundInput): Promise<RefundResult> {
+    const done = this.refunds.get(input.idempotencyKey);
+    if (done) return Promise.resolve(done);
+    const failed = (error: string): Promise<RefundResult> =>
+      Promise.resolve({ providerRefundId: `sbx_rf_${input.idempotencyKey}`, status: 'failed', error });
+    if (!Number.isSafeInteger(input.amount) || input.amount < 1) return failed('invalid amount');
+    if (process.env.PAYMENT_SANDBOX_FAIL_REFUNDS === 'true')
+      return failed('sandbox refund failure (PAYMENT_SANDBOX_FAIL_REFUNDS)');
+    const result: RefundResult = { providerRefundId: `sbx_rf_${input.idempotencyKey}`, status: 'succeeded' };
+    this.refunds.set(input.idempotencyKey, result);
+    return Promise.resolve(result);
   }
 
   verifyWebhook(headers: IncomingHttpHeaders, rawBody: Buffer): Promise<PaymentResult> {

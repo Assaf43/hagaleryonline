@@ -40,6 +40,18 @@
               כניסה אחרונה: {{ user.lastLoginAt ? (user.lastLoginAt | date: 'd.M.yyyy HH:mm') : 'עדיין לא' }}
             </span>
           </p>
+          @if (user.isSuperAdmin) {
+            <mat-slide-toggle
+              [checked]="canCancelOrders(user)"
+              (change)="toggleCancelOrders(user, $event.checked)"
+              aria-describedby="cancel-hint"
+            >
+              ביטול הזמנות והחזרים
+            </mat-slide-toggle>
+            <p id="cancel-hint" class="user-email">
+              ה-Super Admin לא מקבל הרשאה זו אוטומטית. הפעלה ושינוי נרשמים ביומן השינויים.
+            </p>
+          }
         </div>
         @if (!user.isSuperAdmin) {
           <button

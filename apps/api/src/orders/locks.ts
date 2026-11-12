@@ -8,13 +8,20 @@ import { Prisma } from '../generated/prisma/client.js';
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
  *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);
- *    the cart's coupon is cleared after commit.
+ *    the cart's coupon is cleared after commit;
+ *  - customer cancel: the order's payments (ascending id), then the order (the webhook's payment → order);
+ *  - admin status move: the order alone.
  */
 
 /** Serializes checkouts of one cart. NO KEY UPDATE leaves cart line inserts and deletes (FK KEY SHARE) unblocked. */
 export async function lockCart(tx: Prisma.TransactionClient, cartId: string): Promise<boolean> {
   const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM carts WHERE id = ${cartId}::uuid FOR NO KEY UPDATE`;
   return rows.length > 0;
+}
+
+/** Locks the payment rows of an order (ascending id); taken before `lockOrder` where a payment is also updated. */
+export async function lockOrderPayments(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM payments WHERE order_id = ${orderId}::uuid ORDER BY id FOR UPDATE`;
 }
 
 /** Locks an order row. */

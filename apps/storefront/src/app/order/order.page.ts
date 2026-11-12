@@ -9,6 +9,8 @@ import {
   input,
   signal,
   untracked,
+  viewChild,
+  type ElementRef,
 } from '@angular/core';
 import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
@@ -18,6 +20,7 @@ import type { OrderStatus, OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
+import { SUPPORT_CONTACT } from '../core/support-contact';
 import {
   CheckoutApi,
   ExternalNavigation,
@@ -30,9 +33,11 @@ const POLL_MS = 3000;
 /** A pending order is polled for at most this long; then the customer can check again by hand. */
 const POLL_FOR_MS = 60_000;
 
-const STATUS_TITLES: Record<OrderStatus, string> = {
+/** Headlines that keep their Phase 4 wording; every other status shows the API's `statusLabelHe`. */
+const STATUS_TITLES: Partial<Record<OrderStatus, string>> = {
   paid: 'ההזמנה התקבלה ושולמה',
   pending_payment: 'ממתינים לאישור התשלום…',
+  cancelled: 'ההזמנה בוטלה',
   payment_failed: 'התשלום לא הושלם',
   expired: 'זמן התשלום עבר',
 };
@@ -66,11 +71,31 @@ export class OrderPage {
   /** Polling stopped while still pending. */
   protected readonly pollingStopped = signal(false);
   protected readonly retrying = signal(false);
+  /** Message of the last retry or cancel attempt (one alert for both). */
   protected readonly retryError = signal('');
+  protected readonly cancelling = signal(false);
+  protected readonly support = SUPPORT_CONTACT;
+  private readonly cancelDialog = viewChild<ElementRef<HTMLDialogElement>>('cancelDialog');
 
   protected readonly title = computed(() => {
     const o = this.order();
-    return o ? STATUS_TITLES[o.status] : '';
+    return o ? (STATUS_TITLES[o.status] ?? o.statusLabelHe) : '';
+  });
+  /** Paid orders the customer cannot cancel online: they are sent to customer service. */
+  protected readonly contactSupport = computed(() => {
+    const s = this.order()?.status;
+    return s === 'paid' || s === 'processing' || s === 'delivery_scheduled' || s === 'shipped';
+  });
+  /** The agreed slot matters only while the delivery is ahead (never on a cancelled or delivered order). */
+  protected readonly showSlot = computed(() => {
+    const s = this.order()?.status;
+    return s === 'delivery_scheduled' || s === 'shipped';
+  });
+  /** "9.11.2026" from the Israel calendar date as given (no timezone shift). */
+  protected readonly slotDate = computed(() => {
+    const d = this.order()?.deliverySlot?.date;
+    const m = d ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(d) : null;
+    return m ? `${Number(m[3])}.${Number(m[2])}.${m[1]}` : (d ?? '');
   });
   protected readonly failed = computed(() => {
     const s = this.order()?.status;
@@ -173,6 +198,38 @@ export class OrderPage {
     this.pollStart = Date.now();
     this.pollingStopped.set(false);
     void this.read(this.number(), this.t() ?? '', this.generation);
+  }
+
+  protected openCancel(): void {
+    this.retryError.set('');
+    this.cancelDialog()?.nativeElement.showModal();
+  }
+
+  protected closeCancel(): void {
+    const dialog = this.cancelDialog()?.nativeElement;
+    if (dialog?.open) dialog.close();
+  }
+
+  protected async confirmCancel(): Promise<void> {
+    if (this.cancelling()) return;
+    this.cancelling.set(true);
+    try {
+      await this.api.cancelOrder(this.number(), this.t() ?? '');
+    } catch (error) {
+      this.cancelling.set(false);
+      this.closeCancel();
+      if (error instanceof HttpErrorResponse && error.status === 409) {
+        // Just paid or otherwise no longer cancellable: say so and show the real state.
+        this.reload();
+        this.retryError.set('אי אפשר לבטל את ההזמנה כעת');
+      } else {
+        this.retryError.set(checkoutErrorMessage(apiErrorCode(error)));
+      }
+      return;
+    }
+    this.cancelling.set(false);
+    this.closeCancel();
+    this.reload();
   }
 
   protected async retryPayment(): Promise<void> {

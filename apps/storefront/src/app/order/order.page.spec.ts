@@ -2,7 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
+import { ORDER_STATUS_LABELS_HE, PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from '../checkout/checkout.api';
 import { OrderPage } from './order.page';
@@ -48,6 +48,10 @@ function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
     deliveryEstimate: { fulfillment: 'in_stock', leadTimeDays: 14 },
     canRetryPayment: false,
     stockShortage: false,
+    statusLabelHe: ORDER_STATUS_LABELS_HE[status],
+    canCancel: status === 'pending_payment',
+    refundedTotal: 0,
+    deliverySlot: null,
     ...extra,
   };
 }
@@ -242,6 +246,197 @@ describe('OrderPage', () => {
     const alert = el().querySelector('[role="alert"]')!;
     expect(live.contains(alert)).toBe(false);
     expect(live.querySelector('button')).toBeNull();
+  });
+
+  describe('post-payment statuses', () => {
+    it.each(['processing', 'delivery_scheduled', 'shipped', 'delivered'] as const)(
+      'shows the status label for %s',
+      async (status) => {
+        await setup(order(status));
+        expect(el().querySelector('h1')?.textContent?.trim()).toBe(ORDER_STATUS_LABELS_HE[status]);
+      },
+    );
+
+    it('keeps the Phase 4 headlines for paid, pending, failed and expired', async () => {
+      const headlines = [
+        ['paid', 'ההזמנה התקבלה ושולמה'],
+        ['pending_payment', 'ממתינים לאישור התשלום…'],
+        ['payment_failed', 'התשלום לא הושלם'],
+        ['expired', 'זמן התשלום עבר'],
+      ] as const;
+      for (const [status, headline] of headlines) {
+        await setup(order(status));
+        expect(el().querySelector('h1')?.textContent?.trim()).toBe(headline);
+        fixture.destroy();
+        http.match(() => true);
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows the delivery slot with an Israel date and times, only when there is one', async () => {
+      await setup(
+        order('delivery_scheduled', {
+          deliverySlot: { date: '2026-11-09', windowFrom: '09:00', windowTo: '13:00', state: 'proposed' },
+        }),
+      );
+      const slot = el().querySelector('.slot')!;
+      expect(slot.textContent?.replace(/\s+/g, ' ').trim()).toBe('האספקה מתואמת ל־9.11.2026 בין 09:00 ל־13:00');
+      expect(slot.querySelectorAll('bdi').length).toBe(3);
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+      await setup(order('processing'));
+      expect(el().querySelector('.slot')).toBeNull();
+    });
+
+    it('shows the slot only while delivery is scheduled or shipped, never once cancelled or delivered', async () => {
+      const deliverySlot = { date: '2026-11-09', windowFrom: '09:00', windowTo: '13:00', state: 'proposed' } as const;
+      const cases = [
+        ['delivery_scheduled', true],
+        ['shipped', true],
+        ['delivered', false],
+        ['cancelled', false],
+      ] as const;
+      for (const [status, shown] of cases) {
+        await setup(order(status, { deliverySlot }));
+        expect(el().querySelector('.slot') !== null).toBe(shown);
+        fixture.destroy();
+        http.match(() => true);
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+      }
+    });
+
+    it('shows the refunded amount on a cancelled order, only when above zero', async () => {
+      await setup(order('cancelled', { refundedTotal: 150000 }));
+      expect(el().querySelector('.refunded')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('הוחזרו 1,500 ₪');
+      fixture.destroy();
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+      await setup(order('cancelled'));
+      expect(el().querySelector('.refunded')).toBeNull();
+    });
+
+    it.each(['paid', 'processing', 'delivery_scheduled', 'shipped'] as const)(
+      'tells a %s order to contact support, with tel and mailto links',
+      async (status) => {
+        await setup(order(status));
+        const line = el().querySelector('.support')!;
+        expect(line.textContent).toContain('לביטול ההזמנה פנו לשירות הלקוחות');
+        expect(line.querySelector('a[href^="tel:"]')?.closest('bdi')?.getAttribute('dir')).toBe('ltr');
+        expect(line.querySelector('a[href^="mailto:"]')?.closest('bdi')?.getAttribute('dir')).toBe('ltr');
+        http.match('/api/cart');
+      },
+    );
+
+    it.each(['delivered', 'cancelled', 'pending_payment', 'payment_failed'] as const)(
+      'has no support line for %s',
+      async (status) => {
+        await setup(order(status));
+        expect(el().querySelector('.support')).toBeNull();
+      },
+    );
+  });
+
+  describe('customer cancel', () => {
+    const proto = HTMLDialogElement.prototype as Partial<HTMLDialogElement>;
+    const native = { showModal: proto.showModal, close: proto.close };
+    beforeEach(() => {
+      proto.showModal = function (this: HTMLDialogElement) {
+        this.setAttribute('open', '');
+      };
+      proto.close = function (this: HTMLDialogElement) {
+        this.removeAttribute('open');
+        this.dispatchEvent(new Event('close'));
+      };
+    });
+    afterEach(() => {
+      proto.showModal = native.showModal;
+      proto.close = native.close;
+    });
+
+    const cancelButton = () => el().querySelector<HTMLButtonElement>('button.cancel-order');
+    const dialog = () => el().querySelector<HTMLDialogElement>('dialog')!;
+    const confirm = () => dialog().querySelector<HTMLButtonElement>('button.confirm-cancel')!;
+    const cancelUrl = (r: { url: string }) => r.url === `${URL}/cancel`;
+
+    it('shows "ביטול ההזמנה" only when canCancel', async () => {
+      await setup(order('pending_payment'));
+      expect(cancelButton()?.textContent?.trim()).toBe('ביטול ההזמנה');
+      fixture.destroy();
+      http.match(() => true);
+      TestBed.resetTestingModule();
+      vi.useRealTimers();
+      await setup(order('payment_failed'));
+      expect(cancelButton()).toBeNull();
+    });
+
+    it('asks first, and "חזרה" closes the dialog without calling the API', async () => {
+      await setup(order('pending_payment'));
+      cancelButton()!.click();
+      fixture.detectChanges();
+      expect(dialog().hasAttribute('open')).toBe(true);
+      expect(dialog().querySelector('h2')?.textContent?.trim()).toBe('לבטל את ההזמנה?');
+      expect(confirm().textContent?.trim()).toBe('כן, לבטל');
+      // The safe choice gets the initial focus, not the destructive one.
+      const first = dialog().querySelector('[autofocus]');
+      expect(first?.textContent?.trim()).toBe('חזרה');
+      expect(confirm().hasAttribute('autofocus')).toBe(false);
+      const back = Array.from(dialog().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'חזרה')!;
+      back.click();
+      expect(dialog().hasAttribute('open')).toBe(false);
+      http.expectNone(cancelUrl);
+    });
+
+    it('confirming posts the cancel with the token and reloads the view', async () => {
+      await setup(order('pending_payment'));
+      cancelButton()!.click();
+      fixture.detectChanges();
+      confirm().click();
+      const req = http.expectOne(cancelUrl);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.params.get('t')).toBe('tok');
+      req.flush(null);
+      await render();
+      orderRequests()[0].flush(order('cancelled'));
+      await render();
+      expect(el().querySelector('h1')?.textContent?.trim()).toBe('ההזמנה בוטלה');
+      expect(cancelButton()).toBeNull();
+    });
+
+    it('on 409 says it cannot be cancelled now and reloads the view', async () => {
+      await setup(order('pending_payment'));
+      cancelButton()!.click();
+      fixture.detectChanges();
+      confirm().click();
+      http.expectOne(cancelUrl).flush({ statusCode: 409, code: 'not_cancellable' }, { status: 409, statusText: 'x' });
+      await render();
+      orderRequests()[0].flush(order('paid'));
+      await render();
+      expect(el().querySelector('[role="alert"]')?.textContent).toContain('אי אפשר לבטל את ההזמנה כעת');
+      http.match('/api/cart');
+    });
+
+    it('on another error shows the generic message and keeps the view', async () => {
+      await setup(order('pending_payment'));
+      cancelButton()!.click();
+      fixture.detectChanges();
+      confirm().click();
+      http.expectOne(cancelUrl).flush({ statusCode: 500 }, { status: 500, statusText: 'x' });
+      await render();
+      expect(el().querySelector('[role="alert"]')?.textContent).toContain('משהו השתבש. נסו שוב.');
+      expect(orderRequests().length).toBe(0);
+    });
+
+    it('stops polling once the order is cancelled', async () => {
+      await setup(order('pending_payment'));
+      await vi.advanceTimersByTimeAsync(3000);
+      orderRequests()[0].flush(order('cancelled'));
+      await render();
+      await vi.advanceTimersByTimeAsync(20000);
+      expect(orderRequests().length).toBe(0);
+    });
   });
 
   it('says the order was not found for a wrong token', async () => {

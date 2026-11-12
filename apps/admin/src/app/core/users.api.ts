@@ -28,6 +28,11 @@ export class UsersApi {
     return firstValueFrom(this.http.patch<AdminUserRow>(`/api/admin/users/${id}`, patch));
   }
 
+  /** The Super Admin's own opt-in permissions (decision 73). */
+  optIn(permissions: Permission[]) {
+    return firstValueFrom(this.http.put<AdminUserRow>('/api/admin/users/me/opt-in', { permissions }));
+  }
+
   inviteLink(id: number) {
     return firstValueFrom(this.http.post<OneTimeLink>(`/api/admin/users/${id}/invite-link`, {}));
   }

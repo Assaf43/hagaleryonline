@@ -35,6 +35,7 @@ export default defineConfig({
       THROTTLE_RETRY_LIMIT: '100000',
       THROTTLE_SANDBOX_LIMIT: '100000',
       THROTTLE_COUPON_LIMIT: '100000',
+      THROTTLE_CANCEL_LIMIT: '100000',
       PAYMENT_PROVIDER: 'sandbox',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
     },

@@ -10,6 +10,7 @@ export const PERMISSIONS = [
   { key: 'media.manage', labelHe: 'תמונות' },
   { key: 'orders.view', labelHe: 'צפייה בהזמנות' },
   { key: 'orders.manage', labelHe: 'טיפול בהזמנות' },
+  { key: 'orders.cancel', labelHe: 'ביטול הזמנות והחזרים כספיים' },
   { key: 'content.manage', labelHe: 'באנרים ועמודי תוכן' },
   { key: 'shipping.manage', labelHe: 'מחירון משלוחים ואזורים' },
   { key: 'promotions.manage', labelHe: 'מבצעים וקופונים' },
@@ -19,6 +20,12 @@ export const PERMISSIONS = [
 export type Permission = (typeof PERMISSIONS)[number]['key'];
 
 export const PERMISSION_KEYS: readonly Permission[] = PERMISSIONS.map((p) => p.key);
+
+/**
+ * Permissions the Super Admin does not hold by role: they have them only when listed in their own
+ * `extraPermissions` (decision 73), recorded in the audit log.
+ */
+export const SUPER_ADMIN_OPT_IN: readonly Permission[] = ['orders.cancel'];
 
 /** Starting points the Super Admin assigns (decision 49); single permissions can be added or removed per user. */
 export const PERMISSION_TEMPLATES = [
@@ -44,7 +51,8 @@ export function effectivePermissions(user: {
   extraPermissions: readonly string[];
   removedPermissions: readonly string[];
 }): Permission[] {
-  if (user.isSuperAdmin) return [...PERMISSION_KEYS];
+  if (user.isSuperAdmin)
+    return PERMISSION_KEYS.filter((p) => !SUPER_ADMIN_OPT_IN.includes(p) || user.extraPermissions.includes(p));
   const fromTemplate = PERMISSION_TEMPLATES.find((t) => t.code === user.template)?.permissions ?? [];
   const granted = new Set<string>([...fromTemplate, ...user.extraPermissions]);
   for (const p of user.removedPermissions) granted.delete(p);
@@ -59,6 +67,11 @@ export interface AdminMe {
   email: string;
   name: string;
   isSuperAdmin: boolean;
+  permissions: Permission[];
+}
+
+/** PUT /api/admin/users/me/opt-in — only keys of `SUPER_ADMIN_OPT_IN`; replaces the Super Admin's own list. */
+export interface SuperAdminOptInRequest {
   permissions: Permission[];
 }
 

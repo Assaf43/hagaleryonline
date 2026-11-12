@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import type { AdminOrderDetail, AdminOrderPage, ProvidersStatus } from '@hg/models';
+import { ORDER_STATUS_LABELS_HE, type AdminOrderDetail, type AdminOrderPage, type ProvidersStatus } from '@hg/models';
 import { ProvidersPage } from '../settings/providers.page';
 import { OrderDetailPage } from './order-detail.page';
 import { OrdersPage } from './orders.page';
@@ -74,6 +74,14 @@ const DETAIL: AdminOrderDetail = {
     },
   ],
   stockShortage: true,
+  refundedTotal: 0,
+  refundable: 0,
+  attentionNote: null,
+  refunds: [],
+  deliverySlot: null,
+  canCancel: true,
+  nextStatuses: [],
+  statusEvents: [],
   needsAttention: true,
   attentionReasons: ['stock_shortage', 'amount_mismatch'],
   paymentProvider: 'sandbox',
@@ -133,6 +141,17 @@ describe('admin orders screens', () => {
     expect(rows[0].querySelector('.attention')?.textContent).toContain('דורשת טיפול');
     expect(rows[0].querySelector('.attention')?.textContent).toContain('שולמה פעמיים');
     expect(rows[1].querySelector('.attention')).toBeNull();
+  });
+
+  it('offers a filter for every order status', async () => {
+    const fixture = TestBed.createComponent(OrdersPage);
+    fixture.detectChanges();
+    http.expectOne('/api/admin/orders?page=1').flush(PAGE);
+    await settle(fixture);
+    const labels = [...(fixture.nativeElement as HTMLElement).querySelectorAll('.filter:not(.attention-filter)')].map(
+      (b) => b.textContent?.trim(),
+    );
+    expect(labels).toEqual(['הכול', ...Object.values(ORDER_STATUS_LABELS_HE)]);
   });
 
   it('puts the chosen filter and page in the URL and loads what the URL says', async () => {

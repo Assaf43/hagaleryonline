@@ -19,6 +19,40 @@
   </header>
   <p class="page-intro">נוצרה ב-{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</p>
 
+  @if (o.deliverySlot; as s) {
+    <p class="slot">
+      אספקה מתואמת: <bdi dir="ltr">{{ s.date }}</bdi
+      >, <bdi dir="ltr">{{ s.windowFrom }}–{{ s.windowTo }}</bdi>
+    </p>
+  }
+
+  @if (actionError()) {
+    <p class="form-error" role="alert">{{ actionError() }}</p>
+  }
+
+  @if (canManage() || canCancel()) {
+    <div class="actions">
+      @if (canManage()) {
+        @for (to of o.nextStatuses; track to) {
+          <button matButton="filled" type="button" class="advance" [disabled]="acting()" (click)="advance(o, to)">
+            קדם ל{{ statusLabels[to] }}
+          </button>
+        }
+        @if (o.status === 'delivery_scheduled') {
+          <button matButton="outlined" type="button" class="change-slot" (click)="openSlot(o)">שינוי מועד אספקה</button>
+        }
+      }
+      @if (canCancel()) {
+        @if (o.refundable > 0) {
+          <button matButton="outlined" type="button" class="refund-order" (click)="openRefund(o)">החזר כספי</button>
+        }
+        @if (canCancelOrder(o)) {
+          <button matButton="outlined" type="button" class="cancel-order" (click)="openCancel(o)">ביטול הזמנה</button>
+        }
+      }
+    </div>
+  }
+
   @if (o.needsAttention) {
     <div class="shortage" role="alert">
       <p>
@@ -27,6 +61,9 @@
           {{ attentionLabels[r] }}{{ last ? '.' : ',' }}
         }
       </p>
+      @if (o.attentionNote) {
+        <p>{{ o.attentionNote }}</p>
+      }
       @if (o.stockShortage) {
         <p>ההזמנה שולמה אחרי שהמלאי כבר לא הספיק לאחד הפריטים. צרו קשר עם הלקוח/ה כדי לתאם אספקה או החזר.</p>
       }
@@ -147,6 +184,17 @@
           <li class="muted">אין ניסיונות תשלום.</li>
         }
       </ul>
+    </section>
+
+    <section class="panel" aria-labelledby="timeline-title">
+      <h2 id="timeline-title">היסטוריה</h2>
+      <hga-status-timeline
+        [events]="o.statusEvents"
+        [refunds]="o.refunds"
+        [currentAdmin]="currentAdmin()"
+        [canRetry]="canCancel()"
+        (retry)="retryRefund(o, $event)"
+      />
     </section>
   </div>
 }

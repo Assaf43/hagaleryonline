@@ -12,6 +12,22 @@ export interface OrderSummary {
 /** The outcome a provider reports for one transaction. */
 export type PaymentOutcome = 'succeeded' | 'failed' | 'cancelled';
 
+/** What a provider needs to refund (part of) a payment. */
+export interface RefundInput {
+  /** The transaction of the payment being refunded. */
+  transactionId: string;
+  /** Agorot, at least 1. */
+  amount: number;
+  /** The same key always gives the same refund: a retry never refunds twice. */
+  idempotencyKey: string;
+}
+
+export interface RefundResult {
+  providerRefundId: string;
+  status: 'succeeded' | 'failed';
+  error?: string;
+}
+
 /** A verified webhook (spec §5.4). */
 export interface PaymentResult {
   transactionId: string;
@@ -35,6 +51,11 @@ export interface PaymentProvider {
   createPaymentPage(order: OrderSummary): Promise<{ redirectUrl: string; transactionId: string }>;
   /** Throws WebhookSignatureError when the signature is wrong and WebhookPayloadError when the body makes no sense. */
   verifyWebhook(headers: IncomingHttpHeaders, rawBody: Buffer): Promise<PaymentResult>;
+  /**
+   * Refunds `amount` of a payment (spec §4.3). A refused refund is a result with status `failed`, not an exception;
+   * the call is idempotent by `idempotencyKey`.
+   */
+  refund(input: RefundInput): Promise<RefundResult>;
 }
 
 /** Injection token of the active provider, chosen by the `PAYMENT_PROVIDER` env variable (required, no default). */

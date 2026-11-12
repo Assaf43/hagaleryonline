@@ -3,9 +3,11 @@ import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatMenuModule } from '@angular/material/menu';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { LucideEllipsisVertical, LucidePlus, LucideShieldCheck } from '@lucide/angular';
 import { PERMISSION_TEMPLATES, type AdminUserRow } from '@hg/models';
+import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
 import { UsersApi } from '../core/users.api';
 import { LinkDialog, type LinkDialogData } from './link.dialog';
@@ -16,13 +18,22 @@ const STATUS_LABEL: Record<AdminUserRow['status'], string> = { invited: 'הוז�
 /** Users and permissions — the Super Admin's screen (decisions 48–52). Cards, so it works on a phone too. */
 @Component({
   selector: 'hga-users-page',
-  imports: [DatePipe, MatButtonModule, MatMenuModule, LucideEllipsisVertical, LucidePlus, LucideShieldCheck],
+  imports: [
+    DatePipe,
+    MatButtonModule,
+    MatMenuModule,
+    MatSlideToggleModule,
+    LucideEllipsisVertical,
+    LucidePlus,
+    LucideShieldCheck,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './users.page.html',
   styleUrl: './users.page.scss',
 })
 export class UsersPage implements OnInit {
   private readonly api = inject(UsersApi);
+  private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
   protected readonly users = signal<AdminUserRow[] | null>(null);
@@ -37,6 +48,21 @@ export class UsersPage implements OnInit {
     if (user.isSuperAdmin) return 'Super Admin';
     const label = PERMISSION_TEMPLATES.find((t) => t.code === user.template)?.labelHe ?? '—';
     return user.extraPermissions.length || user.removedPermissions.length ? `${label} (מותאם)` : label;
+  }
+
+  protected canCancelOrders(user: AdminUserRow): boolean {
+    return user.permissions.includes('orders.cancel');
+  }
+
+  /** The Super Admin opts in to (or out of) cancelling orders and refunds (decision 73). */
+  async toggleCancelOrders(user: AdminUserRow, on: boolean) {
+    await this.run(
+      async () => {
+        await this.api.optIn(on ? ['orders.cancel'] : []);
+        await this.auth.load(true);
+      },
+      on ? 'ביטול הזמנות והחזרים הופעל עבורך' : 'ביטול הזמנות והחזרים כובה עבורך',
+    );
   }
 
   create() {
