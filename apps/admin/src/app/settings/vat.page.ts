@@ -4,8 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import type { AdminVatRate } from '@hg/models';
-import { errorMessage } from '../core/errors';
+import { errorMessage, VAT_RATE_MESSAGE } from '../core/errors';
 import { InvoicesApi } from '../core/invoices.api';
+
+/** A percent as typed: above 0, below 100, at most two decimals ("18", "17.5", "17.25"). */
+const PERCENT = /^\d{1,2}(?:\.\d{1,2})?$/;
 
 /** 0.18 → "18%" (up to two decimals). */
 export function percentLabel(rate: number): string {
@@ -45,9 +48,15 @@ export class VatPage {
 
   protected async add(event: Event) {
     event.preventDefault();
-    const percent = Number(this.rate());
-    if (!this.rate() || !Number.isFinite(percent) || !this.effectiveFrom()) {
+    const typed = String(this.rate() ?? '').trim();
+    if (!typed || !this.effectiveFrom()) {
       this.error.set('יש למלא שיעור ותאריך.');
+      return;
+    }
+    // Never rounded: a third decimal is a typo the Super Admin must see (the API refuses it the same way).
+    const percent = Number(typed);
+    if (!PERCENT.test(typed) || percent <= 0) {
+      this.error.set(VAT_RATE_MESSAGE);
       return;
     }
     this.busy.set(true);
