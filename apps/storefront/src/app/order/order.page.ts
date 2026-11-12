@@ -86,6 +86,11 @@ export class OrderPage {
     const s = this.order()?.status;
     return s === 'paid' || s === 'processing' || s === 'delivery_scheduled' || s === 'shipped';
   });
+  /** The agreed slot matters only while the delivery is ahead (never on a cancelled or delivered order). */
+  protected readonly showSlot = computed(() => {
+    const s = this.order()?.status;
+    return s === 'delivery_scheduled' || s === 'shipped';
+  });
   /** "9.11.2026" from the Israel calendar date as given (no timezone shift). */
   protected readonly slotDate = computed(() => {
     const d = this.order()?.deliverySlot?.date;

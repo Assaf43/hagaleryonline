@@ -258,9 +258,20 @@ describe('OrderPage', () => {
     );
 
     it('keeps the Phase 4 headlines for paid, pending, failed and expired', async () => {
-      await setup(order('paid'));
-      expect(el().querySelector('h1')?.textContent?.trim()).toBe('ההזמנה התקבלה ושולמה');
-      http.match('/api/cart');
+      const headlines = [
+        ['paid', 'ההזמנה התקבלה ושולמה'],
+        ['pending_payment', 'ממתינים לאישור התשלום…'],
+        ['payment_failed', 'התשלום לא הושלם'],
+        ['expired', 'זמן התשלום עבר'],
+      ] as const;
+      for (const [status, headline] of headlines) {
+        await setup(order(status));
+        expect(el().querySelector('h1')?.textContent?.trim()).toBe(headline);
+        fixture.destroy();
+        http.match(() => true);
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+      }
     });
 
     it('shows the delivery slot with an Israel date and times, only when there is one', async () => {
@@ -279,6 +290,24 @@ describe('OrderPage', () => {
       expect(el().querySelector('.slot')).toBeNull();
     });
 
+    it('shows the slot only while delivery is scheduled or shipped, never once cancelled or delivered', async () => {
+      const deliverySlot = { date: '2026-11-09', windowFrom: '09:00', windowTo: '13:00', state: 'proposed' } as const;
+      const cases = [
+        ['delivery_scheduled', true],
+        ['shipped', true],
+        ['delivered', false],
+        ['cancelled', false],
+      ] as const;
+      for (const [status, shown] of cases) {
+        await setup(order(status, { deliverySlot }));
+        expect(el().querySelector('.slot') !== null).toBe(shown);
+        fixture.destroy();
+        http.match(() => true);
+        TestBed.resetTestingModule();
+        vi.useRealTimers();
+      }
+    });
+
     it('shows the refunded amount on a cancelled order, only when above zero', async () => {
       await setup(order('cancelled', { refundedTotal: 150000 }));
       expect(el().querySelector('.refunded')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('הוחזרו 1,500 ₪');
@@ -295,7 +324,7 @@ describe('OrderPage', () => {
         await setup(order(status));
         const line = el().querySelector('.support')!;
         expect(line.textContent).toContain('לביטול ההזמנה פנו לשירות הלקוחות');
-        expect(line.querySelector('a[href^="tel:"] ')?.closest('bdi')?.getAttribute('dir')).toBe('ltr');
+        expect(line.querySelector('a[href^="tel:"]')?.closest('bdi')?.getAttribute('dir')).toBe('ltr');
         expect(line.querySelector('a[href^="mailto:"]')?.closest('bdi')?.getAttribute('dir')).toBe('ltr');
         http.match('/api/cart');
       },
@@ -350,6 +379,10 @@ describe('OrderPage', () => {
       expect(dialog().hasAttribute('open')).toBe(true);
       expect(dialog().querySelector('h2')?.textContent?.trim()).toBe('לבטל את ההזמנה?');
       expect(confirm().textContent?.trim()).toBe('כן, לבטל');
+      // The safe choice gets the initial focus, not the destructive one.
+      const first = dialog().querySelector('[autofocus]');
+      expect(first?.textContent?.trim()).toBe('חזרה');
+      expect(confirm().hasAttribute('autofocus')).toBe(false);
       const back = Array.from(dialog().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'חזרה')!;
       back.click();
       expect(dialog().hasAttribute('open')).toBe(false);

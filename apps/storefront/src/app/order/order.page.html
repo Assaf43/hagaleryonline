@@ -44,7 +44,7 @@
               הוחזרו <bdi class="num">{{ price(o.refundedTotal) }}</bdi>
             </p>
           }
-          @if (o.deliverySlot; as slot) {
+          @if (showSlot() && o.deliverySlot; as slot) {
             <p class="slot">
               האספקה מתואמת ל־<bdi>{{ slotDate() }}</bdi> בין <bdi>{{ slot.windowFrom }}</bdi> ל־<bdi>{{
                 slot.windowTo
@@ -153,7 +153,8 @@
             >
               כן, לבטל
             </button>
-            <button type="button" class="btn btn-secondary" (click)="closeCancel()">חזרה</button>
+            <!-- The safe choice is focused first (not the destructive one). -->
+            <button type="button" class="btn btn-secondary" autofocus (click)="closeCancel()">חזרה</button>
           </div>
         </dialog>
       }
