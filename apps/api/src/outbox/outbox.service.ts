@@ -54,8 +54,10 @@ interface ClaimedRow {
 /**
  * The durable outbox (spec §5.1, decision 83). A job is inserted in the transaction of the change that causes it
  * (`enqueue`), so it exists exactly when the change committed. `runDue` (called by `OutboxWorker`, or by tests)
- * claims due jobs with `FOR UPDATE SKIP LOCKED` — safe with several API processes — and runs their handlers outside
- * any transaction. Only types with a registered handler are claimed: a job enqueued before its handler exists waits.
+ * claims due jobs with `FOR UPDATE SKIP LOCKED` (the claim itself is safe across processes) and runs their handlers
+ * outside any transaction. A job still running after 10 minutes is reclaimed and can run twice, since `finish` does
+ * not check a claim token yet — add one before scaling to several API processes. Only types with a registered
+ * handler are claimed: a job enqueued before its handler exists waits.
  */
 @Injectable()
 export class OutboxService {
