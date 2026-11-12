@@ -41,3 +41,30 @@ export function assertDocumentAmounts(amount: number, vatAmount: number): void {
 export function vatOf(grossAgorot: number, rate: number): number {
   return Math.round(grossAgorot - grossAgorot / (1 + rate));
 }
+
+const ISRAEL_WALL = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Jerusalem',
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+/** Israel's offset from UTC at an instant, in ms (+2 h in winter, +3 h in summer). */
+function israelOffsetMs(utcMs: number): number {
+  const parts = ISRAEL_WALL.formatToParts(new Date(utcMs));
+  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((p) => p.type === type)?.value);
+  const wall = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  return wall - Math.floor(utcMs / 1000) * 1000;
+}
+
+/** The instant of 00:00 in Israel on a calendar date (YYYY-MM-DD); the offset is checked at the result, so DST days come out right. */
+export function israelMidnightUtc(date: string): Date {
+  const [y, m, d] = date.split('-').map(Number);
+  const asUtc = Date.UTC(y, m - 1, d);
+  const first = asUtc - israelOffsetMs(asUtc);
+  return new Date(asUtc - israelOffsetMs(first));
+}

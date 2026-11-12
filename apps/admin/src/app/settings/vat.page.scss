@@ -1,0 +1,78 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  max-inline-size: 40rem;
+}
+
+h1,
+h2,
+.page-intro {
+  margin: 0;
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p,
+.error {
+  margin: 0;
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.table-wrap {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: var(--space-2) var(--space-3);
+  text-align: start;
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+thead th {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.add {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+input {
+  min-block-size: var(--control-height-sm);
+  padding-inline: var(--space-3);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}

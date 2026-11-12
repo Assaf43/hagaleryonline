@@ -85,6 +85,12 @@
           הזמנות
         </a>
       }
+      @if (can('invoices.export')) {
+        <a class="nav-link" routerLink="/invoices" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideFileText></svg>
+          חשבוניות
+        </a>
+      }
       @if (can('orders.manage')) {
         <a
           class="nav-link"
@@ -120,6 +126,12 @@
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>
           משתמשים והרשאות
+        </a>
+      }
+      @if (auth.isSuperAdmin()) {
+        <a class="nav-link" routerLink="/settings/vat" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucidePercent></svg>
+          מע"מ
         </a>
       }
       @if (canSeeAudit()) {

@@ -154,6 +154,7 @@ export function catalogIssueText(code: CatalogErrorCode): string {
 const ORDER_CODES: Record<string, string> = {
   invalid_transition: 'אי אפשר לעבור לסטטוס הזה',
   refund_exceeds_paid: 'הסכום גדול מהיתרה להחזר',
+  vat_rate_exists: 'כבר יש שיעור מע"מ שמתחיל בתאריך הזה.',
   // "משימות שנכשלו": the job was already retried (another tab or user).
   not_failed: 'המשימה כבר לא במצב "נכשלה". רעננו את הדף.',
 };
@@ -163,6 +164,9 @@ const ORDER_FIELDS: Record<string, string> = {
   'slot.window': 'טווח השעות לא תקין. שעת ההתחלה צריכה להיות לפני שעת הסיום.',
   reason: 'יש למלא סיבה (3–500 תווים).',
   amount: 'הסכום לא תקין.',
+  month: 'החודש לא תקין.',
+  rate: 'שיעור המע"מ חייב להיות גדול מ־0% וקטן מ־100%, עד 2 ספרות אחרי הנקודה.',
+  effectiveFrom: 'התאריך חייב להיות אחרי היום ואחרי תאריך ההתחלה של כל שיעור קיים.',
   refund: 'בחירת ההחזר לא תקינה להזמנה הזו.',
 };
 

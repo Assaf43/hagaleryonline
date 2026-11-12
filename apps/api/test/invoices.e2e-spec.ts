@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import ExcelJS from 'exceljs';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import type { AdminOrderDetail, OrderView } from '@hg/models';
+import type { AdminInvoicesMonth, AdminOrderDetail, AdminVatRate, AuditPage, OrderView } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import {
@@ -442,5 +443,155 @@ describe('Invoices (e2e, CHK-08)', () => {
     expect(detail.invoices).toEqual([
       { id: invoice.id, type: 'tax_invoice_receipt', number: invoice.number, issuedAt: invoice.issuedAt.toISOString() },
     ]);
+  });
+  /** Moves the documents of an order to an instant (the month tests control the issue time). */
+  const issuedAt = (orderId: string, at: string, which: InvoiceType = InvoiceType.TAX_INVOICE_RECEIPT) =>
+    prisma.invoice.updateMany({ where: { orderId, type: which }, data: { issuedAt: new Date(at) } });
+  const month = async (m: string) => (await owner.get(`/invoices?month=${m}`).expect(200)).body as AdminInvoicesMonth;
+
+  it('the month list uses Israel-time boundaries (winter edge, DST edge), oldest first', async () => {
+    const before = await paidOrder('m-before');
+    const first = await paidOrder('m-first');
+    const last = await paidOrder('m-last');
+    const after = await paidOrder('m-after');
+    // March 2027: Israel is +02:00 on the 1st and +03:00 on the 31st (DST began 26.3.2027).
+    await issuedAt(before.id, '2027-02-28T21:59:59.999Z');
+    await issuedAt(first.id, '2027-02-28T22:00:00.000Z');
+    await issuedAt(last.id, '2027-03-31T20:59:59.999Z');
+    await issuedAt(after.id, '2027-03-31T21:00:00.000Z');
+
+    const march = await month('2027-03');
+    expect(march.items.map((i) => i.orderNumber)).toEqual([first.number, last.number]);
+    expect(march.items[0]).toMatchObject({
+      type: 'tax_invoice_receipt',
+      amount: TOTAL,
+      vatAmount: vat18(TOTAL),
+      issuedAt: '2027-02-28T22:00:00.000Z',
+    });
+    expect(typeof march.items[0].id).toBe('string');
+    expect(march.items[0].number).toMatch(/^MOCK-INV-/);
+    expect(march.month).toBe('2027-03');
+    expect((await month('2027-02')).items.map((i) => i.orderNumber)).toEqual([before.number]);
+    expect((await month('2027-04')).items.map((i) => i.orderNumber)).toEqual([after.number]);
+  });
+
+  it('totals: sales, credits (positive), net and VAT with a credit note', async () => {
+    const order = await paidOrder('m-totals');
+    await owner.post(`/orders/${order.number}/refunds`, { amount: 11_800, reason: 'בדיקה' }).expect(200);
+    await runJobs();
+    await issuedAt(order.id, '2027-05-10T09:00:00.000Z');
+    await issuedAt(order.id, '2027-05-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
+
+    const may = await month('2027-05');
+    expect(may.items.map((i) => i.type)).toEqual(['tax_invoice_receipt', 'credit_note']);
+    expect(may.items[1]).toMatchObject({ amount: 11_800, vatAmount: 1_800 });
+    expect(may.totals).toEqual({
+      sales: TOTAL,
+      credits: 11_800,
+      net: TOTAL - 11_800,
+      vat: vat18(TOTAL) - 1_800,
+    });
+    expect((await month('2027-06')).totals).toEqual({ sales: 0, credits: 0, net: 0, vat: 0 });
+  });
+
+  it('the list and the export need invoices.export and a valid month', async () => {
+    for (const url of ['/invoices?month=2027-05', '/invoices/export?month=2027-05']) {
+      await service.get(url).expect(403);
+      await http().get(`/api/admin${url}`).expect(401);
+    }
+    for (const bad of ['', '?month=2027-13', '?month=2027-5', '?month=2027-05-01', '?month=abc']) {
+      for (const path of ['/invoices', '/invoices/export']) {
+        const res = await owner.get(`${path}${bad}`).expect(400);
+        expect(res.body).toMatchObject({ field: 'month' });
+      }
+    }
+  });
+
+  it('the export is an .xlsx attachment with the documents and the summary', async () => {
+    const order = await paidOrder('m-export');
+    await owner.post(`/orders/${order.number}/refunds`, { amount: 11_800, reason: 'בדיקה' }).expect(200);
+    await runJobs();
+    await issuedAt(order.id, '2027-07-10T09:00:00.000Z');
+    await issuedAt(order.id, '2027-07-12T09:00:00.000Z', InvoiceType.CREDIT_NOTE);
+
+    const res = await owner
+      .get('/invoices/export?month=2027-07')
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(res.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="invoices-2027-07.xlsx"');
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(res.body as ArrayBuffer);
+    const docs = wb.getWorksheet('מסמכים')!;
+    expect((docs.getRow(1).values as unknown[]).slice(1)).toEqual([
+      'סוג',
+      'מספר',
+      'הזמנה',
+      'תאריך',
+      'סכום',
+      'מע"מ',
+      'קישור',
+    ]);
+    expect(docs.getRow(2).getCell(1).value).toBe('חשבונית מס/קבלה');
+    expect(docs.getRow(2).getCell(3).value).toBe(order.number);
+    expect(docs.getRow(2).getCell(4).value).toBe('10.07.2027');
+    expect(docs.getRow(2).getCell(5).value).toBe(TOTAL / 100);
+    expect(docs.getRow(3).getCell(1).value).toBe('חשבונית זיכוי');
+    expect(docs.getRow(3).getCell(5).value).toBe(118);
+    const sum = wb.getWorksheet('סיכום')!;
+    const cells = new Map<string, unknown>();
+    sum.eachRow((r) => cells.set(r.getCell(1).text, r.getCell(2).value));
+    expect(cells.get('מכירות')).toBe(TOTAL / 100);
+    expect(cells.get('זיכויים')).toBe(118);
+    expect(cells.get('נטו')).toBe((TOTAL - 11_800) / 100);
+  });
+
+  describe('VAT rate setting (Super Admin)', () => {
+    const day = (plus: number) => israelDate(new Date(Date.now() + plus * 24 * 60 * MINUTE));
+    const cleanRates = () => prisma.vatRate.deleteMany({ where: { effectiveFrom: { gt: new Date('2025-01-01') } } });
+    beforeEach(cleanRates);
+    afterAll(cleanRates);
+
+    it('is for the Super Admin only', async () => {
+      await service.get('/settings/vat').expect(403);
+      await service.post('/settings/vat', { rate: 0.19, effectiveFrom: day(5) }).expect(403);
+      await http().get('/api/admin/settings/vat').expect(401);
+      const rates = (await owner.get('/settings/vat').expect(200)).body as AdminVatRate[];
+      expect(rates.map((r) => [r.rate, r.effectiveFrom])).toContainEqual([0.18, '2025-01-01']);
+    });
+
+    it('adds a future rate, audits it, and refuses the wrong ones', async () => {
+      const created = (await owner.post('/settings/vat', { rate: 0.19, effectiveFrom: day(10) }).expect(201))
+        .body as AdminVatRate;
+      expect(created).toMatchObject({ rate: 0.19, effectiveFrom: day(10) });
+      const list = (await owner.get('/settings/vat').expect(200)).body as AdminVatRate[];
+      expect(list.map((r) => r.effectiveFrom)).toEqual(['2025-01-01', day(10)]);
+
+      const audit = (await owner.get('/audit?entityType=vat_rate').expect(200)).body as AuditPage;
+      expect(audit.items[0]).toMatchObject({ action: 'vat.add', after: { rate: 0.19, effectiveFrom: day(10) } });
+
+      const dup = await owner.post('/settings/vat', { rate: 0.2, effectiveFrom: day(10) }).expect(409);
+      expect(dup.body).toMatchObject({ code: 'vat_rate_exists' });
+      for (const [body, field] of [
+        [{ rate: 0.2, effectiveFrom: day(0) }, 'effectiveFrom'],
+        [{ rate: 0.2, effectiveFrom: day(-3) }, 'effectiveFrom'],
+        [{ rate: 0.2, effectiveFrom: day(5) }, 'effectiveFrom'], // before the latest existing one
+        [{ rate: 0.2, effectiveFrom: '2027-02-30' }, 'effectiveFrom'],
+        [{ rate: 0.2, effectiveFrom: 'soon' }, 'effectiveFrom'],
+        [{ rate: 0, effectiveFrom: day(20) }, 'rate'],
+        [{ rate: 1, effectiveFrom: day(20) }, 'rate'],
+        [{ rate: 0.12345, effectiveFrom: day(20) }, 'rate'],
+        [{ rate: '0.2', effectiveFrom: day(20) }, 'rate'],
+      ] as const) {
+        const res = await owner.post('/settings/vat', body).expect(400);
+        expect(res.body).toMatchObject({ field });
+      }
+      expect(await prisma.vatRate.count({ where: { effectiveFrom: { gt: new Date('2025-01-01') } } })).toBe(1);
+    });
   });
 });

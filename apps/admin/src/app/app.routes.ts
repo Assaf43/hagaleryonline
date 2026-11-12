@@ -94,6 +94,18 @@ export const routes: Routes = [
         title: 'הזמנה',
       },
       {
+        path: 'invoices',
+        canMatch: [hasPermission('invoices.export')],
+        loadComponent: () => import('./invoices/invoices.page').then((m) => m.InvoicesPage),
+        title: 'חשבוניות',
+      },
+      {
+        path: 'settings/vat',
+        canMatch: [superAdminOnly],
+        loadComponent: () => import('./settings/vat.page').then((m) => m.VatPage),
+        title: 'מע"מ',
+      },
+      {
         path: 'settings/providers',
         canMatch: [hasPermission('orders.manage')],
         loadComponent: () => import('./settings/providers.page').then((m) => m.ProvidersPage),
