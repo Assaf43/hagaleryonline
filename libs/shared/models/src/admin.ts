@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: 'orders.manage', labelHe: 'טיפול בהזמנות' },
   { key: 'content.manage', labelHe: 'באנרים ועמודי תוכן' },
   { key: 'shipping.manage', labelHe: 'מחירון משלוחים ואזורים' },
+  { key: 'promotions.manage', labelHe: 'מבצעים וקופונים' },
   { key: 'audit.view', labelHe: 'צפייה ביומן השינויים' },
 ] as const;
 

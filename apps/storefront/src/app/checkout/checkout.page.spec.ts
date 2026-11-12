@@ -212,6 +212,28 @@ describe('CheckoutPage', () => {
     expect(q<HTMLElement>('.summary .total').textContent).toContain('3,550 ₪');
   });
 
+  it('shows the discount line and the coupon notice in the summary, and sends the total after the discount', async () => {
+    const view = cartView(
+      [cartLine(1, 2, 150000)],
+      [{ variantId: null, kind: 'coupon', messageHe: 'המבצע הנוכחי משתלם יותר מהקופון' }],
+    );
+    view.discount = { labelHe: 'מבצע סוף עונה', amount: 30000, source: 'automatic', code: null };
+    view.couponCode = 'SAVE10';
+    await setup(view);
+    await fillValid();
+    const row = q<HTMLElement>('.summary .discount-row');
+    expect(row.textContent?.replace(/\s+/g, ' ').trim()).toBe('מבצע סוף עונה: −300 ₪');
+    expect(row.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−300');
+    expect(q<HTMLElement>('.summary .coupon-notice').textContent).toContain('המבצע הנוכחי משתלם יותר מהקופון');
+    // 3,000 − 300 + full service 550.
+    expect(q<HTMLElement>('.summary .total').textContent).toContain('3,250 ₪');
+    await submit();
+    const req = http.expectOne('/api/checkout');
+    expect(req.request.body).toMatchObject({ expectedTotal: 325000 });
+    req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+    await render();
+  });
+
   it('says when shipping is not available', async () => {
     await setup();
     await pickLocality();
@@ -327,6 +349,23 @@ describe('CheckoutPage', () => {
     await render();
     expect(q<HTMLElement>('.summary').textContent).toContain('MODEL2');
     expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+  });
+
+  it('on coupon_invalid shows the coupon message and reloads the cart', async () => {
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush(
+        { statusCode: 409, code: 'coupon_invalid', field: 'coupon', messageHe: 'הקופון נוצל במלואו' },
+        { status: 409, statusText: 'Conflict' },
+      );
+    await render();
+    expect(q<HTMLElement>('.form-error').textContent).toContain('הקופון נוצל במלואו');
+    expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000)]));
+    await render();
   });
 
   it('on price_changed shows the new total, reloads the cart and sends nothing more', async () => {

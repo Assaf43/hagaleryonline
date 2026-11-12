@@ -1,0 +1,111 @@
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.head h1 {
+  margin: 0;
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
+.promotions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+// Phones: a card per promotion. From tablet width the same cells line up in one row.
+.promotion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.name {
+  font-weight: 700;
+  color: inherit;
+}
+
+.kind,
+.code,
+.targets,
+.dates,
+.uses {
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.targets {
+  grid-column: 1 / -1;
+}
+
+.value {
+  font-weight: 700;
+}
+
+.state {
+  justify-self: start;
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-alt);
+}
+
+.promotion[data-state='active'] .state {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.promotion[data-state='scheduled'] .state {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.empty {
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+@media (width >= 1024px) {
+  .promotion {
+    grid-template-columns: minmax(0, 2fr) 7rem 7rem 6rem minmax(0, 2fr) 11rem 9rem 6rem auto;
+    gap: var(--space-3);
+  }
+
+  .targets,
+  .actions {
+    grid-column: auto;
+  }
+}

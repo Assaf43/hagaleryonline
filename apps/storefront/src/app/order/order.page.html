@@ -94,9 +94,10 @@
                 <span>סכום ביניים</span><span class="num">{{ price(o.subtotal) }}</span>
               </p>
               @if (o.discount > 0) {
-                <p class="row">
-                  <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}</span
-                  ><span class="num">-{{ price(o.discount) }}</span>
+                <p class="row discount-row">
+                  <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}:</span>&ngsp;<hg-discount-amount
+                    [amount]="o.discount"
+                  />
                 </p>
               }
               @for (l of o.shippingLines; track $index) {

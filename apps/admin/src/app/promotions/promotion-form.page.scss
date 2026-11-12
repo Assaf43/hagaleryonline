@@ -1,0 +1,134 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+}
+
+h1 {
+  margin: 0;
+}
+
+.back {
+  justify-self: start;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-5);
+  max-inline-size: 48rem;
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (width >= 768px) {
+  .fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-inline-size: 0;
+}
+
+legend {
+  padding: 0;
+  margin-block-end: var(--space-2);
+  font-weight: 700;
+}
+
+.choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+}
+
+.choice .muted {
+  flex-basis: 100%;
+}
+
+// 44px touch targets for the native radios and checkboxes (ADM-15).
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--icon-button-size);
+  cursor: pointer;
+
+  input {
+    inline-size: var(--icon-size-ui);
+    block-size: var(--icon-size-ui);
+    margin: 0;
+    accent-color: var(--color-accent);
+  }
+}
+
+.categories {
+  display: grid;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+
+  .option {
+    padding-inline-start: calc(var(--space-5) * var(--depth, 0));
+  }
+}
+
+.field-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
+.dates {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (width >= 480px) {
+  .date-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width >= 1024px) {
+  .date-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.used-warning {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+}

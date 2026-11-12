@@ -73,6 +73,12 @@
           משלוחים
         </a>
       }
+      @if (can('promotions.manage')) {
+        <a class="nav-link" routerLink="/promotions" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideBadgePercent></svg>
+          מבצעים וקופונים
+        </a>
+      }
       @if (can('orders.view')) {
         <a class="nav-link" routerLink="/orders" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideReceipt></svg>

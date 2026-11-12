@@ -69,6 +69,19 @@ export const routes: Routes = [
         title: 'משלוחים',
       },
       {
+        path: 'promotions',
+        canMatch: [hasPermission('promotions.manage')],
+        loadComponent: () => import('./promotions/promotions.page').then((m) => m.PromotionsPage),
+        title: 'מבצעים וקופונים',
+      },
+      {
+        path: 'promotions/:id',
+        canMatch: [hasPermission('promotions.manage')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
+        loadComponent: () => import('./promotions/promotion-form.page').then((m) => m.PromotionFormPage),
+        title: 'מבצע',
+      },
+      {
         path: 'orders',
         canMatch: [hasPermission('orders.view')],
         loadComponent: () => import('./orders/orders.page').then((m) => m.OrdersPage),

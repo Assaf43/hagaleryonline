@@ -2,7 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import type { OrderStatus, OrderView } from '@hg/models';
+import { PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from '../checkout/checkout.api';
 import { OrderPage } from './order.page';
@@ -120,6 +120,26 @@ describe('OrderPage', () => {
     expect(el().querySelector('.retry')).toBeNull();
   });
 
+  it('shows the order discount as "{name}: −{price}", and no discount line without one', async () => {
+    await setup(
+      order('paid', {
+        discount: 30000,
+        discountInfo: { labelHe: 'קופון חורף', source: 'coupon', code: 'WINTER' },
+        total: 315000,
+      }),
+    );
+    const row = el().querySelector('.totals .discount-row');
+    expect(row?.textContent?.replace(/\s+/g, ' ').trim()).toBe('קופון חורף: −300 ₪');
+    expect(row?.querySelector('bdi[dir="ltr"]')?.textContent).toBe('−300');
+    expect(text()).toContain('3,150 ₪');
+    fixture.destroy();
+    http.match('/api/cart');
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+    await setup(order('paid'));
+    expect(el().querySelector('.discount-row')).toBeNull();
+  });
+
   it('refreshes the cart once the order is paid', async () => {
     await setup(order('paid'));
     http.expectOne('/api/cart');
@@ -197,6 +217,21 @@ describe('OrderPage', () => {
     const alert = el().querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('הזמנה חדשה יותר');
     expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('a retry the server refuses (promotion ended) keeps the reason and offers the cart instead of the button', async () => {
+    await setup(order('payment_failed', { canRetryPayment: true }));
+    el().querySelector<HTMLButtonElement>('button.retry')!.click();
+    http
+      .expectOne((r) => r.url === `${URL}/retry-payment`)
+      .flush(
+        { statusCode: 409, code: 'promotion_ended', messageHe: PROMOTION_ENDED_MESSAGE_HE },
+        { status: 409, statusText: 'Conflict' },
+      );
+    await render();
+    expect(el().querySelector('[role="alert"]')!.textContent).toContain(PROMOTION_ENDED_MESSAGE_HE);
+    expect(el().querySelector('button.retry')).toBeNull();
+    expect(el().querySelector('a[href="/cart"]')).not.toBeNull();
   });
 
   it('announces only the status politely; the retry error is an alert outside that region', async () => {

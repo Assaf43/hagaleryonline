@@ -70,7 +70,10 @@
         @if (o.discount > 0) {
           <div>
             <dt>{{ o.discountInfo?.labelHe ?? 'הנחה' }}</dt>
-            <dd>−{{ formatPrice(o.discount) }}</dd>
+            <dd class="discount-amount">
+              <bdi dir="ltr">−{{ formatAmount(o.discount) }}</bdi
+              >&ngsp;₪
+            </dd>
           </div>
         }
         <div>

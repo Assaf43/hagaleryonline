@@ -85,15 +85,15 @@
               <span>משלוח החל מ־</span><span class="num">{{ price(view.shippingFrom) }}</span>
             </p>
           }
-          @if (view.discount; as d) {
-            <p class="row discount-row">
-              <span>{{ d.labelHe }}</span
-              ><span class="num">-{{ price(d.amount) }}</span>
-            </p>
-          }
           <p class="row subtotal">
             <span>סכום ביניים</span><span class="num">{{ price(view.subtotal) }}</span>
           </p>
+          @if (view.discount; as d) {
+            <p class="row discount-row">
+              <span>{{ d.labelHe }}:</span>&ngsp;<hg-discount-amount [amount]="d.amount" />
+            </p>
+          }
+          <hg-coupon-field />
           <p class="vat">המחיר כולל מע״מ</p>
           @if (canCheckout()) {
             <a routerLink="/checkout" class="btn btn-primary checkout">למעבר לתשלום</a>

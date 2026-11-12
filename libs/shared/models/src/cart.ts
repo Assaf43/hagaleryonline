@@ -56,8 +56,13 @@ export interface CartView {
   notices: CartNotice[];
   /** Lowest delivery price (Phase 4b); null until then. */
   shippingFrom: number | null;
-  /** Phase 4d; null until then. */
+  /** The one discount of the order (Phase 4d): the best automatic promotion or the coupon; null when none applies. */
   discount: CartDiscount | null;
+  /**
+   * The coupon code entered on this cart (upper-case), applied or not — a coupon that does not apply right now
+   * (below its minimum, or beaten by an automatic promotion) stays, with a `coupon` notice; null when none.
+   */
+  couponCode: string | null;
 }
 
 export interface AddCartItemRequest {
@@ -70,4 +75,4 @@ export interface UpdateCartItemRequest {
 }
 
 /** Error codes of the cart API (`{ statusCode, code }`). */
-export type CartErrorCode = 'invalid_input' | 'not_found' | 'unavailable';
+export type CartErrorCode = 'invalid_input' | 'not_found' | 'unavailable' | 'invalid_coupon';

@@ -555,9 +555,13 @@ model Order {
   /// The quote's breakdown for the chosen method: [{ labelHe, amount }].
   shippingLines    Json                @map("shipping_lines")
   subtotal         Int
-  /// Phase 4d.
+  /// The one discount of the order (decision 70), agorot.
   discount         Int                 @default(0)
+  /// Snapshot of the applied promotion: { name, kind, code, labelHe, source }; null without a discount.
   discountInfo     Json?               @map("discount_info")
+  /// The applied promotion: its usage count goes up when the order is paid (spec §6). A promotion with orders
+  /// cannot be deleted (RESTRICT).
+  promotionId      Int?                @map("promotion_id")
   total            Int
   /// { fulfillment, leadTimeDays } of the slowest line (CRT-04).
   deliveryEstimate Json                @map("delivery_estimate")
@@ -573,13 +577,15 @@ model Order {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
-  cart     Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  items    OrderItem[]
-  payments Payment[]
+  cart      Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  promotion Promotion?  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  items     OrderItem[]
+  payments  Payment[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
   @@index([createdAt])
+  @@index([promotionId])
   @@map("orders")
 }
 
@@ -635,4 +641,61 @@ model Payment {
 
   @@index([orderId])
   @@map("payments")
+}
+
+// ---------- Promotions and coupons (Phase 4d, spec §6, decision 70) ----------
+
+enum PromotionKind {
+  AUTOMATIC @map("automatic")
+  COUPON    @map("coupon")
+
+  @@map("promotion_kind")
+}
+
+enum DiscountType {
+  PERCENT @map("percent")
+  FIXED   @map("fixed")
+
+  @@map("promotion_discount_type")
+}
+
+enum PromotionTarget {
+  ORDER      @map("order")
+  CATEGORIES @map("categories")
+  PRODUCTS   @map("products")
+
+  @@map("promotion_target")
+}
+
+/// A promotion: automatic, or a coupon the customer enters. One discount per order — the larger wins (spec §6).
+/// CHECK constraints (raw SQL, migration promotions_checks): code upper-case; a code exactly for coupons; value > 0;
+/// percent value ≤ 100.
+model Promotion {
+  id           Int             @id @default(autoincrement())
+  name         String
+  kind         PromotionKind
+  /// Coupons only: unique, stored upper-case (entered case-insensitively).
+  code         String?         @unique
+  discountType DiscountType    @map("discount_type")
+  /// Percent 1–100, or agorot for a fixed discount.
+  value        Int
+  target       PromotionTarget
+  /// Category ids (sub-categories included) or product ids, by target; empty for the whole order.
+  targetIds    Int[]           @default([]) @map("target_ids")
+  /// Agorot, on the subtotal of the eligible lines.
+  minSubtotal  Int             @default(0) @map("min_subtotal")
+  startsAt     DateTime?       @map("starts_at")
+  endsAt       DateTime?       @map("ends_at")
+  /// Paid orders allowed (coupons); null = no limit.
+  usageLimit   Int?            @map("usage_limit")
+  /// Paid orders that used it (spec §5.4); may pass the limit when a pending order is paid late.
+  usedCount    Int             @default(0) @map("used_count")
+  active       Boolean         @default(true)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@index([kind, active])
+  @@map("promotions")
 }

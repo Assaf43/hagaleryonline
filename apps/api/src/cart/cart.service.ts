@@ -1,8 +1,10 @@
 import { HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import type { CartErrorCode, CartLine, CartNotice, CartView, FulfillmentMode } from '@hg/models';
+import type { CartErrorCode, CartLine, CartNotice, CartView, CouponProblem, FulfillmentMode } from '@hg/models';
 import { FULFILLMENT } from '../catalog/catalog.repository.js';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { couponError, couponProblemMessageHe, eligibleSubtotal } from '../promotions/discount-engine.js';
+import { discountLines, normalizeCouponCode, PromotionsService } from '../promotions/promotions.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingService } from '../shipping/shipping.service.js';
 import { availableStock } from './available-stock.js';
@@ -24,6 +26,17 @@ export class CartError extends HttpException {
   }
 }
 
+/** 400 of POST /api/cart/coupon: `{ statusCode, code: 'invalid_coupon', field: 'coupon', messageHe }`. */
+export class CouponRefused extends HttpException {
+  constructor(messageHe: string) {
+    const status = HttpStatus.BAD_REQUEST;
+    super({ statusCode: status, code: 'invalid_coupon' satisfies CartErrorCode, field: 'coupon', messageHe }, status);
+  }
+}
+
+/** Coupon problems that will not go away by changing the cart: the code is removed from the cart (shown once). */
+const DROP_COUPON: ReadonlySet<CouponProblem> = new Set(['unknown', 'not_started', 'expired', 'exhausted']);
+
 const notFound = () => new CartError(HttpStatus.NOT_FOUND, 'not_found');
 const unavailable = () => new CartError(HttpStatus.CONFLICT, 'unavailable');
 
@@ -36,6 +49,7 @@ function emptyView(): CartView {
     notices: [],
     shippingFrom: null,
     discount: null,
+    couponCode: null,
   };
 }
 
@@ -52,6 +66,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly catalog: CatalogService,
     private readonly shipping: ShippingService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   onModuleInit(): void {
@@ -135,6 +150,34 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     const cart = await this.resolve(token);
     if (!cart) return { view: emptyView(), token: null };
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, variantId } });
+    return { view: await this.buildView(cart.id, []), token: token! };
+  }
+
+  /**
+   * Enters a coupon (spec §6): checked against the cart as it is now — unknown, expired, used up, below its minimum
+   * or for none of the cart's products → 400 with the Hebrew reason and nothing stored. A valid coupon is stored
+   * upper-case even when an automatic promotion is better (the view then says so). Never creates a cart.
+   */
+  async applyCoupon(token: string | undefined, rawCode: string): Promise<CartResult> {
+    const code = normalizeCouponCode(rawCode);
+    const cart = await this.resolve(token);
+    const lines = cart
+      ? discountLines(await computeCartLines(this.prisma, cart.id, await this.catalog.snapshot()), (l) => l.quantity)
+      : [];
+    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon against it.
+    const found = await this.promotions.coupon(this.prisma, code, { cartId: cart?.id });
+    const message = couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date());
+    if (message) throw new CouponRefused(message);
+    // A valid coupon has eligible lines, so there is a cart.
+    await this.prisma.cart.update({ where: { id: cart!.id }, data: { couponCode: code } });
+    return { view: await this.buildView(cart!.id, []), token: token! };
+  }
+
+  /** Removes the cart's coupon; without a cart, the empty view. */
+  async removeCoupon(token: string | undefined): Promise<CartResult> {
+    const cart = await this.resolve(token);
+    if (!cart) return { view: emptyView(), token: null };
+    await this.prisma.cart.update({ where: { id: cart.id }, data: { couponCode: null } });
     return { view: await this.buildView(cart.id, []), token: token! };
   }
 
@@ -232,6 +275,32 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
+    // The one discount (spec §6), on the available lines at the quantities shown. A coupon that does not apply now
+    // gets a notice; one that never will again (unknown, expired, used up) is also removed, so its notice shows once.
+    const { couponCode } = await this.prisma.cart.findUniqueOrThrow({
+      where: { id: cartId },
+      select: { couponCode: true },
+    });
+    const discount = await this.promotions.evaluate(
+      this.prisma,
+      discountLines(computed, (l) => l.quantity),
+      couponCode,
+      { cartId },
+    );
+    let code = couponCode;
+    if (code && discount.couponProblem) {
+      notices.push({
+        variantId: null,
+        kind: 'coupon',
+        messageHe: couponProblemMessageHe(discount.couponProblem, discount.coupon),
+      });
+      if (DROP_COUPON.has(discount.couponProblem)) {
+        // Only if unchanged: a coupon entered meanwhile stays.
+        await this.prisma.cart.updateMany({ where: { id: cartId, couponCode: code }, data: { couponCode: null } });
+        code = null;
+      }
+    }
+
     const counted = lines.filter((l) => l.available);
     return {
       lines,
@@ -240,7 +309,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       deliveryEstimate: deliveryEstimate(lines),
       notices,
       shippingFrom: await this.shipping.shippingFrom(shipmentItems(computed)),
-      discount: null,
+      discount: discount.applied,
+      couponCode: code,
     };
   }
 }

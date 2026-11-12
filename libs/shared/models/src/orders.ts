@@ -105,10 +105,14 @@ export interface CheckoutResponse {
  * - `empty_cart` (409): nothing in the cart can be ordered;
  * - `cart_changed` (409): the cart changed while the order was being placed — try again;
  * - `price_changed` (409): the total differs from `expectedTotal`; `total` is the new one (agorot);
+ * - `coupon_invalid` (409): the cart's coupon was used up in the meantime; `field: 'coupon'` and `messageHe`
+ *   (`CouponErrorBody`) — remove it and try again;
  * - `too_many_requests` (429): per-IP limit of a public write; `retryAfterSeconds`;
  * - `shipping_unavailable` (503): the shipping price list is not configured;
  * - `payment_unavailable` (502): the payment provider did not answer;
  * - `not_retryable` (409): the order is paid or still waiting for its payment;
+ * - `promotion_ended` (409): retry refused — the order's promotion or coupon ended, is inactive or used up;
+ *   `messageHe`;
  * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
  * - `not_found` (404): unknown order or transaction, or the token does not match;
  * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook.
@@ -122,10 +126,12 @@ export type CheckoutErrorCode =
   | 'empty_cart'
   | 'cart_changed'
   | 'price_changed'
+  | 'coupon_invalid'
   | 'too_many_requests'
   | 'shipping_unavailable'
   | 'payment_unavailable'
   | 'not_retryable'
+  | 'promotion_ended'
   | 'superseded'
   | 'not_found';
 
@@ -179,7 +185,7 @@ export interface OrderView {
   shippingLines: ShippingQuoteLine[];
   subtotal: number;
   discount: number;
-  /** Phase 4d; null until then. */
+  /** The applied promotion (Phase 4d); null when the order has no discount. */
   discountInfo: Pick<CartDiscount, 'labelHe' | 'source' | 'code'> | null;
   total: number;
   deliveryEstimate: { fulfillment: FulfillmentMode; leadTimeDays: number } | null;

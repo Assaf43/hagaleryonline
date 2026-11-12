@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import type { AddCartItemRequest, CartView, UpdateCartItemRequest } from '@hg/models';
+import type { AddCartItemRequest, ApplyCouponRequest, CartView, UpdateCartItemRequest } from '@hg/models';
 
 /**
  * The cart API (Phase 4a, CRT-02). The cart lives on the server behind the httpOnly `hg_cart` cookie, which
@@ -28,5 +28,15 @@ export class CartApi {
 
   remove(variantId: number) {
     return firstValueFrom(this.http.delete<CartView>(`/api/cart/items/${variantId}`));
+  }
+
+  /** 400 `invalid_coupon` with `messageHe` when the code does not apply; 429 when entered too often. */
+  applyCoupon(code: string) {
+    const body: ApplyCouponRequest = { code };
+    return firstValueFrom(this.http.post<CartView>('/api/cart/coupon', body));
+  }
+
+  removeCoupon() {
+    return firstValueFrom(this.http.delete<CartView>('/api/cart/coupon'));
   }
 }

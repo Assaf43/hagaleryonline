@@ -10,7 +10,9 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import type { OrderStatus, OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
@@ -43,7 +45,7 @@ const STATUS_TITLES: Record<OrderStatus, string> = {
  */
 @Component({
   selector: 'hg-order-page',
-  imports: [RouterLink],
+  imports: [DiscountAmount, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './order.page.html',
   styleUrl: './order.page.scss',
@@ -183,6 +185,10 @@ export class OrderPage {
     } catch (error) {
       this.retrying.set(false);
       this.retryError.set(checkoutErrorMessage(apiErrorCode(error)));
+      // A 409 (promotion ended, superseded, not retryable, stock gone) means this order cannot be paid again:
+      // offer the cart instead of a button that would only be refused again. Network errors keep the button.
+      if (error instanceof HttpErrorResponse && error.status === 409)
+        this.order.update((o) => (o ? { ...o, canRetryPayment: false } : o));
     }
   }
 }

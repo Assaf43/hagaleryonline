@@ -158,6 +158,66 @@ describe('CartStore', () => {
     expect(store.view()?.notices).toEqual([]);
   });
 
+  it('keeps the one-time coupon notice of a dropped coupon when a later load lacks it', async () => {
+    const { store, http } = setup();
+    const expired = { variantId: null, kind: 'coupon' as const, messageHe: 'תוקף הקופון פג' };
+    const a = store.load();
+    // The server removed the coupon (expired) and says so once.
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)], [expired]));
+    await a;
+    // The header's background load comes next: the notice must still be there for the cart page.
+    const b = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+    await b;
+    expect(store.view()?.notices).toEqual([expired]);
+
+    // A coupon entered since: its own state, the old notice goes.
+    const apply = store.applyCoupon('SAVE10');
+    const withCode = { ...cartView([cartLine(1, 1)]), couponCode: 'SAVE10' };
+    http.expectOne('/api/cart/coupon').flush(withCode);
+    await apply;
+    const c = store.load();
+    http.expectOne('/api/cart').flush(withCode);
+    await c;
+    expect(store.view()?.notices).toEqual([]);
+  });
+
+  it('applyCoupon() posts the code and removeCoupon() deletes it, both updating the view', async () => {
+    const { store, http } = setup();
+    const applied = store.applyCoupon('save10');
+    const post = http.expectOne({ method: 'POST', url: '/api/cart/coupon' });
+    expect(post.request.body).toEqual({ code: 'save10' });
+    post.flush({
+      ...cartView([cartLine(1, 1)]),
+      couponCode: 'SAVE10',
+      discount: { labelHe: 'קופון', amount: 10000, source: 'coupon', code: 'SAVE10' },
+    });
+    await applied;
+    expect(store.view()?.couponCode).toBe('SAVE10');
+
+    const removed = store.removeCoupon();
+    http.expectOne({ method: 'DELETE', url: '/api/cart/coupon' }).flush(cartView([cartLine(1, 1)]));
+    await removed;
+    expect(store.view()?.couponCode).toBeNull();
+    expect(store.view()?.discount).toBeNull();
+  });
+
+  it('a refused coupon reaches the caller and keeps the cart as it was', async () => {
+    const { store, http } = setup();
+    const a = store.load();
+    http.expectOne('/api/cart').flush(cartView([cartLine(1, 1)]));
+    await a;
+    const refused = store.applyCoupon('NOPE');
+    http
+      .expectOne('/api/cart/coupon')
+      .flush(
+        { statusCode: 400, code: 'invalid_coupon', field: 'coupon', messageHe: 'קוד הקופון לא קיים' },
+        { status: 400, statusText: 'Bad Request' },
+      );
+    await expect(refused).rejects.toBeTruthy();
+    expect(store.view()?.lines).toHaveLength(1);
+  });
+
   it('a load() after a write does not reuse a read that started before it', async () => {
     const { store, http } = setup();
     const stale = store.load();

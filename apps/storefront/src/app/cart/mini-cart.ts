@@ -11,6 +11,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { DiscountAmount } from '../core/discount-amount';
 import { DOCUMENT } from '@angular/common';
 import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -30,7 +31,7 @@ let nextId = 0;
  */
 @Component({
   selector: 'hg-mini-cart',
-  imports: [RouterLink, CdkTrapFocus, LucideX, ResponsiveImage],
+  imports: [DiscountAmount, RouterLink, CdkTrapFocus, LucideX, ResponsiveImage],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './mini-cart.html',
   styleUrl: './mini-cart.scss',
@@ -51,6 +52,8 @@ export class MiniCart {
   /** Same rule as the cart page: checkout needs at least one available unit. */
   protected readonly canCheckout = computed(() => (this.cart.view()?.itemCount ?? 0) > 0);
   protected readonly subtotal = computed(() => formatPrice(this.cart.view()?.subtotal ?? 0));
+  /** The order's one discount (spec §6), under the subtotal. */
+  protected readonly discount = computed(() => this.cart.view()?.discount ?? null);
   /** "משלוח החל מ־X ₪" under the subtotal (CRT-05); null until the cart has a shipping price. */
   protected readonly shippingFrom = computed(() => {
     const from = this.cart.view()?.shippingFrom;

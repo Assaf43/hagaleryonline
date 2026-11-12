@@ -6,6 +6,7 @@ import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { confirmationPath } from '../orders/order-number.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PromotionsService } from '../promotions/promotions.service.js';
 import {
   PAYMENT_PROVIDER,
   WebhookPayloadError,
@@ -57,6 +58,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly dispatcher: WebhookDispatcher,
+    private readonly promotions: PromotionsService,
   ) {}
 
   get providerCode(): string {
@@ -136,6 +138,10 @@ export class PaymentsService {
    *   its latest payment, so a late failure of an earlier attempt does not disturb a retry in progress.
    */
   async apply(result: PaymentResult): Promise<WebhookOutcome> {
+    // The cart whose coupon went with the paid order. Cleared after commit: updating the cart row inside the
+    // transaction would lock it after the order (order → cart), the reverse of checkout and retry (cart → order),
+    // and deadlock with a checkout of the same cart.
+    let clearCouponOf: string | null = null;
     const outcome = await this.prisma.$transaction(async (tx): Promise<WebhookOutcome> => {
       const [locked] = await tx.$queryRaw<{ id: string; order_id: string }[]>`
         SELECT id, order_id FROM payments WHERE transaction_id = ${result.transactionId} FOR UPDATE`;
@@ -198,15 +204,18 @@ export class PaymentsService {
         const ordered = order.items.flatMap((i) => (i.variantId === null ? [] : [{ ...i, variantId: i.variantId }]));
         // The cart is cleared only when this is its latest order: a newer pending order of the same cart (placed
         // after this one was superseded) still needs those lines.
-        if (order.cartId && newer === 0)
+        if (order.cartId && newer === 0) {
           await tx.cartItem.deleteMany({
             where: { cartId: order.cartId, variantId: { in: ordered.map((i) => i.variantId) } },
           });
+          // The coupon went with this order: the cart does not offer it again (after commit, see above).
+          clearCouponOf = order.cartId;
+        }
         const stockShortage = await this.takeStock(tx, ordered);
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
         await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
-        await this.onPaid(tx, order.id);
+        await this.onPaid(tx, order.promotionId);
         return 'paid';
       }
 
@@ -223,6 +232,13 @@ export class PaymentsService {
       await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAYMENT_FAILED } });
       return 'failed';
     });
+    if (clearCouponOf) {
+      const cartId: string = clearCouponOf;
+      // Best effort, no other lock held: a failure only leaves a code the cart view re-checks (and drops if used up).
+      await this.prisma.cart
+        .updateMany({ where: { id: cartId }, data: { couponCode: null } })
+        .catch((error: unknown) => this.logger.error(`Could not clear the coupon of cart ${cartId}`, error));
+    }
     return outcome;
   }
 
@@ -256,11 +272,13 @@ export class PaymentsService {
     return shortage;
   }
 
-  /** Runs inside the webhook transaction when an order becomes paid. Coupon usage +1 comes here in Phase 4d. */
-  private async onPaid(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
-    void tx;
-    void orderId;
-    await Promise.resolve();
+  /**
+   * Runs inside the webhook transaction when an order becomes paid (once: a paid order is never paid again). The
+   * order's promotion counts one more use — even past a coupon's limit, since the order is honored (spec §6, Review
+   * Focus 5). The atomic increment locks the promotion row last: payment → order → variants → promotion.
+   */
+  private async onPaid(tx: Prisma.TransactionClient, promotionId: number | null): Promise<void> {
+    if (promotionId !== null) await this.promotions.countUse(tx, promotionId);
   }
 
   // ---------- Sandbox (development only, CHK-10) ----------

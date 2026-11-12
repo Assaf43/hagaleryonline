@@ -38,6 +38,9 @@ export interface ComputedLine {
   image: ImageRef | null;
   /** Top-level category (shipping rates are per top-level category); null when not shown. */
   topCategoryId: number | null;
+  productId: number;
+  /** The product's category and every category above it, root first (promotion targets); empty when not shown. */
+  categoryPathIds: number[];
 }
 
 /** Every line of a cart in cart order (added first, then variant id), recomputed with `db` (a transaction or not). */
@@ -61,7 +64,7 @@ export async function computeCartLines(
           fulfillment: true,
           leadTimeDays: true,
           active: true,
-          product: { select: { slug: true, modelName: true, nameHe: true } },
+          product: { select: { id: true, slug: true, modelName: true, nameHe: true } },
         },
       },
     },
@@ -95,6 +98,8 @@ export async function computeCartLines(
       optionLabels: shown ? optionLabels(snapshot, shown.product, shown.variant) : [],
       image: shown ? lineImage(shown.product, shown.variant) : null,
       topCategoryId: shown ? topCategoryId(snapshot, shown.product) : null,
+      productId: v.product.id,
+      categoryPathIds: shown ? (snapshot.categoriesById.get(shown.product.categoryId)?.pathIds ?? []) : [],
     };
   });
 }

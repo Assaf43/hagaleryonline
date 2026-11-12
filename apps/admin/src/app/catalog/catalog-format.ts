@@ -20,6 +20,13 @@ export function formatPrice(agorot: number | null): string {
   return agorot === null ? '—' : ILS.format(agorot / 100);
 }
 
+const AMOUNT = new Intl.NumberFormat('he-IL', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+/** 15000 agorot → "150": the number of `formatPrice` without the currency sign (for a signed amount, R20). */
+export function formatAmount(agorot: number): string {
+  return AMOUNT.format(agorot / 100);
+}
+
 export const FULFILLMENT_LABEL: Record<FulfillmentMode, string> = FULFILLMENT_LABELS_HE;
 
 /** "corner-sofas" + "ALBA" → "alba-corner-sofa": the model name, then the category in the singular. */

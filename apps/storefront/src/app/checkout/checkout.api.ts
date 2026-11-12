@@ -1,6 +1,7 @@
 import { DOCUMENT, Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { PROMOTION_ENDED_MESSAGE_HE } from '@hg/models';
 import type {
   CheckoutErrorCode,
   CheckoutRequest,
@@ -103,6 +104,10 @@ export function checkoutErrorMessage(code: ApiErrorCode | null): string {
       return 'הסל השתנה בזמן ההזמנה. בדקו את הסיכום ונסו שוב.';
     case 'price_changed':
       return 'המחיר השתנה מאז שהצגנו אותו. בדקו את הסיכום ונסו שוב.';
+    case 'coupon_invalid':
+      return 'הקופון כבר לא בתוקף. בדקו את הסיכום ונסו שוב.';
+    case 'promotion_ended':
+      return PROMOTION_ENDED_MESSAGE_HE;
     case 'too_many_requests':
       return 'ביצעתם יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.';
     case 'shipping_unavailable':

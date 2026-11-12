@@ -15,8 +15,10 @@ import { CatalogService } from '../catalog/catalog.service.js';
 import { OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { promotionEnded } from '../promotions/discount-engine.js';
+import { PromotionsService } from '../promotions/promotions.service.js';
 import { lockCart, lockOrder, lockVariants } from './locks.js';
-import { notRetryable, orderNotFound, shortage, superseded } from './order-errors.js';
+import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 
 const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
@@ -58,6 +60,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly catalog: CatalogService,
     private readonly payments: PaymentsService,
+    private readonly promotions: PromotionsService,
   ) {}
 
   /** GET /api/orders/:number?t= — 404 for an unknown number or a wrong token. */
@@ -68,6 +71,7 @@ export class OrdersService {
     const canRetryPayment =
       retryable(order, now) &&
       !(await this.superseded(this.prisma, order)) &&
+      !(await this.promotionGone(this.prisma, order)) &&
       (await this.retryBlocker(this.prisma, order.items, await this.catalog.snapshot())) === null;
     const address = order.address as unknown as OrderAddressView;
     return {
@@ -100,7 +104,7 @@ export class OrdersService {
       shippingLines: order.shippingLines as unknown as ShippingQuoteLine[],
       subtotal: order.subtotal,
       discount: order.discount,
-      discountInfo: (order.discountInfo as OrderView['discountInfo']) ?? null,
+      discountInfo: publicDiscountInfo(order.discountInfo),
       total: order.total,
       deliveryEstimate: (order.deliveryEstimate as OrderView['deliveryEstimate']) ?? null,
       canRetryPayment,
@@ -111,14 +115,16 @@ export class OrdersService {
   /**
    * POST /api/orders/:number/retry-payment?t= — a new payment page for a failed or expired order whose lines can
    * all still be bought, at the order's own prices. Under the order and variant locks it re-reserves the stock for
-   * 20 minutes; the provider call happens after commit. 409 `not_retryable` or `insufficient_stock` otherwise.
+   * 20 minutes; the provider call happens after commit. 409 `not_retryable` or `insufficient_stock` otherwise, and
+   * `promotion_ended` when the order's promotion or coupon is no longer active, out of its dates or used up by other
+   * orders — the order's discounted total would no longer be honored (spec §6).
    */
   async retryPayment(numberParam: string, token: string | undefined): Promise<CheckoutResponse> {
     const found = await this.find(numberParam, token);
     const snapshot = await this.catalog.snapshot();
     const order = await this.prisma.$transaction(
       async (tx) => {
-        // Same order as checkout: cart → order → variants.
+        // Same order as checkout: cart → order → variants → promotion.
         if (found.cartId) await lockCart(tx, found.cartId);
         await lockOrder(tx, found.id);
         const current = await tx.order.findUniqueOrThrow({
@@ -134,6 +140,8 @@ export class OrdersService {
         );
         const blocker = await this.retryBlocker(tx, current.items, snapshot);
         if (blocker) throw shortage(blocker.variantId, blocker.available);
+        if (current.promotionId !== null) await this.promotions.lockOne(tx, current.promotionId);
+        if (await this.promotionGone(tx, current)) throw promotionEndedError();
         return tx.order.update({
           where: { id: current.id },
           data: { status: OrderStatus.PENDING_PAYMENT, reservedUntil: reservedUntil() },
@@ -154,6 +162,19 @@ export class OrdersService {
     });
     if (!order || !tokenMatches(token, order.publicToken)) throw orderNotFound();
     return order;
+  }
+
+  /**
+   * The order's promotion can no longer be honored on a new payment page: inactive, out of its dates, or used up by
+   * other orders (paid, or pending within their reservation — this order itself does not count).
+   */
+  private async promotionGone(
+    db: Prisma.TransactionClient | PrismaService,
+    order: { id: string; promotionId: number | null },
+  ): Promise<boolean> {
+    if (order.promotionId === null) return false;
+    const rule = await this.promotions.byId(db, order.promotionId, { orderId: order.id });
+    return !rule || promotionEnded(rule, new Date());
   }
 
   /** A newer order was placed from the same cart (it replaced this one): pay that one, not this. */
@@ -185,4 +206,12 @@ export class OrdersService {
     }
     return null;
   }
+}
+
+/** The public part of the order's discount snapshot (`orders.discount_info`): only the typed fields. */
+export function publicDiscountInfo(raw: Prisma.JsonValue | null): OrderView['discountInfo'] {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const { labelHe, source, code } = raw as Record<string, unknown>;
+  if (typeof labelHe !== 'string' || (source !== 'automatic' && source !== 'coupon')) return null;
+  return { labelHe, source, code: typeof code === 'string' ? code : null };
 }
