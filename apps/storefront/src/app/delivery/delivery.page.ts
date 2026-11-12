@@ -2,6 +2,10 @@ import {
   ChangeDetectionStrategy,
   Component,
   PLATFORM_ID,
+  afterNextRender,
+  Injector,
+  viewChild,
+  type ElementRef,
   computed,
   effect,
   inject,
@@ -33,6 +37,9 @@ export class DeliveryPage {
 
   private readonly api = inject(DeliveryApi);
   private readonly meta = inject(PageMeta);
+  private readonly injector = inject(Injector);
+  private readonly noteBox = viewChild<ElementRef<HTMLTextAreaElement>>('noteBox');
+  private readonly askButton = viewChild<ElementRef<HTMLButtonElement>>('askButton');
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
 
   protected readonly slot = signal<DeliveryLinkView | null>(null);
@@ -82,6 +89,20 @@ export class DeliveryPage {
         if (this.browser) void this.load(token);
       });
     });
+  }
+
+  protected readonly isError = computed(() => !!this.sendError() || this.state() === 'error');
+
+  /** The buttons are swapped for the note step, so focus is moved by hand to keep the user's place. */
+  protected startAsking(): void {
+    this.asking.set(true);
+    afterNextRender(() => this.noteBox()?.nativeElement.focus(), { injector: this.injector });
+  }
+
+  protected stopAsking(): void {
+    this.asking.set(false);
+    this.sendError.set('');
+    afterNextRender(() => this.askButton()?.nativeElement.focus(), { injector: this.injector });
   }
 
   protected reload(): void {

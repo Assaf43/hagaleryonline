@@ -91,6 +91,31 @@ describe('DeliveryPage', () => {
     expect(button('מאשר/ת את המועד')).toBeTruthy();
   });
 
+  it('moves focus to the note box, and back to the ask button on "חזרה"', async () => {
+    await setup(view());
+    button('מבקש/ת מועד אחר').click();
+    fixture.detectChanges();
+    await settle();
+    expect(document.activeElement).toBe(el().querySelector('textarea'));
+    button('חזרה').click();
+    fixture.detectChanges();
+    await settle();
+    expect(document.activeElement).toBe(button('מבקש/ת מועד אחר'));
+  });
+
+  it('"חזרה" clears a send error from the live region', async () => {
+    await setup(view());
+    button('מבקש/ת מועד אחר').click();
+    fixture.detectChanges();
+    button('שליחת הבקשה').click();
+    http.expectOne(URL).flush({}, { status: 500, statusText: 'Error' });
+    await settle();
+    expect(el().querySelector('[role="status"]')?.textContent).toContain('לא הצלחנו לשלוח');
+    button('חזרה').click();
+    fixture.detectChanges();
+    expect(el().querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+  });
+
   it('change sends the trimmed note and shows the follow-up text', async () => {
     await setup(view());
     button('מבקש/ת מועד אחר').click();
