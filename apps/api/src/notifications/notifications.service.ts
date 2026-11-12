@@ -4,6 +4,7 @@ import type { AdminSentMessage } from '@hg/models';
 import { NotificationChannel, NotificationStatus, type Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { maskEmail, maskPhone } from './masking.js';
+import { resolveSiteUrl } from './site-url.js';
 import { MOCK_CODE } from './mock-notification.provider.js';
 import { EMAIL_PROVIDER, SMS_PROVIDER, type EmailProvider, type SmsProvider } from './notification-provider.js';
 import {
@@ -35,18 +36,21 @@ interface Entry {
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+  private readonly site: string;
 
   constructor(
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: EmailProvider,
     @Inject(SMS_PROVIDER) private readonly smsProvider: SmsProvider,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    // Resolved once: a missing address in production stops the API at startup (see resolveSiteUrl).
+    this.site = resolveSiteUrl(config);
+  }
 
   /** The public site address, without a trailing slash (links in messages). */
   siteUrl(): string {
-    const site = this.config.get<string>('SITE_URL') || this.config.get<string>('STOREFRONT_URL');
-    return (site || 'http://localhost:4200').replace(/\/+$/, '');
+    return this.site;
   }
 
   async email<T extends EmailTemplate>(
