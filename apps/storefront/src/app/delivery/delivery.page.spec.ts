@@ -187,6 +187,16 @@ describe('DeliveryPage', () => {
     expect(text()).toContain('קיבלנו, ניצור קשר לתיאום מועד אחר');
   });
 
+  it('a 409 slot_closed on the answer (the order moved on) says the link is not valid, without reloading', async () => {
+    await setup(view());
+    button('מאשר/ת את המועד').click();
+    http.expectOne((r) => r.method === 'POST').flush({ code: 'slot_closed' }, { status: 409, statusText: 'x' });
+    await settle();
+    http.expectNone((r) => r.method === 'GET');
+    expect(text()).toContain('הקישור אינו בתוקף');
+    expect(el().querySelector('button')).toBeNull();
+  });
+
   it('a server error shows a retry that loads again', async () => {
     await setup(500);
     expect(text()).toContain('לא הצלחנו לטעון');

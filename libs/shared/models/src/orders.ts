@@ -137,6 +137,7 @@ export type CheckoutErrorCode =
   | 'invalid_transition'
   | 'refund_exceeds_paid'
   | 'already_answered'
+  | 'slot_closed'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */

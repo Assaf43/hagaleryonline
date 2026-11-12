@@ -461,6 +461,16 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       await delivery(newToken).expect(404);
     });
 
+    it('once the order moved past delivery_scheduled: GET 404, an answer 409 slot_closed', async () => {
+      const order = await scheduledOrder('dl-closed');
+      const token = await tokenOf(order.id);
+      await move(owner, order.number, { to: 'shipped' }).expect(201);
+      await delivery(token).expect(404);
+      expect((await answer(token, { answer: 'confirm' }).expect(409)).body.code).toBe('slot_closed');
+      const slotRow = await prisma.deliverySlot.findFirstOrThrow({ where: { orderId: order.id } });
+      expect(slotRow.state).toBe('PROPOSED');
+    });
+
     it('a job for a slot that is no longer proposed sends nothing', async () => {
       const order = await makeOrder('dl-skip', OrderStatus.PROCESSING);
       await schedule(order.number);

@@ -140,8 +140,10 @@ export class DeliveryPage {
       });
       this.slot.set(view);
     } catch (error) {
-      if (error instanceof HttpErrorResponse && error.status === 409) await this.load(this.token());
-      else if (error instanceof HttpErrorResponse && error.status === 404) this.state.set('invalid');
+      // 404, or 409 slot_closed (the order moved past delivery scheduling): the link no longer works.
+      const closed = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === 'slot_closed';
+      if (closed || (error instanceof HttpErrorResponse && error.status === 404)) this.state.set('invalid');
+      else if (error instanceof HttpErrorResponse && error.status === 409) await this.load(this.token());
       else this.sendError.set('לא הצלחנו לשלוח את התשובה. אפשר לנסות שוב.');
     } finally {
       this.sending.set(false);

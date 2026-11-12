@@ -15,7 +15,8 @@ const ATTENTION_NOTE_MAX = 500;
 
 /**
  * The delivery confirmation link (spec §5.3, SHP-04). The token in the URL is the only key; only its SHA-256 is
- * stored. An unknown token, a superseded slot and a cancelled order all answer 404.
+ * stored. An unknown token, a superseded slot and a cancelled order all answer 404; the view also once the order
+ * moved past DELIVERY_SCHEDULED, an answer then 409 `slot_closed`.
  */
 @Injectable()
 export class DeliverySlotService {
@@ -24,11 +25,17 @@ export class DeliverySlotService {
     private readonly audit: AuditService,
   ) {}
 
+  /** 404 also once the order moved past DELIVERY_SCHEDULED (shipped, delivered): the link has done its job. */
   async view(token: string): Promise<DeliveryLinkView> {
-    return toView(await this.find(this.prisma, token));
+    const slot = await this.find(this.prisma, token);
+    if (slot.order.status !== OrderStatus.DELIVERY_SCHEDULED) throw orderNotFound();
+    return toView(slot);
   }
 
-  /** Records the answer under the order lock (a staff slot change cannot interleave). A slot answers once. */
+  /**
+   * Records the answer under the order lock (a staff slot change cannot interleave). A slot answers once, and only
+   * while the order is DELIVERY_SCHEDULED (409 `slot_closed` otherwise).
+   */
   async answer(token: string, raw: unknown, ip?: string): Promise<DeliveryLinkView> {
     const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<
       Record<keyof DeliveryAnswerRequest, unknown>
@@ -48,6 +55,8 @@ export class DeliverySlotService {
       await lockOrder(tx, first.orderId);
       // Read again under the lock: staff may have replaced the slot or cancelled the order meanwhile.
       const slot = await this.find(tx, token);
+      if (slot.order.status !== OrderStatus.DELIVERY_SCHEDULED)
+        throw new CheckoutError(HttpStatus.CONFLICT, 'slot_closed');
       if (slot.state !== DeliverySlotState.PROPOSED) throw new CheckoutError(HttpStatus.CONFLICT, 'already_answered');
       const state = answer === 'confirm' ? DeliverySlotState.CONFIRMED : DeliverySlotState.CHANGE_REQUESTED;
       await tx.deliverySlot.update({
