@@ -5,6 +5,7 @@ import { App } from 'supertest/types.js';
 import type { CartView, CheckoutRequest, CheckoutResponse, OrderView, ShippingQuote } from '@hg/models';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './../src/app.module.js';
+import { hashPassword } from './../src/auth/passwords.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import {
@@ -23,6 +24,8 @@ const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
 const LOCALITY = 5000;
 const DAY = 24 * 60 * 60_000;
+const CUSTOMER_DOMAIN = '@promo12.e2e.test';
+const CUSTOMER_PASSWORD = 'correct horse 12';
 
 // Runs against the e2e test database (test/e2e-global-setup.ts). The API listens on an ephemeral port so the
 // sandbox "complete" endpoint can deliver its signed webhook over HTTP (as in checkout.e2e-spec.ts).
@@ -40,6 +43,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   let lamp: number;
   let parentCategoryId: number;
   let savedSettings: { additionalItemPercent: number; floorSurcharge: number; floorSurchargeFrom: number } | null;
+  let customerSeq = 0;
 
   const browser = () => {
     const agent = request.agent(app.getHttpServer() as App);
@@ -142,10 +146,39 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   const usedCount = async (id: number) => (await prisma.promotion.findUniqueOrThrow({ where: { id } })).usedCount;
   const invalidateCatalog = () => app.get(CacheStore).invalidate('catalog:');
 
+  /** A signed-in browser of a new account (created directly; the sign-in goes through the API). */
+  const customerBrowser = async () => {
+    const id = String(++customerSeq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+    const customer = await prisma.customer.create({
+      data: {
+        fullName: 'דנה לוי',
+        phone: `05${id}`,
+        email: `user${id}${CUSTOMER_DOMAIN}`,
+        passwordHash: await hashPassword(CUSTOMER_PASSWORD),
+        phoneVerifiedAt: new Date(),
+        emailVerifiedAt: new Date(),
+      },
+    });
+    return { customer, b: await signedIn(customer.email) };
+  };
+  /** A browser signed in to the account of this e-mail. */
+  const signedIn = async (email: string) => {
+    const b = browser();
+    await b.agent
+      .post('/api/account/sign-in')
+      .set('Origin', ORIGIN)
+      .send({ email, password: CUSTOMER_PASSWORD })
+      .expect(200);
+    return b;
+  };
+  const welcome = (data: Partial<Prisma.PromotionUncheckedCreateInput> = {}) =>
+    promotion({ name: 'הטבת הצטרפות', kind: PromotionKind.AUTOMATIC, code: null, value: 10, isWelcome: true, ...data });
+
   const cleanup = async () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.promotion.deleteMany();
+    await prisma.customer.deleteMany({ where: { email: { endsWith: CUSTOMER_DOMAIN } } });
     await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZPROMO' } } });
     await prisma.category.deleteMany({ where: { slug: { startsWith: 'zz-promo-' } } });
     await prisma.category.deleteMany({ where: { slug: 'zz-promo' } });
@@ -219,6 +252,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.promotion.deleteMany();
+    await prisma.customer.deleteMany({ where: { email: { endsWith: CUSTOMER_DOMAIN } } });
   });
 
   it('applies a coupon to the cart (case-insensitive) and removes it', async () => {
@@ -709,5 +743,122 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     await b.add(lamp, 1);
     const view = (await b.apply('sofa').expect(200)).body as CartView;
     expect(view.discount).toMatchObject({ amount: 50_000, code: 'SOFA' });
+  });
+
+  describe('welcome benefit (decision 79, spec §6.4)', () => {
+    it('applies to the first order of a signed-in account; never to a guest', async () => {
+      const p = await welcome();
+      const guest = browser();
+      await guest.add(lamp, 1);
+      expect((await guest.cart()).discount).toBeNull();
+      const guestOrder = await orderOfTx(txOf(await guest.checkout()));
+      expect(guestOrder).toMatchObject({ discount: 0, promotionId: null });
+
+      const { b, customer } = await customerBrowser();
+      await b.add(lamp, 1);
+      expect((await b.cart()).discount).toEqual({
+        labelHe: 'הטבת הצטרפות',
+        amount: 5_000,
+        source: 'automatic',
+        code: null,
+      });
+      const order = await orderOfTx(txOf(await b.checkout()));
+      expect(order).toMatchObject({ customerId: customer.id, discount: 5_000, promotionId: p.id });
+    });
+
+    it('not after a paid order; a cancelled-after-payment order counts as paid, a cancelled unpaid one does not', async () => {
+      await welcome();
+      const { b } = await customerBrowser();
+      await b.add(lamp, 1);
+      const tx = txOf(await b.checkout());
+      await pay(tx).expect(200);
+      await b.add(lamp, 1);
+      expect((await b.cart()).discount).toBeNull();
+      const second = await orderOfTx(txOf(await b.checkout()));
+      expect(second).toMatchObject({ discount: 0, promotionId: null });
+      await prisma.order.delete({ where: { id: second.id } });
+
+      // Paid, then cancelled by staff: still a paid order.
+      const paid = await orderOfTx(tx);
+      await prisma.order.update({ where: { id: paid.id }, data: { status: OrderStatus.CANCELLED } });
+      await prisma.orderStatusEvent.create({
+        data: { orderId: paid.id, fromStatus: OrderStatus.PAID, toStatus: OrderStatus.CANCELLED, actorType: 'ADMIN' },
+      });
+      expect((await b.cart()).discount).toBeNull();
+      // Cancelled while unpaid: not a paid order.
+      await prisma.orderStatusEvent.updateMany({
+        where: { orderId: paid.id },
+        data: { fromStatus: OrderStatus.PENDING_PAYMENT, actorType: 'CUSTOMER' },
+      });
+      expect((await b.cart()).discount?.amount).toBe(5_000);
+    });
+
+    it('another live pending order holding it hides it from a second cart; a bigger promotion still wins', async () => {
+      await welcome();
+      const { b, customer } = await customerBrowser();
+      // Signed in before either has a cart: two carts of one account.
+      const other = await signedIn(customer.email);
+      await b.add(lamp, 1);
+      txOf(await b.checkout());
+      await other.add(sofa, 1);
+      expect((await other.cart()).discount).toBeNull();
+
+      // One discount per order: a bigger automatic promotion beats the welcome benefit.
+      await deleteOrders(prisma, { customerId: customer.id });
+      await promotion({ name: 'מבצע גדול', kind: PromotionKind.AUTOMATIC, code: null, value: 30 });
+      expect((await other.cart()).discount).toMatchObject({ labelHe: 'מבצע גדול', amount: 30_000 });
+    });
+
+    it('two concurrent checkouts of one new account: exactly one gets the welcome discount (Review Focus 5)', async () => {
+      const p = await welcome();
+      const { b: a, customer } = await customerBrowser();
+      const b = await signedIn(customer.email);
+      // Two carts of the same account, different products (no shared variant lock).
+      await a.add(sofa, 1);
+      await b.add(lamp, 1);
+      const [totalA, totalB] = await Promise.all([a.expectedTotal(), b.expectedTotal()]);
+      expect((await a.cart()).discount?.amount).toBe(10_000);
+      expect((await b.cart()).discount?.amount).toBe(5_000);
+
+      // Hold the account's welcome lock while both checkouts start, so both wait on it.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'welcome:' + customer.id}::text))`;
+          await held;
+        },
+        { timeout: 20_000 },
+      );
+      const racing = Promise.all([a.checkout(totalA), b.checkout(totalB)]);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      release();
+      await holder;
+      const results = await racing;
+
+      expect(results.map((r) => r.status).sort((x, y) => x - y)).toEqual([201, 409]);
+      expect(results.find((r) => r.status === 409)!.body).toMatchObject({ code: 'promotion_ended' });
+      expect(await prisma.order.count({ where: { customerId: customer.id, promotionId: p.id } })).toBe(1);
+      expect(await prisma.order.count({ where: { customerId: customer.id } })).toBe(1);
+    });
+
+    it('retry of a welcome order is refused once the account has a paid order', async () => {
+      const p = await welcome();
+      const { b, customer } = await customerBrowser();
+      const other = await signedIn(customer.email);
+      await b.add(lamp, 1);
+      const tx1 = txOf(await b.checkout());
+      await fail(tx1).expect(200);
+      const first = await orderOfTx(tx1);
+      expect(first.promotionId).toBe(p.id);
+      expect((await viewOf(first.number, first.publicToken)).canRetryPayment).toBe(true);
+
+      // Another order of the account, from another cart, is paid.
+      await other.add(sofa, 1);
+      await pay(txOf(await other.checkout())).expect(200);
+
+      expect((await viewOf(first.number, first.publicToken)).canRetryPayment).toBe(false);
+      expect((await retry(first.number, first.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    });
   });
 });

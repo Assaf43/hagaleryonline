@@ -117,6 +117,8 @@ export interface AdminPromotion {
   /** Paid orders that used it. */
   usedCount: number;
   active: boolean;
+  /** "הטבת הצטרפות" (decision 79): automatic only; the first paid order of each account. */
+  isWelcome: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,6 +137,11 @@ export interface AdminPromotionInput {
   endsAt: string | null;
   usageLimit: number | null;
   active: boolean;
+  /**
+   * The welcome benefit (decision 79): automatic promotions only (400 `isWelcome` otherwise). Saving it `true` clears
+   * it on every other promotion (each change audited). Missing = false.
+   */
+  isWelcome?: boolean;
 }
 
 /** GET /api/admin/promotions/categories: every category in tree order, for the category picker. */

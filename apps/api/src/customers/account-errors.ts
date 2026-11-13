@@ -26,6 +26,9 @@ export const weakPassword = (reason: 'too_short' | 'too_long', field = 'password
 export const phoneTaken = () => new AccountError(HttpStatus.CONFLICT, 'phone_taken', { field: 'phone' });
 export const emailTaken = () => new AccountError(HttpStatus.CONFLICT, 'email_taken', { field: 'email' });
 export const notAuthenticated = () => new AccountError(HttpStatus.UNAUTHORIZED, 'not_authenticated');
+/** Unknown, malformed or another customer's id: one answer, so ids of other accounts reveal nothing. */
+export const accountNotFound = () => new AccountError(HttpStatus.NOT_FOUND, 'not_found');
+export const addressLimit = () => new AccountError(HttpStatus.CONFLICT, 'address_limit');
 /** The e-mail must wait after repeated wrong passwords (progressive delay). */
 export const tooManyAttempts = (retryAfterSeconds: number) =>
   new AccountError(HttpStatus.TOO_MANY_REQUESTS, 'too_many_attempts', { retryAfterSeconds });

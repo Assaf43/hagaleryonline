@@ -26,7 +26,10 @@ import {
   type SignedInResponse,
   type SignUpResponse,
 } from '@hg/models';
+import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
+import { writeCartCookie } from '../cart/cart.controller.js';
+import { cartTokenOf } from '../cart/cart-token.js';
 import { checkCustomerPassword } from '../auth/passwords.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { AccountError, badField, weakPassword } from './account-errors.js';
@@ -51,7 +54,7 @@ type BodyRecord = Record<string, unknown>;
 
 /** Every answer of the account API is personal: never cached (spec §6.3). */
 @Injectable()
-class NoStoreInterceptor implements NestInterceptor {
+export class NoStoreInterceptor implements NestInterceptor {
   intercept(ctx: ExecutionContext, next: CallHandler) {
     ctx.switchToHttp().getResponse<Response>().setHeader('Cache-Control', 'no-store');
     return next.handle();
@@ -60,7 +63,7 @@ class NoStoreInterceptor implements NestInterceptor {
 
 /** Account errors as JSON, with `Retry-After` when they carry `retryAfterSeconds` (per-IP limit, password delay). */
 @Catch(AccountError)
-class AccountErrorFilter implements ExceptionFilter {
+export class AccountErrorFilter implements ExceptionFilter {
   catch(error: AccountError, host: ArgumentsHost) {
     const res = host.switchToHttp().getResponse<Response>();
     const body = error.getResponse() as BodyRecord;
@@ -78,6 +81,7 @@ const Client = createParamDecorator((_: unknown, ctx: ExecutionContext): ClientI
     ip: req.ip,
     userAgent: req.get('user-agent'),
     previousToken: req.cookies?.[CUSTOMER_COOKIE] as string | undefined,
+    cartToken: cartTokenOf(req),
   };
 });
 
@@ -95,6 +99,7 @@ export class CustomerAuthController {
   constructor(
     private readonly auth: CustomerAuthService,
     private readonly cookie: CustomerCookie,
+    private readonly config: AuthConfig,
   ) {}
 
   @Post('otp/request')
@@ -129,7 +134,7 @@ export class CustomerAuthController {
     const result = await this.auth.verifyCode(parsed.target, parsed.channel, purpose, code, token, client);
     if ('signUpToken' in result)
       return { needsSignUp: true, signUpToken: result.signUpToken, verified: result.verified };
-    return this.signIn(res, result);
+    return this.signIn(res, client, result);
   }
 
   @Post('sign-up')
@@ -146,7 +151,7 @@ export class CustomerAuthController {
       await this.auth.startSignUp(details, client.ip);
       return { verify: true };
     }
-    return this.signIn(res, await this.auth.signUpWithTicket(details, token, client));
+    return this.signIn(res, client, await this.auth.signUpWithTicket(details, token, client));
   }
 
   @Post('sign-in')
@@ -160,7 +165,7 @@ export class CustomerAuthController {
     const b = record(body);
     if (typeof b.password !== 'string' || b.password.length === 0 || b.password.length > 256)
       throw badField('password');
-    return this.signIn(res, await this.auth.signIn(normalizeEmail(b.email), b.password, client));
+    return this.signIn(res, client, await this.auth.signIn(normalizeEmail(b.email), b.password, client));
   }
 
   @Post('sign-out')
@@ -168,10 +173,13 @@ export class CustomerAuthController {
   @UseGuards(OptionalCustomerGuard)
   async signOut(
     @OptionalCustomer() current: ResolvedCustomer | null,
+    @Client() client: ClientInfo,
     @Res({ passthrough: true }) res: Response,
   ): Promise<void> {
     if (current) await this.auth.signOut(current.session.id);
     this.cookie.clear(res);
+    // The cart belongs to the account now: a signed-out browser no longer shows it.
+    writeCartCookie(this.config, res, null, client.cartToken !== undefined);
   }
 
   @Get('me')
@@ -240,11 +248,13 @@ export class CustomerAuthController {
     if (!email) throw badField('email');
     const code = codeOf(b.code);
     const next = newPassword(b.next, 'next');
-    return this.signIn(res, await this.auth.resetPassword(email, code, next, client));
+    return this.signIn(res, client, await this.auth.resetPassword(email, code, next, client));
   }
 
-  private signIn(res: Response, { customer, token }: SignedIn): SignedInResponse {
+  /** Sets the session cookie and points `hg_cart` at the account's cart (merged, spec §6.4). */
+  private signIn(res: Response, client: ClientInfo, { customer, token, cartToken }: SignedIn): SignedInResponse {
     this.cookie.set(res, token);
+    writeCartCookie(this.config, res, cartToken, client.cartToken !== undefined);
     return { customer };
   }
 }

@@ -16,15 +16,20 @@ import type { CookieOptions, Request, Response } from 'express';
 import type { CartView } from '@hg/models';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
+import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
+import type { ResolvedCustomer } from '../customers/customer-session.service.js';
 import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
 import { CartError, CartService, type CartResult } from './cart.service.js';
 
 /** Most units one request may ask for; the line limit clamps it further. */
 const MAX_REQUEST_QUANTITY = 999;
 
-/** Public cart API (spec §3.1). Every write goes through StorefrontOriginGuard (storefront origin only). */
+/**
+ * Public cart API (spec §3.1). Every write goes through StorefrontOriginGuard (storefront origin only). The signed-in
+ * customer, if any, owns a newly created cart and may see the welcome benefit (spec §6.4).
+ */
 @Controller('cart')
-@UseGuards(StorefrontOriginGuard)
+@UseGuards(StorefrontOriginGuard, OptionalCustomerGuard)
 export class CartController {
   constructor(
     private readonly cart: CartService,
@@ -32,15 +37,29 @@ export class CartController {
   ) {}
 
   @Get()
-  async get(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<CartView> {
-    return this.respond(req, res, await this.cart.read(tokenOf(req)));
+  async get(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
+  ): Promise<CartView> {
+    return this.respond(req, res, await this.cart.read(tokenOf(req), customerIdOf(customer)));
   }
 
   @Post('items')
   @HttpCode(HttpStatus.OK)
-  async add(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<CartView> {
+  async add(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
+  ): Promise<CartView> {
     const { variantId, quantity } = (body ?? {}) as Record<string, unknown>;
-    const result = await this.cart.add(tokenOf(req), parseId(variantId), parseQuantity(quantity));
+    const result = await this.cart.add(
+      tokenOf(req),
+      parseId(variantId),
+      parseQuantity(quantity),
+      customerIdOf(customer),
+    );
     return this.respond(req, res, result);
   }
 
@@ -50,9 +69,15 @@ export class CartController {
     @Body() body: unknown,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
     const { quantity } = (body ?? {}) as Record<string, unknown>;
-    const result = await this.cart.update(tokenOf(req), parseIdParam(variantId), parseQuantity(quantity));
+    const result = await this.cart.update(
+      tokenOf(req),
+      parseIdParam(variantId),
+      parseQuantity(quantity),
+      customerIdOf(customer),
+    );
     return this.respond(req, res, result);
   }
 
@@ -61,8 +86,13 @@ export class CartController {
     @Param('variantId') variantId: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
-    return this.respond(req, res, await this.cart.remove(tokenOf(req), parseIdParam(variantId)));
+    return this.respond(
+      req,
+      res,
+      await this.cart.remove(tokenOf(req), parseIdParam(variantId), customerIdOf(customer)),
+    );
   }
 
   private respond(req: Request, res: Response, result: CartResult): CartView {
@@ -72,10 +102,20 @@ export class CartController {
 
 /** Renews the cookie of a live cart; drops a cookie that no longer names one. Returns the view to send. */
 export function sendCart(config: AuthConfig, req: Request, res: Response, { view, token }: CartResult): CartView {
+  writeCartCookie(config, res, token, tokenOf(req) !== undefined);
+  return view;
+}
+
+/** Sets the `hg_cart` cookie to `token`, or drops it (when the request had one) for null. */
+export function writeCartCookie(config: AuthConfig, res: Response, token: string | null, hadCookie: boolean): void {
   const options: CookieOptions = { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/' };
   if (token) res.cookie(CART_COOKIE, token, { ...options, maxAge: CART_TTL_MS });
-  else if (tokenOf(req)) res.clearCookie(CART_COOKIE, options);
-  return view;
+  else if (hadCookie) res.clearCookie(CART_COOKIE, options);
+}
+
+/** The signed-in customer's id, or null for a guest. */
+export function customerIdOf(customer: ResolvedCustomer | null): string | null {
+  return customer?.customer.id ?? null;
 }
 
 function parseIdParam(value: string): number {

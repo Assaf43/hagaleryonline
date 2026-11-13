@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { CustomerMe, OtpChannel } from '@hg/models';
 import { MarketingConsentSource, Prisma, type Customer } from '../generated/prisma/client.js';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from '../auth/passwords.js';
+import { CartService } from '../cart/cart.service.js';
 import { maskEmail } from '../notifications/masking.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -23,6 +24,8 @@ export interface ClientInfo {
   userAgent?: string;
   /** The `hg_customer` cookie the request came with: a new sign-in ends that session first. */
   previousToken?: string;
+  /** The `hg_cart` cookie the request came with: its guest cart merges into the account's cart (spec §6.4). */
+  cartToken?: string;
 }
 
 /** What a sign-up ticket covers: the verified phone and e-mail (normalized), null where no code was entered yet. */
@@ -52,6 +55,8 @@ export interface SignedIn {
   customer: CustomerMe;
   /** The new session's cookie value. */
   token: string;
+  /** What the `hg_cart` cookie carries from now on (the account's cart after the merge); null: no cart. */
+  cartToken: string | null;
 }
 
 export function toMe(c: Customer): CustomerMe {
@@ -80,6 +85,7 @@ export class CustomerAuthService {
     private readonly prisma: PrismaService,
     private readonly sessions: CustomerSessionService,
     private readonly otp: OtpService,
+    private readonly cart: CartService,
   ) {}
 
   // ---------- Codes ----------
@@ -297,10 +303,12 @@ export class CustomerAuthService {
     return this.prisma.customer.update({ where: { id: customer.id }, data: { [field]: new Date() } });
   }
 
+  /** Every sign-in ends here (password, code, sign-up, reset): a new session, then the cart merge. */
   private async signedIn(customer: Customer, client: ClientInfo): Promise<SignedIn> {
     await this.sessions.endByToken(client.previousToken);
     const token = await this.sessions.start(customer.id, { ip: client.ip, userAgent: client.userAgent });
-    return { customer: toMe(customer), token };
+    const cartToken = await this.cart.attachToCustomer(client.cartToken, customer.id);
+    return { customer: toMe(customer), token, cartToken };
   }
 
   /** Reads every part of a ticket (each a live, unused token of one contact); 400 `invalid_token` otherwise. */

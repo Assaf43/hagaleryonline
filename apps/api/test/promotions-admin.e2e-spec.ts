@@ -265,4 +265,24 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
       .expect(400);
     expect(res.body).toMatchObject({ code: 'invalid_coupon', messageHe: 'תוקף הקופון פג' });
   });
+  it('the welcome benefit: automatic only; marking one clears it on the others, audited', async () => {
+    const bad = await owner.post('/promotions', { ...coupon({ code: 'ZZWELCOME' }), isWelcome: true }).expect(400);
+    expect(bad.body).toMatchObject({ code: 'invalid', field: 'isWelcome' });
+    await owner.post('/promotions', { ...automatic(), isWelcome: 'yes' }).expect(400);
+
+    const first = await create(automatic({ name: 'ZZ הטבה א', isWelcome: true }));
+    expect(first.isWelcome).toBe(true);
+    const plain = await create(automatic({ name: 'ZZ רגיל' }));
+    expect(plain.isWelcome).toBe(false);
+    const second = await create(automatic({ name: 'ZZ הטבה ב', isWelcome: true }));
+    expect(second.isWelcome).toBe(true);
+    expect((await owner.get(`/promotions/${first.id}`).expect(200)).body).toMatchObject({ isWelcome: false });
+    const cleared = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(first.id));
+    expect(cleared).toMatchObject({ before: { 'הטבת הצטרפות': 'כן' }, after: { 'הטבת הצטרפות': 'לא' } });
+
+    // Editing marks it back and clears the second.
+    await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: true })).expect(200);
+    const rows = await prisma.promotion.findMany({ where: { isWelcome: true } });
+    expect(rows.map((r) => r.id)).toEqual([first.id]);
+  });
 });

@@ -9,6 +9,7 @@ import {
   type CheckoutAddress,
   type CheckoutContact,
   type CheckoutField,
+  type CheckoutPrefill,
   type CheckoutRequest,
   type CheckoutResponse,
   type ShippingMethod,
@@ -26,7 +27,7 @@ import { couponProblemMessageHe } from '../promotions/discount-engine.js';
 import { discountInfo, discountLines, PromotionsService } from '../promotions/promotions.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
-import { lockCart, lockVariants } from './locks.js';
+import { lockCart, lockVariants, lockWelcome } from './locks.js';
 import {
   cartChanged,
   couponInvalid,
@@ -34,10 +35,12 @@ import {
   fieldError,
   invalidInput,
   priceChanged,
+  promotionEndedError,
   shippingUnavailable,
   shortage,
 } from './order-errors.js';
 import { reservedUntil } from './order-number.js';
+import { listAddresses } from '../customers/address-view.js';
 
 export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
   curbside: OrderShippingMethod.CURBSIDE,
@@ -68,6 +71,12 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
  *     late it is honored and counted, even past the limit (Review Focus 5). `shown` / top category come from the catalog snapshot, which admin
  *     writes invalidate at once in this process (a multi-process deploy would see it up to 60 s late — Phase 9).
  *  4. After commit: ask the payment provider for a payment page and record the payment (PaymentsService).
+ *
+ * With a customer session (spec §6.4) the order stores `customerId`; a guest order never does (decision 77). The
+ * welcome benefit (decision 79) is a candidate for an account without a paid order. Its transaction first takes the
+ * account's advisory lock (`lockWelcome`, before the cart lock), so two checkouts of one account run one after the
+ * other: the second sees the first's pending order holding the benefit and, when the customer saw it, gets 409
+ * `promotion_ended` instead of a second welcome discount.
  */
 @Injectable()
 export class CheckoutService {
@@ -80,7 +89,11 @@ export class CheckoutService {
     private readonly promotions: PromotionsService,
   ) {}
 
-  async checkout(token: string | undefined, body: unknown): Promise<CheckoutResponse> {
+  async checkout(
+    token: string | undefined,
+    body: unknown,
+    customerId: string | null = null,
+  ): Promise<CheckoutResponse> {
     // 1. Input, cart and locality.
     const input = parseCheckoutRequest(body);
     const cart = await this.cart.resolve(token);
@@ -97,6 +110,8 @@ export class CheckoutService {
     // 3. Lock, re-verify, create.
     const order = await this.prisma.$transaction(
       async (tx) => {
+        // The account's lock comes first (welcome → cart → orders → variants → promotions, locks.ts).
+        if (customerId) await lockWelcome(tx, customerId);
         if (!(await lockCart(tx, cart.id))) throw emptyCart();
         const { couponCode } = await tx.cart.findUniqueOrThrow({
           where: { id: cart.id },
@@ -129,18 +144,21 @@ export class CheckoutService {
         // The one discount of the order (decision 70), on the locked lines at their current prices. The limited
         // promotions are locked last (cart → orders → variants → promotions), so their uses — paid plus live
         // pending orders of other carts (this cart's were just expired) — hold until commit (spec §6).
-        await this.promotions.lockLimited(tx, couponCode);
+        const customer = await this.promotions.welcomeCustomer(tx, customerId);
+        await this.promotions.lockLimited(tx, couponCode, customer?.hasPaidOrder === false);
         const evaluated = await this.promotions.evaluate(
           tx,
           discountLines(lines, (l) => l.storedQuantity),
           couponCode,
-          { cartId: cart.id },
+          { cartId: cart.id, customer },
         );
         if (evaluated.couponProblem === 'exhausted')
           throw couponInvalid(couponProblemMessageHe('exhausted', evaluated.coupon));
         const discount = evaluated.applied?.amount ?? 0;
         const info = discountInfo(evaluated);
         const total = subtotal - discount + option.total;
+        // Another order of the account took the welcome benefit meanwhile (one at a time, decision 79).
+        if (input.expectedTotal !== total && evaluated.welcomeHeld) throw promotionEndedError();
         if (input.expectedTotal !== total) throw priceChanged(total);
         return tx.order.create({
           data: {
@@ -160,6 +178,9 @@ export class CheckoutService {
             paymentProvider: this.payments.providerCode,
             shippingProvider: this.shipping.providerCode,
             cartId: cart.id,
+            customerId,
+            marketingConsent: input.marketingConsent === true,
+            marketingConsentAt: input.marketingConsent ? new Date() : null,
             reservedUntil: reservedUntil(),
             items: {
               create: lines.map((l) => ({
@@ -182,6 +203,15 @@ export class CheckoutService {
 
     // 4. The provider call, outside the transaction.
     return { redirectUrl: await this.payments.openPaymentPage(order) };
+  }
+
+  /** GET /api/checkout/prefill: the account's contact and saved addresses, default first (spec §6.4). */
+  async prefill(customerId: string): Promise<CheckoutPrefill> {
+    const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+    return {
+      contact: { fullName: customer.fullName, phone: customer.phone, email: customer.email },
+      addresses: await listAddresses(this.prisma, customerId),
+    };
   }
 
   /** The chosen method's quote; 503 when the price list is not configured. */
@@ -243,6 +273,37 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   const email = text(contact.email);
   if (email === null || email.length > L.emailMax || !CHECKOUT_EMAIL_PATTERN.test(email)) throw fail('contact.email');
 
+  const checkedAddress = parseCheckoutAddress(address);
+
+  if (typeof root.method !== 'string' || !METHODS.includes(root.method as ShippingMethod)) throw fail('method');
+  if (root.acceptTerms !== true) throw fail('acceptTerms');
+
+  const checkedContact: CheckoutContact = { fullName, phone, email };
+  // Required: an order is never charged at a total the customer did not see (checked after the form fields, so a
+  // form error still names its field).
+  const expectedTotal = root.expectedTotal;
+  if (typeof expectedTotal !== 'number' || !Number.isSafeInteger(expectedTotal) || expectedTotal < 0)
+    throw invalidInput();
+  const marketingConsent = root.marketingConsent ?? false;
+  if (typeof marketingConsent !== 'boolean') throw invalidInput();
+  return {
+    contact: checkedContact,
+    address: checkedAddress,
+    method: root.method as ShippingMethod,
+    acceptTerms: true,
+    expectedTotal,
+    marketingConsent,
+  };
+}
+
+/**
+ * Validates a delivery address (spec §5.1): the checkout's and the account's saved addresses (spec §6.3) follow the
+ * same rules. Throws 400 `{ code: 'invalid_field', field: 'address.…', messageHe }` on the first bad field. Whether
+ * the locality exists is the caller's check.
+ */
+export function parseCheckoutAddress(raw: unknown): CheckoutAddress {
+  const address = record(raw);
+  const fail = (field: CheckoutField) => fieldError(field, MESSAGES[field]);
   const { localityId, floor, hasElevator } = address;
   if (typeof localityId !== 'number' || !Number.isSafeInteger(localityId) || localityId < 1)
     throw fail('address.localityId');
@@ -257,24 +318,7 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   if (typeof hasElevator !== 'boolean') throw fail('address.hasElevator');
   const notes = optionalText(address.notes, L.notesMax);
   if (notes === undefined) throw fail('address.notes');
-
-  if (typeof root.method !== 'string' || !METHODS.includes(root.method as ShippingMethod)) throw fail('method');
-  if (root.acceptTerms !== true) throw fail('acceptTerms');
-
-  const checkedContact: CheckoutContact = { fullName, phone, email };
-  const checkedAddress: CheckoutAddress = { localityId, street, houseNumber, apartment, floor, hasElevator, notes };
-  // Required: an order is never charged at a total the customer did not see (checked after the form fields, so a
-  // form error still names its field).
-  const expectedTotal = root.expectedTotal;
-  if (typeof expectedTotal !== 'number' || !Number.isSafeInteger(expectedTotal) || expectedTotal < 0)
-    throw invalidInput();
-  return {
-    contact: checkedContact,
-    address: checkedAddress,
-    method: root.method as ShippingMethod,
-    acceptTerms: true,
-    expectedTotal,
-  };
+  return { localityId, street, houseNumber, apartment, floor, hasElevator, notes };
 }
 
 function record(value: unknown): Record<string, unknown> {

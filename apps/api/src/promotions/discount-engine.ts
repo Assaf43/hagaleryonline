@@ -42,6 +42,8 @@ export interface PromotionRule {
   usageLimit: number | null;
   usedCount: number;
   active: boolean;
+  /** The welcome benefit (decision 79): the caller adds it as a candidate only for an eligible account. */
+  isWelcome?: boolean;
 }
 
 export interface DiscountLine {

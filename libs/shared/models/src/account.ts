@@ -2,6 +2,7 @@
  * Customer accounts (Phase 5c, spec §6.1, §6.2, ACC-01, NFR-12, decision 80): sign-up with phone and e-mail, sign-in
  * by e-mail + password or by a one-time code sent by SMS or e-mail. Endpoints under /api/account/.
  */
+import type { CheckoutAddress, OrderStatus } from './orders.js';
 
 /** The signed-in customer (`GET /api/account/me`; `null` when signed out). */
 export interface CustomerMe {
@@ -136,4 +137,74 @@ export type AccountErrorCode =
   | 'not_authenticated'
   | 'too_many_attempts'
   | 'too_many_requests'
-  | 'forbidden';
+  | 'forbidden'
+  | 'not_found'
+  | 'address_limit';
+
+// ---------- Account data (Phase 5c Task 12, spec §6.3, ACC-03, ACC-04, ACC-05) ----------
+
+/**
+ * A saved delivery address (`GET/POST /api/account/addresses`, `PUT/DELETE /api/account/addresses/:id`): the same
+ * fields as the checkout address. Exactly one address is the default while any exist: the first one saved, the one
+ * last marked `isDefault: true`, or (after the default is deleted) the newest remaining one. The list is default
+ * first, then newest first.
+ */
+export interface CustomerAddressView extends CheckoutAddress {
+  id: string;
+  localityNameHe: string;
+  isDefault: boolean;
+}
+
+/**
+ * Body of `POST /api/account/addresses` and `PUT /api/account/addresses/:id`: validated like the checkout address
+ * (400 `invalid_field` with `field: 'address.…'` and `messageHe`). `isDefault: true` makes it the default; `false`
+ * on the current default leaves it the default (choose another one instead). At most `MAX_CUSTOMER_ADDRESSES`
+ * (409 `address_limit`). Another customer's id → 404 `not_found`.
+ */
+export interface CustomerAddressInput extends CheckoutAddress {
+  isDefault?: boolean;
+}
+
+export const MAX_CUSTOMER_ADDRESSES = 20;
+
+/** One row of `GET /api/account/orders` (only orders placed while signed in, decision 77). */
+export interface AccountOrderSummary {
+  number: number;
+  /** As the customer sees it: a pending order past its reservation reads `expired`. */
+  status: OrderStatus;
+  statusLabelHe: string;
+  createdAt: string;
+  /** Agorot. */
+  total: number;
+  /** Units over all lines. */
+  itemCount: number;
+}
+
+/** `GET /api/account/orders?page=` (from 1; 400 otherwise): newest first, `ACCOUNT_ORDERS_PAGE_SIZE` a page. */
+export interface AccountOrdersPage {
+  items: AccountOrderSummary[];
+  page: number;
+  pageSize: number;
+  /** Orders in all pages. */
+  total: number;
+}
+
+export const ACCOUNT_ORDERS_PAGE_SIZE = 10;
+
+/**
+ * `PUT /api/account/consent { marketingConsent }` (CLAUDE.md §4.4): giving consent records its time and source
+ * `account`; withdrawing records `marketingWithdrawnAt` (the earlier consent's time and source are kept). Sending the
+ * current value changes nothing.
+ */
+export interface ConsentBody {
+  marketingConsent: boolean;
+}
+
+export type MarketingConsentSource = 'signup' | 'checkout' | 'account';
+
+export interface AccountConsent {
+  marketingConsent: boolean;
+  marketingConsentAt: string | null;
+  marketingConsentSource: MarketingConsentSource | null;
+  marketingWithdrawnAt: string | null;
+}

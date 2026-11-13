@@ -584,52 +584,55 @@ enum OrderShippingMethod {
 /// Order (spec §5.2, decision 69). Contact, address, lines and prices are a snapshot taken at checkout; money in agorot.
 /// While `PENDING_PAYMENT` and before `reservedUntil` its items hold stock (cart/available-stock.ts).
 model Order {
-  id               String              @id @default(uuid()) @db.Uuid
+  id                 String              @id @default(uuid()) @db.Uuid
   /// Public order number; the sequence starts at 100001 (migration orders).
-  number           Int                 @unique @default(autoincrement())
+  number             Int                 @unique @default(autoincrement())
   /// Random token of the confirmation URL (/order/:number?t=).
-  publicToken      String              @unique @map("public_token")
-  status           OrderStatus         @default(PENDING_PAYMENT)
+  publicToken        String              @unique @map("public_token")
+  status             OrderStatus         @default(PENDING_PAYMENT)
   /// { fullName, phone, email }.
-  contact          Json
+  contact            Json
   /// { localityId, localityNameHe, street, houseNumber, apartment, floor, hasElevator, notes }.
-  address          Json
-  method           OrderShippingMethod
-  shippingTotal    Int                 @map("shipping_total")
+  address            Json
+  method             OrderShippingMethod
+  shippingTotal      Int                 @map("shipping_total")
   /// The quote's breakdown for the chosen method: [{ labelHe, amount }].
-  shippingLines    Json                @map("shipping_lines")
-  subtotal         Int
+  shippingLines      Json                @map("shipping_lines")
+  subtotal           Int
   /// The one discount of the order (decision 70), agorot.
-  discount         Int                 @default(0)
+  discount           Int                 @default(0)
   /// Snapshot of the applied promotion: { name, kind, code, labelHe, source }; null without a discount.
-  discountInfo     Json?               @map("discount_info")
+  discountInfo       Json?               @map("discount_info")
   /// The applied promotion: its usage count goes up when the order is paid (spec §6). A promotion with orders
   /// cannot be deleted (RESTRICT).
-  promotionId      Int?                @map("promotion_id")
-  total            Int
+  promotionId        Int?                @map("promotion_id")
+  total              Int
   /// { fulfillment, leadTimeDays } of the slowest line (CRT-04).
-  deliveryEstimate Json                @map("delivery_estimate")
+  deliveryEstimate   Json                @map("delivery_estimate")
   /// Codes of the providers that handle this order (CLAUDE.md §4.2).
-  paymentProvider  String              @map("payment_provider")
-  shippingProvider String              @map("shipping_provider")
+  paymentProvider    String              @map("payment_provider")
+  shippingProvider   String              @map("shipping_provider")
   /// The cart the order came from: its lines are removed when the order is paid.
-  cartId           String?             @map("cart_id") @db.Uuid
-  reservedUntil    DateTime            @map("reserved_until")
+  cartId             String?             @map("cart_id") @db.Uuid
+  reservedUntil      DateTime            @map("reserved_until")
   /// Paid while an in-stock line no longer had enough stock (a late payment after its reservation expired):
   /// stock was floored at 0 and staff must sort it out.
-  stockShortage    Boolean             @default(false) @map("stock_shortage")
-  channel          OrderChannel        @default(WEB)
+  stockShortage      Boolean             @default(false) @map("stock_shortage")
+  channel            OrderChannel        @default(WEB)
   /// Agorot refunded so far; CHECK refunded_total BETWEEN 0 AND total (migration order_lifecycle).
-  refundedTotal    Int                 @default(0) @map("refunded_total")
-  deliveredAt      DateTime?           @map("delivered_at")
-  cancelledAt      DateTime?           @map("cancelled_at")
+  refundedTotal      Int                 @default(0) @map("refunded_total")
+  deliveredAt        DateTime?           @map("delivered_at")
+  cancelledAt        DateTime?           @map("cancelled_at")
   /// Staff must look at it for a reason outside the Phase 4 flags (failed refund, late payment on a cancelled order…).
-  needsAttention   Boolean             @default(false) @map("needs_attention")
-  attentionNote    String?             @map("attention_note")
+  needsAttention     Boolean             @default(false) @map("needs_attention")
+  attentionNote      String?             @map("attention_note")
   /// The account that placed the order (Phase 5c); null for a guest order, which is never linked (decision 77).
-  customerId       String?             @map("customer_id") @db.Uuid
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
+  customerId         String?             @map("customer_id") @db.Uuid
+  /// The checkout's marketing checkbox (unchecked by default, CLAUDE.md §4.4), with its time; source `checkout`.
+  marketingConsent   Boolean             @default(false) @map("marketing_consent")
+  marketingConsentAt DateTime?           @map("marketing_consent_at")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
 
   cart          Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
   customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -856,6 +859,9 @@ model Promotion {
   /// Paid orders that used it (spec §5.4); may pass the limit when a pending order is paid late.
   usedCount    Int             @default(0) @map("used_count")
   active       Boolean         @default(true)
+  /// "הטבת הצטרפות" (decision 79): automatic only, applied to the first paid order of each account. At most one
+  /// active welcome promotion (partial unique index, migration welcome_promotion).
+  isWelcome    Boolean         @default(false) @map("is_welcome")
   createdAt    DateTime        @default(now()) @map("created_at")
   updatedAt    DateTime        @updatedAt @map("updated_at")
 

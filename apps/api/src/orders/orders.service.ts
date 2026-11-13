@@ -20,7 +20,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import { currentSlotView } from './delivery-slot.js';
-import { lockCart, lockOrder, lockVariants } from './locks.js';
+import { lockCart, lockOrder, lockVariants, lockWelcome } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 import { canCancel } from './order-transitions.js';
@@ -56,6 +56,12 @@ function retryable(order: { status: OrderStatus; reservedUntil: Date }, now = ne
   return status === OrderStatus.PAYMENT_FAILED || status === OrderStatus.EXPIRED;
 }
 
+/**
+ * Who may read or cancel an order: the bearer of its URL token (`/order/:number?t=`), or the signed-in account that
+ * placed it (`/api/account/orders/:number`; only orders with that `customerId`, decision 77).
+ */
+export type OrderAccess = { token: string | undefined } | { customerId: string };
+
 /** Constant-time comparison of the URL token with the order's (both hashed to equal length first). */
 export function tokenMatches(given: string, expected: string): boolean {
   const digest = (value: string) => createHash('sha256').update(value).digest();
@@ -72,9 +78,12 @@ export class OrdersService {
     private readonly promotions: PromotionsService,
   ) {}
 
-  /** GET /api/orders/:number?t= — 404 for an unknown number or a wrong token. */
-  async view(numberParam: string, token: string | undefined): Promise<OrderView> {
-    const order = await this.find(numberParam, token);
+  /**
+   * GET /api/orders/:number?t= and GET /api/account/orders/:number — 404 for an unknown number, a wrong token or
+   * another account's order.
+   */
+  async view(numberParam: string, access: OrderAccess): Promise<OrderView> {
+    const order = await this.find(numberParam, access);
     const now = new Date();
     const status = effectiveStatus(order, now);
     const canRetryPayment =
@@ -134,11 +143,12 @@ export class OrdersService {
    * orders — the order's discounted total would no longer be honored (spec §6).
    */
   async retryPayment(numberParam: string, token: string | undefined): Promise<CheckoutResponse> {
-    const found = await this.find(numberParam, token);
+    const found = await this.find(numberParam, { token });
     const snapshot = await this.catalog.snapshot();
     const order = await this.prisma.$transaction(
       async (tx) => {
-        // Same order as checkout: cart → order → variants → promotion.
+        // Same order as checkout: welcome → cart → order → variants → promotion.
+        if (found.customerId) await lockWelcome(tx, found.customerId);
         if (found.cartId) await lockCart(tx, found.cartId);
         await lockOrder(tx, found.id);
         const current = await tx.order.findUniqueOrThrow({
@@ -167,9 +177,10 @@ export class OrdersService {
     return { redirectUrl: await this.payments.openPaymentPage(order) };
   }
 
-  private async find(numberParam: string, token: string | undefined) {
+  private async find(numberParam: string, access: OrderAccess) {
     const number = parseOrderNumber(numberParam);
-    if (number === null || typeof token !== 'string') throw orderNotFound();
+    const token = 'token' in access ? access.token : null;
+    if (number === null || token === undefined) throw orderNotFound();
     const order = await this.prisma.order.findUnique({
       where: { number },
       include: {
@@ -178,21 +189,31 @@ export class OrdersService {
         ...ORDER_INVOICES,
       },
     });
-    if (!order || !tokenMatches(token, order.publicToken)) throw orderNotFound();
+    if (!order) throw orderNotFound();
+    const allowed =
+      token !== null
+        ? tokenMatches(token, order.publicToken)
+        : 'customerId' in access && order.customerId === access.customerId;
+    if (!allowed) throw orderNotFound();
     return order;
   }
 
   /**
    * The order's promotion can no longer be honored on a new payment page: inactive, out of its dates, or used up by
-   * other orders (paid, or pending within their reservation — this order itself does not count).
+   * other orders (paid, or pending within their reservation — this order itself does not count). The welcome benefit
+   * also ends once the account has a paid order or another live pending order holds it (decision 79).
    */
   private async promotionGone(
     db: Prisma.TransactionClient | PrismaService,
-    order: { id: string; promotionId: number | null },
+    order: { id: string; promotionId: number | null; customerId: string | null },
   ): Promise<boolean> {
     if (order.promotionId === null) return false;
     const rule = await this.promotions.byId(db, order.promotionId, { orderId: order.id });
-    return !rule || promotionEnded(rule, new Date());
+    if (!rule || promotionEnded(rule, new Date())) return true;
+    return (
+      rule.isWelcome === true &&
+      !(await this.promotions.welcomeStillOpen(db, { ...order, promotionId: order.promotionId }))
+    );
   }
 
   /** A newer order was placed from the same cart (it replaced this one): pay that one, not this. */

@@ -23,6 +23,7 @@ const base: AdminPromotion = {
   endsAt: '2099-12-31T21:59:59.999Z',
   usageLimit: null,
   usedCount: 12,
+  isWelcome: false,
   active: true,
   createdAt: '2026-11-01T10:00:00.000Z',
   updatedAt: '2026-11-01T10:00:00.000Z',

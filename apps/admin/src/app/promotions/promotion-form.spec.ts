@@ -17,6 +17,7 @@ const COUPON: AdminPromotion = {
   endsAt: '2026-12-31T21:59:59.999Z',
   usageLimit: 100,
   usedCount: 7,
+  isWelcome: false,
   active: true,
   createdAt: '2026-11-01T10:00:00.000Z',
   updatedAt: '2026-11-01T10:00:00.000Z',

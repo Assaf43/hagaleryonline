@@ -71,7 +71,20 @@ describe('parseCheckoutRequest (spec §5.1, §5.2)', () => {
       method: 'full_service',
       acceptTerms: true,
       expectedTotal: 355_000,
+      marketingConsent: false,
     });
+  });
+
+  it('marketing consent: optional (missing or null → false), a boolean when sent', () => {
+    expect(parseCheckoutRequest({ ...valid(), marketingConsent: true }).marketingConsent).toBe(true);
+    for (const value of ['true', 1, 'false']) {
+      try {
+        parseCheckoutRequest({ ...valid(), marketingConsent: value });
+        throw new Error(`marketingConsent ${String(value)} was accepted`);
+      } catch (e) {
+        expect((e as HttpException).getResponse()).toEqual({ statusCode: 400, code: 'invalid_input' });
+      }
+    }
   });
 
   it('requires the total the customer saw (expectedTotal): missing or not a whole number of agorot → 400', () => {

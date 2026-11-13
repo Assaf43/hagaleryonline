@@ -11,6 +11,7 @@ import { availableStock } from './available-stock.js';
 import { computeCartLines, findShown, shipmentItems } from './cart-lines.js';
 import { clampQuantity, deliveryEstimate, lineLimit } from './cart-rules.js';
 import { CART_TTL_MS, hashToken, newToken } from './cart-token.js';
+import { lockCart } from '../orders/locks.js';
 
 const CLEANUP_EVERY_MS = 24 * 60 * 60_000;
 
@@ -56,6 +57,8 @@ function emptyView(): CartView {
 /**
  * Server-side cart (spec §3.1, decision 68, CRT-02, CRT-04). Shown data and visibility come from the catalog
  * snapshot; price and stock are read fresh from the database on every request, so totals are always the server's.
+ * `customerId` is the signed-in customer of the request (null for a guest): a cart created while signed in belongs
+ * to the account, and the view offers the welcome benefit to an account without a paid order (decision 79).
  */
 @Injectable()
 export class CartService implements OnModuleInit, OnModuleDestroy {
@@ -87,14 +90,19 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Never creates a cart. */
-  async read(token: string | undefined): Promise<CartResult> {
+  async read(token: string | undefined, customerId: string | null = null): Promise<CartResult> {
     const cart = await this.resolve(token);
     if (!cart) return { view: emptyView(), token: null };
-    return { view: await this.buildView(cart.id, []), token: token! };
+    return { view: await this.buildView(cart.id, [], customerId), token: token! };
   }
 
   /** Adds to the variant's line (creating the cart on the first add), clamped to the line limit. */
-  async add(token: string | undefined, variantId: number, quantity: number): Promise<CartResult> {
+  async add(
+    token: string | undefined,
+    variantId: number,
+    quantity: number,
+    customerId: string | null = null,
+  ): Promise<CartResult> {
     const existing = token ? await this.resolve(token) : null;
     const orderable = await this.orderable(variantId, existing?.id);
     if (!orderable) throw notFound();
@@ -108,7 +116,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       let liveToken = token;
       if (!cartId || !liveToken) {
         liveToken = newToken();
-        cartId = (await tx.cart.create({ data: { tokenHash: hashToken(liveToken) }, select: { id: true } })).id;
+        cartId = (await tx.cart.create({ data: { tokenHash: hashToken(liveToken), customerId }, select: { id: true } }))
+          .id;
       }
       const key = { cartId_variantId: { cartId, variantId } };
       // Adding again means the customer saw the current price: it becomes the line's reference price.
@@ -123,11 +132,16 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       return { cartId, liveToken, wanted: item.quantity };
     });
     const notices = wanted > limit ? [clampedNotice(variantId, fulfillment, limit)] : [];
-    return { view: await this.buildView(cartId, notices), token: liveToken };
+    return { view: await this.buildView(cartId, notices, customerId), token: liveToken };
   }
 
   /** Sets the quantity of an existing line, clamped to the line limit. */
-  async update(token: string | undefined, variantId: number, quantity: number): Promise<CartResult> {
+  async update(
+    token: string | undefined,
+    variantId: number,
+    quantity: number,
+    customerId: string | null = null,
+  ): Promise<CartResult> {
     const cart = await this.resolve(token);
     const item =
       cart && (await this.prisma.cartItem.findUnique({ where: { cartId_variantId: { cartId: cart.id, variantId } } }));
@@ -142,15 +156,15 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       data: { quantity: next },
     });
     const notices = next < quantity ? [clampedNotice(variantId, fulfillment, limit)] : [];
-    return { view: await this.buildView(cart.id, notices), token: token! };
+    return { view: await this.buildView(cart.id, notices, customerId), token: token! };
   }
 
   /** Removes a line; removing a line that is not there is not an error. */
-  async remove(token: string | undefined, variantId: number): Promise<CartResult> {
+  async remove(token: string | undefined, variantId: number, customerId: string | null = null): Promise<CartResult> {
     const cart = await this.resolve(token);
     if (!cart) return { view: emptyView(), token: null };
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, variantId } });
-    return { view: await this.buildView(cart.id, []), token: token! };
+    return { view: await this.buildView(cart.id, [], customerId), token: token! };
   }
 
   /**
@@ -158,7 +172,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
    * or for none of the cart's products → 400 with the Hebrew reason and nothing stored. A valid coupon is stored
    * upper-case even when an automatic promotion is better (the view then says so). Never creates a cart.
    */
-  async applyCoupon(token: string | undefined, rawCode: string): Promise<CartResult> {
+  async applyCoupon(token: string | undefined, rawCode: string, customerId: string | null = null): Promise<CartResult> {
     const code = normalizeCouponCode(rawCode);
     const cart = await this.resolve(token);
     const lines = cart
@@ -170,15 +184,94 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     if (message) throw new CouponRefused(message);
     // A valid coupon has eligible lines, so there is a cart.
     await this.prisma.cart.update({ where: { id: cart!.id }, data: { couponCode: code } });
-    return { view: await this.buildView(cart!.id, []), token: token! };
+    return { view: await this.buildView(cart!.id, [], customerId), token: token! };
   }
 
   /** Removes the cart's coupon; without a cart, the empty view. */
-  async removeCoupon(token: string | undefined): Promise<CartResult> {
+  async removeCoupon(token: string | undefined, customerId: string | null = null): Promise<CartResult> {
     const cart = await this.resolve(token);
     if (!cart) return { view: emptyView(), token: null };
     await this.prisma.cart.update({ where: { id: cart.id }, data: { couponCode: null } });
-    return { view: await this.buildView(cart.id, []), token: token! };
+    return { view: await this.buildView(cart.id, [], customerId), token: token! };
+  }
+
+  /**
+   * Cart merge on sign-in (spec §6.4), called by every sign-in path. Returns the token the `hg_cart` cookie should
+   * carry from now on, or null when there is no cart (the caller drops the cookie).
+   *  - The cookie's cart is already this account's: unchanged.
+   *  - A guest cart and no cart of the account: the guest cart becomes the account's (same cookie).
+   *  - The account has a cart (its newest live one): it absorbs the guest cart's lines — quantities summed and
+   *    clamped to the line limits (CRT-02), a coupon carried over when it has none — and the guest cart is deleted.
+   *    Only the token's hash is stored, so the account's cart gets a new token for this browser; another browser
+   *    still holding the old cookie no longer finds that cart (it starts a new one, merged at its next sign-in).
+   *  - Another account's cart left in the browser (that account signed out without the cookie being dropped) is
+   *    never merged or taken over.
+   * Both carts are locked (ascending id, like any cart lock: cart → orders → variants) so a checkout of either waits.
+   */
+  async attachToCustomer(cookieToken: string | undefined, customerId: string): Promise<string | null> {
+    const current = (await this.resolve(cookieToken))
+      ? await this.prisma.cart.findUnique({
+          where: { tokenHash: hashToken(cookieToken!) },
+          select: { id: true, customerId: true },
+        })
+      : null;
+    if (current?.customerId === customerId) return cookieToken!;
+    const guest = current && current.customerId === null ? current : null;
+    const own = await this.prisma.cart.findFirst({
+      where: { customerId, updatedAt: { gte: staleBefore(new Date()) } },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    });
+
+    if (!own) {
+      if (!guest) return null;
+      // Only while still a guest cart: a concurrent sign-in of another account does not take it twice.
+      const { count } = await this.prisma.cart.updateMany({
+        where: { id: guest.id, customerId: null },
+        data: { customerId },
+      });
+      return count === 1 ? cookieToken! : null;
+    }
+
+    // The line limits of the absorbed lines, for the account's cart (its own reservations do not count).
+    const guestItems = guest ? await this.prisma.cartItem.findMany({ where: { cartId: guest.id } }) : [];
+    const limits = new Map<number, number>();
+    for (const item of guestItems)
+      limits.set(item.variantId, (await this.orderable(item.variantId, own.id))?.limit ?? 0);
+
+    const token = newToken();
+    await this.prisma.$transaction(async (tx) => {
+      for (const id of [own.id, ...(guest ? [guest.id] : [])].sort()) await lockCart(tx, id);
+      if (guest) {
+        for (const item of guestItems) {
+          const key = { cartId_variantId: { cartId: own.id, variantId: item.variantId } };
+          const existing = await tx.cartItem.findUnique({ where: key, select: { quantity: true } });
+          const wanted = (existing?.quantity ?? 0) + item.quantity;
+          const limit = limits.get(item.variantId) ?? 0;
+          // A line that cannot be bought now keeps its quantity (the cart shows it unavailable, as for any line).
+          const quantity = limit >= 1 ? clampQuantity(wanted, limit) : wanted;
+          await tx.cartItem.upsert({
+            where: key,
+            create: {
+              cartId: own.id,
+              variantId: item.variantId,
+              quantity,
+              unitPriceAtAdd: item.unitPriceAtAdd,
+              addedAt: item.addedAt,
+            },
+            update: { quantity },
+          });
+        }
+        const { couponCode } = await tx.cart.findUniqueOrThrow({
+          where: { id: guest.id },
+          select: { couponCode: true },
+        });
+        await tx.cart.updateMany({ where: { id: own.id, couponCode: null }, data: { couponCode } });
+        await tx.cart.delete({ where: { id: guest.id } });
+      }
+      await tx.cart.update({ where: { id: own.id }, data: { tokenHash: hashToken(token) } });
+    });
+    return token;
   }
 
   /**
@@ -223,7 +316,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Recomputes every line (spec §3.1): price changes, limits (clamped and saved) and visibility. */
-  private async buildView(cartId: string, requestNotices: CartNotice[]): Promise<CartView> {
+  private async buildView(cartId: string, requestNotices: CartNotice[], customerId: string | null): Promise<CartView> {
     const computed = await computeCartLines(this.prisma, cartId, await this.catalog.snapshot());
 
     const lines: CartLine[] = [];
@@ -285,7 +378,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       this.prisma,
       discountLines(computed, (l) => l.quantity),
       couponCode,
-      { cartId },
+      { cartId, customer: await this.promotions.welcomeCustomer(this.prisma, customerId) },
     );
     let code = couponCode;
     if (code && discount.couponProblem) {

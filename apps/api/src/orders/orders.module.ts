@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
+import { CustomerSessionModule } from '../customers/customer-session.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PAYMENT_PROVIDER, selectPaymentProvider } from '../payments/payment-provider.js';
 import { PaymentsController } from '../payments/payments.controller.js';
@@ -30,7 +31,16 @@ import { WriteThrottleModule } from './write-throttle.module.js';
  * address stops the API only when it is the configured provider.
  */
 @Module({
-  imports: [AuthModule, CatalogModule, CartModule, PromotionsModule, ShippingModule, WriteThrottleModule, OutboxModule],
+  imports: [
+    AuthModule,
+    CatalogModule,
+    CartModule,
+    CustomerSessionModule,
+    PromotionsModule,
+    ShippingModule,
+    WriteThrottleModule,
+    OutboxModule,
+  ],
   controllers: [
     DeliverySlotController,
     CheckoutController,
@@ -57,6 +67,6 @@ import { WriteThrottleModule } from './write-throttle.module.js';
         }),
     },
   ],
-  exports: [PAYMENT_PROVIDER, PaymentsService],
+  exports: [PAYMENT_PROVIDER, PaymentsService, OrdersService, OrderLifecycleService],
 })
 export class OrdersModule {}

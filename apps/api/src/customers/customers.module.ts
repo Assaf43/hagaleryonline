@@ -1,31 +1,32 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
+import { CartModule } from '../cart/cart.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { OrdersModule } from '../orders/orders.module.js';
 import { WriteThrottleModule } from '../orders/write-throttle.module.js';
 import { WriteThrottle } from '../orders/write-throttle.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AccountController } from './account.controller.js';
+import { AccountService } from './account.service.js';
 import { CustomerAuthController } from './customer-auth.controller.js';
 import { CustomerAuthService } from './customer-auth.service.js';
-import { CustomerSessionService } from './customer-session.service.js';
-import { CustomerCookie, CustomerSessionGuard, OptionalCustomerGuard } from './customer-session.guard.js';
+import { CustomerSessionModule } from './customer-session.module.js';
 import { PrismaOtpStore } from './otp-store.prisma.js';
 import { OtpService, resolveOtpPepper } from './otp.service.js';
 
 /**
- * Customers & Auth (Phase 5c, spec §6.1, §6.2): accounts, one-time codes, sessions. Codes go out directly through
- * `NotificationsService` (template `otp`), not through the outbox. Exports the session guards for cart and checkout.
+ * Customers & Auth (Phase 5c, spec §6.1–§6.3): accounts, one-time codes, sign-in (with the cart merge) and the
+ * account's own data. Codes go out directly through `NotificationsService` (template `otp`), not through the outbox.
+ * The session and its guards live in `CustomerSessionModule`, which the cart and checkout import too.
  */
 @Module({
-  imports: [AuthModule, NotificationsModule, WriteThrottleModule],
-  controllers: [CustomerAuthController],
+  imports: [AuthModule, CartModule, CustomerSessionModule, NotificationsModule, OrdersModule, WriteThrottleModule],
+  controllers: [CustomerAuthController, AccountController],
   providers: [
-    CustomerSessionService,
-    CustomerCookie,
-    CustomerSessionGuard,
-    OptionalCustomerGuard,
     CustomerAuthService,
+    AccountService,
     {
       provide: OtpService,
       inject: [PrismaService, NotificationsService, WriteThrottle, ConfigService],
@@ -48,6 +49,5 @@ import { OtpService, resolveOtpPepper } from './otp.service.js';
         ),
     },
   ],
-  exports: [CustomerSessionService, CustomerCookie, CustomerSessionGuard, OptionalCustomerGuard],
 })
 export class CustomersModule {}
