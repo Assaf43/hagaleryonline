@@ -605,6 +605,27 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       expect(await prisma.cart.count()).toBe(1);
     });
 
+    for (const withPendingOrder of [false, true]) {
+      it(`a double-submitted first sign-in (no account cart${withPendingOrder ? ', guest cart with a live order' : ''}) links the cart once`, async () => {
+        const c = await newCustomer();
+        const guest = browser();
+        await guest.add(lamp, 2);
+        const guestCart = await prisma.cart.findFirstOrThrow({ where: { customerId: null } });
+        const order = withPendingOrder ? await orderOf(await guest.checkout()) : null;
+        const send = () => guest.write('post', '/api/account/sign-in', { email: c.email, password: PASSWORD });
+        // Several rounds: the two requests must overlap at least once.
+        const results = await Promise.all([send(), send(), send()]);
+        expect(results.map((r) => r.status)).toEqual([200, 200, 200]);
+        const carts = await prisma.cart.findMany({ where: { customerId: c.id }, include: { items: true } });
+        expect(carts).toHaveLength(1);
+        expect(carts[0].id).toBe(guestCart.id);
+        expect(carts[0].items.map((i) => [i.variantId, i.quantity])).toEqual([[lamp, 2]]);
+        if (order)
+          expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).cartId).toBe(guestCart.id);
+        expect(lines(await guest.cart())).toEqual([[lamp, 2]]);
+      });
+    }
+
     it("another account's cart left in the browser is not merged or shown", async () => {
       const a = await newCustomer();
       const z = await newCustomer();

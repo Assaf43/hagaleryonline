@@ -244,7 +244,9 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
           if (guest) await tx.cart.updateMany({ where: { id: guest.id, customerId: null }, data: { customerId } });
           return;
         }
-        const sources = [...(guest ? [guest.id] : []), ...others.map((c) => c.id)];
+        // The guest cart was read before the lock: a concurrent sign-in of this browser may have linked it to the
+        // account meanwhile (it is then the target itself, never merged into itself).
+        const sources = [...(guest ? [guest.id] : []), ...others.map((c) => c.id)].filter((id) => id !== target.id);
         if (sources.length === 0) return;
         const locked = new Set<string>();
         for (const id of [target.id, ...sources].sort()) if (await lockCart(tx, id)) locked.add(id);
@@ -256,7 +258,9 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
             where: { id: sourceId },
             select: { customerId: true, couponCode: true, items: true },
           });
-          if (!source || (source.customerId !== null && source.customerId !== customerId)) continue;
+          // Re-checked under the lock: the guest cart must still be a guest cart, the others still this account's.
+          const expectedOwner = sourceId === guest?.id ? null : customerId;
+          if (!source || source.customerId !== expectedOwner) continue;
           for (const item of source.items) {
             const key = { cartId_variantId: { cartId: target.id, variantId: item.variantId } };
             const existing = await tx.cartItem.findUnique({ where: key, select: { quantity: true } });

@@ -302,12 +302,12 @@ export class CustomerAuthService {
   }
 
   /**
-   * Every sign-in ends here (password, code, sign-up, reset): the cart merge (spec §6.4), then the new session — a
-   * merge that fails leaves no session behind.
+   * Every sign-in ends here (password, code, sign-up, reset): the cart merge (spec §6.4) first, then the previous
+   * session of this browser ends and the new one starts — a merge that fails changes no session.
    */
   private async signedIn(customer: Customer, client: ClientInfo): Promise<SignedIn> {
-    await this.sessions.endByToken(client.previousToken);
     await this.cart.attachToCustomer(client.cartToken, customer.id);
+    await this.sessions.endByToken(client.previousToken);
     const token = await this.sessions.start(customer.id, { ip: client.ip, userAgent: client.userAgent });
     return { customer: toMe(customer), token };
   }
