@@ -74,6 +74,25 @@ describe('OrderStatusPage (/order-status, SHP-05)', () => {
     expect(el().querySelector('#os-number-error')).toBeNull();
   });
 
+  it('keeps the alert region rendered while empty, so a later message is announced', () => {
+    const alert = q<HTMLElement>('[role="alert"]');
+    expect(alert.textContent?.trim()).toBe('');
+    // No rule of the page hides it, also not while empty (jsdom does not match `:empty` on an empty text node, so the
+    // selector is checked without it): a region that was display:none may not be announced when it fills.
+    const hiding = [...document.styleSheets]
+      .flatMap((sheet) => [...sheet.cssRules])
+      .filter((r): r is CSSStyleRule => r instanceof CSSStyleRule && r.style.display === 'none')
+      .filter((r) => {
+        try {
+          return alert.matches(r.selectorText.replace(/:empty/g, ''));
+        } catch {
+          return false;
+        }
+      })
+      .map((r) => r.selectorText);
+    expect(hiding).toEqual([]);
+  });
+
   it('sends the number and phone and opens the order page it answers', async () => {
     fill('os-number', ' 100001 ');
     fill('os-phone', '050-1234567');

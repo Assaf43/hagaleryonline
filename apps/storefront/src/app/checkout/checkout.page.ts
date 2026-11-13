@@ -246,7 +246,8 @@ export class CheckoutPage {
         this.applyPrefill(prefill);
         return;
       }
-      // 204: the session ended meanwhile.
+      // 204: the session ended meanwhile; the header and the cart follow (no navigation, the guest path below).
+      this.customer.sessionEnded();
     }
     this.shopper.set('guest');
     let label: string | null = null;

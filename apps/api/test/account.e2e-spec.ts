@@ -818,6 +818,9 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
           { number: String(unknownNumber), phone: '0501234567' },
           { number: 'abc', phone: '0501234567' },
           { number: '12', phone: '0501234567' },
+          // Beyond the int4 order number column: still the same miss, never a database error.
+          { number: '9999999999', phone: '0501234567' },
+          { number: '99999999999', phone: '0501234567' },
           { number: String(order.number), phone: '12' },
           { number: order.number, phone: 501234567 },
           {},
@@ -830,6 +833,23 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       }
       expect(answers[0].headers['cache-control']).toBe('no-store');
       expect(answers[0].headers['retry-after']).toBeUndefined();
+    });
+
+    it('the other order endpoints answer their normal 404 for a number beyond range', async () => {
+      const big = '9999999999';
+      await request(app.getHttpServer() as App)
+        .get(`/api/orders/${big}`)
+        .query({ t: 'x' })
+        .expect(404);
+      await request(app.getHttpServer() as App)
+        .post(`/api/orders/${big}/cancel`)
+        .query({ t: 'x' })
+        .set('Origin', ORIGIN)
+        .expect(404);
+      const b = browser();
+      await b.signIn((await newCustomer()).email);
+      await b.agent.get(`/api/account/orders/${big}`).expect(404);
+      await b.write('post', `/api/account/orders/${big}/cancel`).expect(404);
     });
 
     it('needs the storefront origin', async () => {
@@ -850,6 +870,9 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
         expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
         // Another order number is not affected.
         await lookup({ number: String(other.number), phone: '0501234567' }).expect(200);
+        // A number beyond range is counted like any other (its own key): 5 misses, then 429.
+        for (let i = 0; i < 5; i++) await lookup({ number: '9999999999', phone: '0501234567' }).expect(404);
+        await lookup({ number: '9999999999', phone: '0501234567' }).expect(429);
       } finally {
         throttle.setLimit('lookup_number', 100_000);
       }

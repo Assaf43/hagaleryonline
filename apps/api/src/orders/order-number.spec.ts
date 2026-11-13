@@ -23,6 +23,12 @@ describe('order numbers (spec §5.2)', () => {
       expect(parseOrderNumber(bad)).toBeNull();
   });
 
+  it('refuses numbers beyond the int4 column (orders.number), so they are a miss and never a database error', () => {
+    expect(parseOrderNumber('2147483647')).toBe(2_147_483_647);
+    for (const bad of ['2147483648', '9999999999', '99999999999', '999999999999'])
+      expect(parseOrderNumber(bad)).toBeNull();
+  });
+
   it('holds stock for 20 minutes (decision 69)', () => {
     expect(RESERVATION_MS).toBe(20 * 60_000);
     expect(reservedUntil(new Date('2026-11-10T10:00:00Z')).toISOString()).toBe('2026-11-10T10:20:00.000Z');

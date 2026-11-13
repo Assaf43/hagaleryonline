@@ -65,6 +65,15 @@ export class CustomerStore {
   }
 
   /**
+   * The session ended on the server (expired, or ended from another device) without a sign-out here: the customer is
+   * cleared and the cart read again, since the server no longer resolves the account's cart. No navigation.
+   */
+  sessionEnded(): void {
+    this.restore(null);
+    void this.cart.refresh();
+  }
+
+  /**
    * For a signed-in page's `catch`: a 401 `not_authenticated` means the session ended (expired, or ended from another
    * device), so the customer state is cleared and the visitor goes to `/account?next=<this page>`. Returns whether it
    * did (other errors, including a wrong code's 401, stay with the page).
@@ -72,8 +81,7 @@ export class CustomerStore {
   unauthorized(error: unknown): boolean {
     const failure = accountFailure(error);
     if (failure.status !== 401 || failure.code !== 'not_authenticated') return false;
-    this.restore(null);
-    void this.cart.refresh();
+    this.sessionEnded();
     void this.router.navigate(['/account'], { queryParams: { next: this.router.url } });
     return true;
   }

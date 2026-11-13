@@ -12,6 +12,7 @@ import type {
   WelcomeBenefit,
 } from '@hg/models';
 import { customerMe } from '../account/account.testing';
+import { CustomerStore } from '../account/customer.store';
 import { CartStore } from '../core/cart.store';
 import { cartLine, cartView } from '../core/cart.testing';
 import { PageMeta } from '../core/page-meta';
@@ -743,6 +744,10 @@ describe('CheckoutPage', () => {
       await render();
       expect(el().querySelector('.signin-banner')).not.toBeNull();
       expect(q('#chk-fullName').value).toBe('');
+      // The header no longer shows the old customer, and the cart is read again (the session's cart is gone).
+      expect(TestBed.inject(CustomerStore).me()).toBeNull();
+      http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000)]));
+      await render();
     });
   });
 
