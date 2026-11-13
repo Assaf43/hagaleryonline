@@ -18,6 +18,8 @@ import { CheckoutController } from './checkout.controller.js';
 import { CheckoutService } from './checkout.service.js';
 import { LatePaymentRefundJob } from './late-payment.job.js';
 import { OrderLifecycleService } from './order-lifecycle.service.js';
+import { OrderLookupController } from './order-lookup.controller.js';
+import { OrderLookupService } from './order-lookup.service.js';
 import { RefundService } from './refund.service.js';
 import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersAdminService } from './orders-admin.service.js';
@@ -44,6 +46,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
   controllers: [
     DeliverySlotController,
     CheckoutController,
+    OrderLookupController,
     OrdersController,
     PaymentsController,
     OrdersAdminController,
@@ -53,6 +56,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     OrdersService,
     OrdersAdminService,
     OrderLifecycleService,
+    OrderLookupService,
     DeliverySlotService,
     RefundService,
     LatePaymentRefundJob,

@@ -22,6 +22,11 @@ export const routes: Routes = [
   { path: 'cart', loadComponent: () => import('./cart/cart.page').then((m) => m.CartPage) },
   { path: 'checkout', loadComponent: () => import('./checkout/checkout.page').then((m) => m.CheckoutPage) },
   { path: 'order/:number', loadComponent: () => import('./order/order.page').then((m) => m.OrderPage) },
+  // "My order status" (SHP-05): noindex, not in the sitemap.
+  {
+    path: 'order-status',
+    loadComponent: () => import('./order-status/order-status.page').then((m) => m.OrderStatusPage),
+  },
   {
     path: 'pay/sandbox/:transactionId',
     loadComponent: () => import('./pay/sandbox-pay.page').then((m) => m.SandboxPayPage),

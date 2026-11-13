@@ -138,6 +138,8 @@ export class LocalityField {
   /** Set by a pick or Escape: drops results that are still pending. */
   private dismissed = false;
   private scrollPending = false;
+  /** Typing emptied the value: the typed text stays (a value emptied from outside empties the field). */
+  private clearedByTyping = false;
 
   protected readonly text = signal('');
   protected readonly results = signal<LocalityOption[]>([]);
@@ -152,10 +154,12 @@ export class LocalityField {
   }
 
   constructor() {
-    // A value set from outside (or picked) shows its name.
+    // A value set from outside (or picked) shows its name; emptied from outside ("another address"), no text.
     effect(() => {
       const v = this.value();
       if (v) this.text.set(v.nameHe);
+      else if (!this.clearedByTyping) this.text.set('');
+      this.clearedByTyping = false;
     });
 
     afterRenderEffect(() => {
@@ -195,7 +199,10 @@ export class LocalityField {
     const value = (event.target as HTMLInputElement).value;
     this.text.set(value);
     this.dismissed = false;
-    if (this.value()) this.value.set(null);
+    if (this.value()) {
+      this.clearedByTyping = true;
+      this.value.set(null);
+    }
     this.activeIndex.set(-1);
     if (!value.trim()) this.close();
     this.typed$.next(value);

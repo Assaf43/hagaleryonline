@@ -24,6 +24,7 @@ import {
   OrderStatus,
   PromotionKind,
   PromotionTarget,
+  type Prisma,
 } from './../src/generated/prisma/client.js';
 import { SMS_PROVIDER, type SmsProvider } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
@@ -36,6 +37,10 @@ const PASSWORD = 'correct horse 12';
 const COUPON = 'ZZACC12';
 /** תל אביב - יפו: in no zone. */
 const LOCALITY = 5000;
+/** Promotions named so are this file's (removed after each test). */
+const WELCOME_NAME = 'ZZACC הטבה';
+/** The one answer of `POST /api/orders/lookup` for anything that is not a match (spec §6.5). */
+const LOOKUP_MISS = { statusCode: 404, code: 'not_found', messageHe: 'לא מצאנו הזמנה עם הפרטים האלה' };
 
 // Account data, cart merge and checkout with a customer (spec §6.3, §6.4, ACC-03, ACC-04, ACC-05, decision 77).
 describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
@@ -147,7 +152,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.customer.deleteMany({ where: { email: { endsWith: DOMAIN } } });
-    await prisma.promotion.deleteMany({ where: { code: COUPON } });
+    await prisma.promotion.deleteMany({ where: { OR: [{ code: COUPON }, { name: { startsWith: WELCOME_NAME } }] } });
     await prisma.otpCode.deleteMany({ where: { target: { startsWith: '05' } } });
   };
 
@@ -706,6 +711,164 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
         return b.checkout({ marketingConsent: 'yes' as unknown as boolean });
       })();
       expect(bad.status).toBe(400);
+    });
+  });
+
+  describe('the welcome benefit label (GET /api/promotions/welcome, spec §6.4)', () => {
+    const welcome = (data: Partial<Prisma.PromotionCreateInput> = {}) =>
+      prisma.promotion.create({
+        data: {
+          name: `${WELCOME_NAME} 10% על ההזמנה הראשונה`,
+          kind: PromotionKind.AUTOMATIC,
+          discountType: DiscountType.PERCENT,
+          value: 10,
+          target: PromotionTarget.ORDER,
+          isWelcome: true,
+          ...data,
+        },
+      });
+    const label = async () => {
+      // Public: no session, no storefront origin.
+      const res = await request(app.getHttpServer() as App)
+        .get('/api/promotions/welcome')
+        .expect(200);
+      return res.body as unknown;
+    };
+
+    it('is null without an active welcome promotion, and its Hebrew name inside its dates', async () => {
+      expect(await label()).toBeNull();
+      // An ordinary automatic promotion is no welcome benefit.
+      await prisma.promotion.create({
+        data: {
+          name: `${WELCOME_NAME} רגיל`,
+          kind: PromotionKind.AUTOMATIC,
+          discountType: DiscountType.PERCENT,
+          value: 5,
+          target: PromotionTarget.ORDER,
+        },
+      });
+      expect(await label()).toBeNull();
+
+      const p = await welcome({ startsAt: new Date(Date.now() - 60_000), endsAt: new Date(Date.now() + 86_400_000) });
+      expect(await label()).toEqual({ labelHe: p.name });
+
+      await prisma.promotion.update({ where: { id: p.id }, data: { active: false } });
+      expect(await label()).toBeNull();
+      await prisma.promotion.update({
+        where: { id: p.id },
+        data: { active: true, startsAt: new Date(Date.now() + 86_400_000) },
+      });
+      expect(await label()).toBeNull();
+      await prisma.promotion.update({
+        where: { id: p.id },
+        data: { startsAt: null, endsAt: new Date(Date.now() - 60_000) },
+      });
+      expect(await label()).toBeNull();
+      await prisma.promotion.update({ where: { id: p.id }, data: { endsAt: null } });
+      expect(await label()).toEqual({ labelHe: p.name });
+    });
+  });
+
+  describe('my order status (POST /api/orders/lookup, spec §6.5, SHP-05)', () => {
+    const lookup = (body: unknown, origin = true) => {
+      const req = request(app.getHttpServer() as App).post('/api/orders/lookup');
+      return (origin ? req.set('Origin', ORIGIN) : req).send(body as object);
+    };
+    const guestOrder = async () => {
+      const guest = browser();
+      await guest.add(lamp, 1);
+      return orderOf(await guest.checkout());
+    };
+    /** Headers that may differ between two identical answers. */
+    const comparable = (headers: Record<string, string>) => {
+      const { date: _date, ...rest } = headers;
+      return rest;
+    };
+
+    it('a matching number and phone (any typing of the phone) answer the order link; guest and account orders alike', async () => {
+      const order = await guestOrder();
+      const res = await lookup({ number: String(order.number), phone: '+972 50-123-4567' }).expect(200);
+      expect(res.body).toEqual({ url: `/order/${order.number}?t=${order.publicToken}` });
+      expect(res.headers['cache-control']).toBe('no-store');
+      // A token handover only: no session or cart cookie is set.
+      expect(res.headers['set-cookie']).toBeUndefined();
+      await request(app.getHttpServer() as App)
+        .get(`/api/orders/${order.number}`)
+        .query({ t: order.publicToken })
+        .expect(200);
+      // The number may be typed with spaces around it.
+      await lookup({ number: ` ${order.number} `, phone: '0501234567' }).expect(200);
+
+      // An order placed with an account: the same handover, nothing is linked (decision 77).
+      const c = await newCustomer();
+      const b = browser();
+      await b.signIn(c.email);
+      const own = await placeOrder(b);
+      const mine = await lookup({ number: String(own.number), phone: '050-1234567' }).expect(200);
+      expect(mine.body).toEqual({ url: `/order/${own.number}?t=${own.publicToken}` });
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ customerId: null });
+    });
+
+    it('a wrong phone, an unknown number and malformed input get the same 404: status, body and headers', async () => {
+      const order = await guestOrder();
+      const unknownNumber = order.number + 50_000;
+      const answers = await Promise.all(
+        [
+          { number: String(order.number), phone: '0509999999' },
+          { number: String(unknownNumber), phone: '0501234567' },
+          { number: 'abc', phone: '0501234567' },
+          { number: '12', phone: '0501234567' },
+          { number: String(order.number), phone: '12' },
+          { number: order.number, phone: 501234567 },
+          {},
+        ].map((body) => lookup(body)),
+      );
+      for (const res of answers) {
+        expect(res.status).toBe(404);
+        expect(res.body).toEqual(LOOKUP_MISS);
+        expect(comparable(res.headers)).toEqual(comparable(answers[0].headers));
+      }
+      expect(answers[0].headers['cache-control']).toBe('no-store');
+      expect(answers[0].headers['retry-after']).toBeUndefined();
+    });
+
+    it('needs the storefront origin', async () => {
+      const order = await guestOrder();
+      await lookup({ number: String(order.number), phone: '0501234567' }, false).expect(403);
+    });
+
+    it('is limited per order number (5 per 15 minutes): every attempt counts, matches too', async () => {
+      const throttle = app.get(WriteThrottle);
+      throttle.setLimit('lookup_number', 5);
+      try {
+        const [order, other] = [await guestOrder(), await guestOrder()];
+        await lookup({ number: String(order.number), phone: '0501234567' }).expect(200);
+        for (let i = 0; i < 4; i++) await lookup({ number: String(order.number), phone: '0509999999' }).expect(404);
+        // The sixth, even the right phone and the number typed differently: refused with Retry-After.
+        const limited = await lookup({ number: ` ${order.number}`, phone: '0501234567' }).expect(429);
+        expect(limited.body).toMatchObject({ code: 'too_many_requests' });
+        expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+        // Another order number is not affected.
+        await lookup({ number: String(other.number), phone: '0501234567' }).expect(200);
+      } finally {
+        throttle.setLimit('lookup_number', 100_000);
+      }
+    });
+
+    it('is limited per IP (10 per 15 minutes), whatever the numbers', async () => {
+      const throttle = app.get(WriteThrottle);
+      throttle.setLimit('lookup', 10);
+      try {
+        const order = await guestOrder();
+        for (let i = 0; i < 9; i++)
+          await lookup({ number: String(order.number + 1000 + i), phone: '0501234567' }).expect(404);
+        await lookup({ number: String(order.number), phone: '0501234567' }).expect(200);
+        const limited = await lookup({ number: String(order.number), phone: '0501234567' }).expect(429);
+        expect(limited.body).toMatchObject({ code: 'too_many_requests' });
+        expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+      } finally {
+        throttle.setLimit('lookup', 100_000);
+      }
     });
   });
 });

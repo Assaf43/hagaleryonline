@@ -4,9 +4,12 @@ import { firstValueFrom } from 'rxjs';
 import { PROMOTION_ENDED_MESSAGE_HE } from '@hg/models';
 import type {
   CheckoutErrorCode,
+  CheckoutPrefill,
   CheckoutRequest,
   CheckoutResponse,
   LocalityOption,
+  OrderLookupRequest,
+  OrderLookupResponse,
   OrderView,
   SandboxCompleteRequest,
   SandboxCompleteResponse,
@@ -14,6 +17,7 @@ import type {
   ShippingErrorCode,
   ShippingQuote,
   ShippingQuoteRequest,
+  WelcomeBenefit,
 } from '@hg/models';
 
 /**
@@ -35,6 +39,21 @@ export class CheckoutApi {
 
   checkout(body: CheckoutRequest) {
     return firstValueFrom(this.http.post<CheckoutResponse>('/api/checkout', body));
+  }
+
+  /** The signed-in customer's contact and saved addresses; null for a guest (204). */
+  prefill() {
+    return firstValueFrom(this.http.get<CheckoutPrefill | null>('/api/checkout/prefill'));
+  }
+
+  /** The active welcome benefit for the sign-in banner, or null. */
+  welcome() {
+    return firstValueFrom(this.http.get<WelcomeBenefit | null>('/api/promotions/welcome'));
+  }
+
+  /** "My order status": the order page link for a matching number and phone (404 `not_found` otherwise). */
+  lookupOrder(body: OrderLookupRequest) {
+    return firstValueFrom(this.http.post<OrderLookupResponse>('/api/orders/lookup', body));
   }
 
   order(number: string, token: string) {

@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { MenuData } from './menu-data';
 
 /**
- * Footer: rooms and furniture types. The sizing guide and the interim terms are linked; the other service
+ * Footer: rooms and furniture types. "My order status", the sizing guide and the interim terms are linked; the other service
  * and policy pages (shipping, returns, privacy, accessibility statement) come with the content pages in Phase 8.
  */
 @Component({
@@ -45,6 +45,7 @@ import { MenuData } from './menu-data';
           }
         </div>
         <ul class="links">
+          <li><a routerLink="/order-status">מצב ההזמנה שלי</a></li>
           <li><a routerLink="/sizing-guide">מדריך מידות</a></li>
           <li><a routerLink="/terms">תנאי שימוש</a></li>
         </ul>

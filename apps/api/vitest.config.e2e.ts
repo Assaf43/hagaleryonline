@@ -41,6 +41,8 @@ export default defineConfig({
       THROTTLE_OTP_LIMIT: '100000',
       THROTTLE_SIGNIN_LIMIT: '100000',
       THROTTLE_ACCOUNT_LIMIT: '100000',
+      THROTTLE_LOOKUP_LIMIT: '100000',
+      THROTTLE_LOOKUP_NUMBER_LIMIT: '100000',
       OTP_PEPPER: 'e2e-otp-pepper-not-for-production',
       PAYMENT_PROVIDER: 'sandbox',
       // Notifications (Phase 5b): the mock adapters send nothing and log the full message.

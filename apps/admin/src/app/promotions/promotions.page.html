@@ -24,7 +24,12 @@
     @for (p of list; track p.id) {
       <li class="promotion" [attr.data-state]="state(p)">
         <a class="name" [routerLink]="['/promotions', p.id]">{{ p.name }}</a>
-        <span class="kind"><span class="visually-hidden">סוג: </span>{{ kindLabels[p.kind] }}</span>
+        <span class="kind"
+          ><span class="visually-hidden">סוג: </span>{{ kindLabels[p.kind] }}
+          @if (p.isWelcome) {
+            <span class="welcome-chip">הטבת הצטרפות</span>
+          }
+        </span>
         @if (p.code) {
           <span class="code"
             ><span class="visually-hidden">קוד: </span><bdi dir="ltr">{{ p.code }}</bdi></span

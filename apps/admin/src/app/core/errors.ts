@@ -173,6 +173,15 @@ const ORDER_FIELDS: Record<string, string> = {
   refund: 'בחירת ההחזר לא תקינה להזמנה הזו.',
 };
 
+/** 400 `invalid` of the promotions API on a field the form has no input of its own for. */
+const PROMOTION_FIELDS: Record<string, string> = {
+  isWelcome: 'הטבת הצטרפות אפשרית רק במבצע אוטומטי.',
+};
+
+function promotionMessage(body: { code?: string; field?: string }): string | null {
+  return body.code === 'invalid' && body.field ? (PROMOTION_FIELDS[body.field] ?? null) : null;
+}
+
 function orderMessage(body: { code?: string; field?: string }): string | null {
   if (body.code && ORDER_CODES[body.code]) return ORDER_CODES[body.code];
   if (body.code === 'invalid_input' && body.field && ORDER_FIELDS[body.field]) return ORDER_FIELDS[body.field];
@@ -188,6 +197,8 @@ export function errorMessage(error: unknown): string {
   if (shipping) return shipping;
   const order = orderMessage(error.error ?? {});
   if (order) return order;
+  const promotion = promotionMessage(error.error ?? {});
+  if (promotion) return promotion;
   const catalog = catalogMessage(error.error ?? {});
   if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };

@@ -57,7 +57,7 @@ type TextField =
  * Create or edit one promotion (`/promotions/new`, `/promotions/:id`; spec §6, ADM-05): kind, name (the customers
  * see it in the cart and the order), coupon code, percent or fixed amount in shekels, target (whole order,
  * categories with their sub-categories, or products via the related-products search), minimum, dates in Israel
- * time, usage limit (coupons) and active. Errors show under their field and the first one gets the focus.
+ * time, usage limit (coupons), the welcome benefit (automatic only) and active. Errors show under their field and the first one gets the focus.
  */
 @Component({
   selector: 'hga-promotion-form-page',
@@ -160,6 +160,10 @@ export class PromotionFormPage {
 
   protected setActive(active: boolean) {
     this.form.update((f) => ({ ...f, active }));
+  }
+
+  protected setWelcome(isWelcome: boolean) {
+    this.form.update((f) => ({ ...f, isWelcome }));
   }
 
   /** The code as it will be saved, once the field is left. */

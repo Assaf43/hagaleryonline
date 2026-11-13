@@ -148,6 +148,13 @@ describe('admin promotions screens', () => {
       confirm.mockRestore();
     });
 
+    it('marks the welcome benefit with a chip', async () => {
+      const { el } = await list([{ ...base, isWelcome: true }, COUPON]);
+      const [welcome, coupon] = [...el.querySelectorAll('.promotion')];
+      expect(welcome.querySelector('.welcome-chip')?.textContent?.trim()).toBe('הטבת הצטרפות');
+      expect(coupon.querySelector('.welcome-chip')).toBeNull();
+    });
+
     it('shows an empty state and a link to a new promotion', async () => {
       const { el } = await list([]);
       expect(el.querySelector('.empty')?.textContent).toContain('אין מבצעים עדיין');
@@ -226,6 +233,7 @@ describe('admin promotions screens', () => {
         endsAt: '2026-03-27T20:59:59.999Z',
         usageLimit: 20,
         active: true,
+        isWelcome: false,
       });
       req.flush({ ...COUPON, id: 8 });
       await settle(fixture);
@@ -297,6 +305,52 @@ describe('admin promotions screens', () => {
       el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
       fixture.detectChanges();
       expect(el().textContent).toContain('חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.');
+    });
+
+    describe('welcome benefit toggle (decision 79)', () => {
+      const welcomeBox = () => el().querySelector<HTMLInputElement>('#promo-welcome');
+      const LABEL = 'הטבת הצטרפות (חלה אוטומטית על ההזמנה הראשונה של לקוח רשום)';
+
+      it('is offered only for an automatic promotion, unchecked, with its label', async () => {
+        await open('new');
+        expect(welcomeBox()).toBeNull();
+        el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
+        fixture.detectChanges();
+        expect(welcomeBox()?.type).toBe('checkbox');
+        expect(welcomeBox()?.checked).toBe(false);
+        expect(el().querySelector("label[for='promo-welcome']")?.textContent?.trim()).toBe(LABEL);
+        // Its hint is read with it.
+        const hint = document.getElementById(welcomeBox()!.getAttribute('aria-describedby') ?? '');
+        expect(hint?.textContent).toContain('אחד');
+      });
+
+      it('saves the welcome benefit of an automatic promotion', async () => {
+        await open('new');
+        el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
+        fixture.detectChanges();
+        type('promo-name', 'הטבת הצטרפות 10%');
+        type('promo-value', '10');
+        welcomeBox()!.click();
+        fixture.detectChanges();
+        await save();
+        const req = http.expectOne({ method: 'POST', url: '/api/admin/promotions' });
+        expect(req.request.body).toMatchObject({ kind: 'automatic', isWelcome: true });
+        req.flush({ ...base, id: 9, isWelcome: true });
+        await settle(fixture);
+      });
+
+      it('shows a saved welcome benefit checked, and the API refusal in Hebrew', async () => {
+        await open('1', { ...base, isWelcome: true });
+        expect(welcomeBox()?.checked).toBe(true);
+        await save();
+        const req = http.expectOne({ method: 'PUT', url: '/api/admin/promotions/1' });
+        expect(req.request.body).toMatchObject({ isWelcome: true });
+        req.flush({ statusCode: 400, code: 'invalid', field: 'isWelcome' }, { status: 400, statusText: 'Bad Request' });
+        await settle(fixture);
+        expect(el().querySelector('.form-error[role=alert]')?.textContent?.trim()).toBe(
+          'הטבת הצטרפות אפשרית רק במבצע אוטומטי.',
+        );
+      });
     });
 
     it('date fields stay between 2000 and 2100', async () => {

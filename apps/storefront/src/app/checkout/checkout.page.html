@@ -1,5 +1,16 @@
 <section class="container page">
-  <h1>מעבר לתשלום</h1>
+  <h1 tabindex="-1">מעבר לתשלום</h1>
+
+  <!-- Browser only: the shopper is known after the session read (spec §6.4). -->
+  @if (shopper() === 'guest' && bannerText() && !bannerClosed()) {
+    <aside class="signin-banner" aria-labelledby="chk-signin-text">
+      <p id="chk-signin-text" class="banner-text">{{ bannerText() }}</p>
+      <div class="banner-actions">
+        <a class="btn btn-primary" routerLink="/account" [queryParams]="{ next: '/checkout' }">התחברות</a>
+        <button type="button" class="btn btn-secondary" (click)="continueAsGuest()">המשך כאורח</button>
+      </div>
+    </aside>
+  }
 
   @if (loading()) {
     <p class="state">טוען…</p>
@@ -73,6 +84,44 @@
 
         <section class="block" aria-labelledby="chk-address">
           <h2 id="chk-address">כתובת ומסירה</h2>
+          @if (savedAddresses().length) {
+            <fieldset class="saved-addresses">
+              <legend class="field-label">כתובת שמורה</legend>
+              @for (a of savedAddresses(); track a.id) {
+                <label class="saved-address" [class.selected]="addressChoice() === a.id">
+                  <input
+                    type="radio"
+                    name="savedAddress"
+                    [value]="a.id"
+                    [checked]="addressChoice() === a.id"
+                    (change)="pickAddress(a.id)"
+                  />
+                  <span
+                    >{{ a.street }} <bdi>{{ a.houseNumber }}</bdi>
+                    @if (a.apartment) {
+                      <span
+                        >, דירה <bdi>{{ a.apartment }}</bdi></span
+                      >
+                    }
+                    <span>, {{ a.localityNameHe }}</span>
+                    @if (a.isDefault) {
+                      <span class="badge">ברירת מחדל</span>
+                    }
+                  </span>
+                </label>
+              }
+              <label class="saved-address" [class.selected]="addressChoice() === otherAddress">
+                <input
+                  type="radio"
+                  name="savedAddress"
+                  [value]="otherAddress"
+                  [checked]="addressChoice() === otherAddress"
+                  (change)="pickAddress(otherAddress)"
+                />
+                <span>כתובת אחרת</span>
+              </label>
+            </fieldset>
+          }
           <div class="grid">
             <hg-locality-field
               class="field wide"
@@ -314,6 +363,20 @@
             <p class="field-error" [id]="ids['acceptTerms'] + '-error'">{{ e }}</p>
           }
         </div>
+
+        @if (shopper() === 'guest') {
+          <div class="field">
+            <span class="check">
+              <input
+                type="checkbox"
+                [id]="marketingId"
+                [checked]="form().marketingConsent"
+                (change)="setMarketing($event)"
+              />
+              <label [for]="marketingId">אני מאשר/ת קבלת עדכונים ומבצעים במייל</label>
+            </span>
+          </div>
+        }
 
         <div class="form-error" role="alert">
           @if (formError(); as fe) {

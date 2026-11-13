@@ -108,6 +108,24 @@ export interface CheckoutPrefill {
   addresses: CustomerAddressView[];
 }
 
+/**
+ * "My order status" (spec §6.5, SHP-05): `POST /api/orders/lookup` with the order number and the phone it was placed
+ * with (any typing: "050-…", "+972 50…"). A match answers the order page link (the order's own token); anything else,
+ * whether the number is unknown, the phone wrong or the input malformed, is the same 404 `not_found` with
+ * `ORDER_LOOKUP_MISS_HE`. Throttled per IP and per order number (429 `too_many_requests` with `Retry-After`).
+ */
+export interface OrderLookupRequest {
+  number: string;
+  phone: string;
+}
+
+export interface OrderLookupResponse {
+  /** `/order/{number}?t={token}` (storefront, relative). */
+  url: string;
+}
+
+export const ORDER_LOOKUP_MISS_HE = 'לא מצאנו הזמנה עם הפרטים האלה';
+
 /** Where to send the customer to pay (the provider's page). Also the answer of POST /api/orders/:number/retry-payment. */
 export interface CheckoutResponse {
   redirectUrl: string;

@@ -27,6 +27,14 @@ export function normalizeCouponCode(code: string): string {
 export type CouponProblem =
   'unknown' | 'not_started' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
 
+/**
+ * `GET /api/promotions/welcome` (public, spec §6.4): the Hebrew name of the active welcome promotion (active and
+ * inside its dates), or `null` when there is none. The checkout's sign-in banner shows it.
+ */
+export interface WelcomeBenefit {
+  labelHe: string;
+}
+
 /** Hebrew of the retry-payment 409 `promotion_ended`: the order's promotion or coupon is no longer valid. */
 export const PROMOTION_ENDED_MESSAGE_HE = 'המבצע או הקופון של ההזמנה כבר לא בתוקף. חזרו לסל כדי להזמין מחדש.';
 

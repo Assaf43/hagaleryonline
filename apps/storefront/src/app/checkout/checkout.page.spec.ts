@@ -1,8 +1,17 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
-import type { CartView, ShippingQuote } from '@hg/models';
+import type {
+  CartView,
+  CheckoutPrefill,
+  CustomerAddressView,
+  CustomerMe,
+  ShippingQuote,
+  WelcomeBenefit,
+} from '@hg/models';
+import { customerMe } from '../account/account.testing';
 import { CartStore } from '../core/cart.store';
 import { cartLine, cartView } from '../core/cart.testing';
 import { PageMeta } from '../core/page-meta';
@@ -48,7 +57,16 @@ describe('CheckoutPage', () => {
   };
   const quoteRequests = () => http.match((r) => r.url === '/api/shipping/quote');
 
-  async function setup(view: CartView = cartView([cartLine(1, 2, 150000)])) {
+  /** Who checks out: a guest (`me: null`, with or without a welcome benefit) or a customer with the prefill. */
+  interface Session {
+    me?: CustomerMe | null;
+    welcome?: WelcomeBenefit | null;
+    /** The welcome read fails (500). */
+    welcomeFails?: boolean;
+    prefill?: CheckoutPrefill | null;
+  }
+
+  async function setup(view: CartView = cartView([cartLine(1, 2, 150000)]), session: Session = {}) {
     vi.useFakeTimers();
     assign = vi.fn();
     TestBed.configureTestingModule({
@@ -66,6 +84,14 @@ describe('CheckoutPage', () => {
     document.body.appendChild(fixture.nativeElement);
     fixture.detectChanges();
     http.expectOne('/api/cart').flush(view);
+    // The session is read in the browser after the first render: the banner (guest) or the prefill (customer).
+    const me = session.me ?? null;
+    http.expectOne('/api/account/me').flush(me);
+    await render();
+    if (me) http.expectOne('/api/checkout/prefill').flush(session.prefill ?? null);
+    else if (session.welcomeFails)
+      http.expectOne('/api/promotions/welcome').flush('down', { status: 500, statusText: 'Server Error' });
+    else http.expectOne('/api/promotions/welcome').flush(session.welcome ?? null);
     await render();
   }
 
@@ -267,6 +293,8 @@ describe('CheckoutPage', () => {
       },
       method: 'full_service',
       acceptTerms: true,
+      // Never pre-checked (CLAUDE.md §4.4).
+      marketingConsent: false,
       // 2 × 1,500 + full service 550, as shown in the summary.
       expectedTotal: 355000,
     });
@@ -479,5 +507,263 @@ describe('CheckoutPage', () => {
     await render();
     expect(q<HTMLElement>('.form-error').textContent).toContain('לא הצלחנו לפתוח את עמוד התשלום');
     expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+  });
+
+  describe('signed out (spec §6.4)', () => {
+    const banner = () => el().querySelector<HTMLElement>('.signin-banner');
+
+    it('invites to sign in with the welcome benefit, linking to sign-in and back to checkout', async () => {
+      await setup(undefined, { welcome: { labelHe: '10% הנחה על ההזמנה הראשונה' } });
+      expect(banner()?.querySelector('p')?.textContent?.trim()).toBe(
+        'התחברו או הירשמו וקבלו 10% הנחה על ההזמנה הראשונה',
+      );
+      const link = banner()!.querySelector<HTMLAnchorElement>('a')!;
+      expect(link.textContent?.trim()).toBe('התחברות');
+      expect(link.getAttribute('href')).toBe('/account?next=%2Fcheckout');
+      const guest = banner()!.querySelector<HTMLButtonElement>('button')!;
+      expect(guest.type).toBe('button');
+      expect(guest.textContent?.trim()).toBe('המשך כאורח');
+      // The banner is named by its text for screen readers.
+      expect(banner()!.getAttribute('aria-labelledby')).toBe(banner()!.querySelector('p')!.id);
+    });
+
+    it('without a welcome benefit invites to an account', async () => {
+      await setup();
+      expect(banner()?.querySelector('p')?.textContent?.trim()).toBe('התחברו או הירשמו לחשבון');
+    });
+
+    it('a failed welcome read still shows the plain invitation', async () => {
+      await setup(undefined, { welcomeFails: true });
+      expect(banner()?.querySelector('p')?.textContent?.trim()).toBe('התחברו או הירשמו לחשבון');
+    });
+
+    it('"continue as a guest" closes the banner and moves to the first field; the guest form keeps every field', async () => {
+      await setup();
+      banner()!.querySelector<HTMLButtonElement>('button')!.click();
+      await render();
+      expect(banner()).toBeNull();
+      expect(document.activeElement).toBe(q('#chk-fullName'));
+      for (const id of [
+        'chk-fullName',
+        'chk-phone',
+        'chk-email',
+        'chk-locality',
+        'chk-street',
+        'chk-houseNumber',
+        'chk-apartment',
+        'chk-floor',
+        'chk-hasElevator',
+        'chk-notes',
+      ])
+        expect(el().querySelector(`#${id}`), id).not.toBeNull();
+      // No saved addresses for a guest.
+      expect(el().querySelector('.saved-addresses')).toBeNull();
+    });
+
+    it('has a marketing consent checkbox, unchecked, and sends it with the order', async () => {
+      await setup();
+      const consent = q('#chk-marketing');
+      expect(consent.type).toBe('checkbox');
+      expect(consent.checked).toBe(false);
+      expect(q<HTMLLabelElement>('label[for="chk-marketing"]').textContent?.trim()).toBe(
+        'אני מאשר/ת קבלת עדכונים ומבצעים במייל',
+      );
+      await fillValid();
+      consent.click();
+      fixture.detectChanges();
+      await submit();
+      const req = http.expectOne('/api/checkout');
+      expect(req.request.body).toMatchObject({ marketingConsent: true });
+      req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+      await render();
+    });
+  });
+
+  describe('signed in (spec §6.4)', () => {
+    const address = (id: string, over: Partial<CustomerAddressView> = {}): CustomerAddressView => ({
+      id,
+      localityId: 5000,
+      localityNameHe: 'תל אביב - יפו',
+      street: 'הרצל',
+      houseNumber: '12',
+      apartment: '5',
+      floor: 3,
+      hasElevator: true,
+      notes: 'קוד בכניסה 1234',
+      isDefault: false,
+      ...over,
+    });
+    const HOME = address('a1', { isDefault: true });
+    const WORK = address('a2', {
+      localityId: 3000,
+      localityNameHe: 'ירושלים',
+      street: 'יפו',
+      houseNumber: '97',
+      apartment: null,
+      floor: 0,
+      hasElevator: false,
+      notes: null,
+    });
+    const prefill = (addresses = [HOME, WORK]): CheckoutPrefill => ({
+      contact: { fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' },
+      addresses,
+    });
+    const radios = () => [...el().querySelectorAll<HTMLInputElement>('.saved-addresses input[type="radio"]')];
+
+    it('shows no banner and no consent box, fills the contact and the default address and quotes it', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill() });
+      expect(el().querySelector('.signin-banner')).toBeNull();
+      expect(el().querySelector('#chk-marketing')).toBeNull();
+      http.expectNone('/api/promotions/welcome');
+      expect(q('#chk-fullName').value).toBe('דנה כהן');
+      expect(q('#chk-phone').value).toBe('0501234567');
+      expect(q('#chk-email').value).toBe('dana@example.com');
+      expect(q('#chk-locality').value).toBe('תל אביב - יפו');
+      expect(q('#chk-street').value).toBe('הרצל');
+      expect(q('#chk-houseNumber').value).toBe('12');
+      expect(q('#chk-apartment').value).toBe('5');
+      expect(q('#chk-floor').value).toBe('3');
+      expect(q('#chk-hasElevator').checked).toBe(true);
+      expect(q<HTMLTextAreaElement>('#chk-notes').value).toBe('קוד בכניסה 1234');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(http.expectOne('/api/shipping/quote').request.body).toEqual({
+        localityId: 5000,
+        floor: 3,
+        hasElevator: true,
+      });
+    });
+
+    it('lists the saved addresses as a radio group (default checked) plus "another address"', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill() });
+      await vi.advanceTimersByTimeAsync(300);
+      http.expectOne('/api/shipping/quote').flush(QUOTE);
+      await render();
+      const group = q<HTMLFieldSetElement>('fieldset.saved-addresses');
+      expect(group.querySelector('legend')?.textContent?.trim()).toBe('כתובת שמורה');
+      expect(radios()).toHaveLength(3);
+      expect(radios().map((r) => r.checked)).toEqual([true, false, false]);
+      const labels = [...group.querySelectorAll('label')].map((l) => l.textContent?.replace(/\s+/g, ' ').trim());
+      expect(labels[0]).toContain('הרצל 12, דירה 5, תל אביב - יפו');
+      expect(labels[0]).toContain('ברירת מחדל');
+      expect(labels[1]).toContain('יפו 97, ירושלים');
+      expect(labels[2]).toBe('כתובת אחרת');
+      // House numbers are isolated from the Hebrew around them.
+      expect(group.querySelector('label bdi')?.textContent).toBe('12');
+      // Each radio is labelled by its own label (clicking the text picks it).
+      expect(radios().every((r) => r.closest('label') !== null && r.name === 'savedAddress')).toBe(true);
+    });
+
+    it('picking another saved address fills its fields and requotes; "another address" empties them', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill() });
+      await vi.advanceTimersByTimeAsync(300);
+      http.expectOne('/api/shipping/quote').flush(QUOTE);
+      await render();
+
+      radios()[1].click();
+      await render();
+      expect(q('#chk-locality').value).toBe('ירושלים');
+      expect(q('#chk-street').value).toBe('יפו');
+      expect(q('#chk-houseNumber').value).toBe('97');
+      expect(q('#chk-apartment').value).toBe('');
+      expect(q('#chk-floor').value).toBe('0');
+      expect(q('#chk-hasElevator').checked).toBe(false);
+      await vi.advanceTimersByTimeAsync(300);
+      const requote = http.expectOne('/api/shipping/quote');
+      expect(requote.request.body).toEqual({ localityId: 3000, floor: 0, hasElevator: false });
+      requote.flush(QUOTE);
+      await render();
+
+      radios()[2].click();
+      await render();
+      expect(q('#chk-locality').value).toBe('');
+      expect(q('#chk-street').value).toBe('');
+      expect(q('#chk-floor').value).toBe('');
+      // The contact stays.
+      expect(q('#chk-fullName').value).toBe('דנה כהן');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(quoteRequests()).toHaveLength(0);
+    });
+
+    it('editing an address field leaves the saved address ("another address" is checked)', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill() });
+      await vi.advanceTimersByTimeAsync(300);
+      http.expectOne('/api/shipping/quote').flush(QUOTE);
+      await render();
+      fill('chk-apartment', '7');
+      expect(radios().map((r) => r.checked)).toEqual([false, false, true]);
+      expect(q('#chk-street').value).toBe('הרצל');
+    });
+
+    it('submits the prefilled order with the account contact and no marketing consent', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill([HOME]) });
+      await vi.advanceTimersByTimeAsync(300);
+      http.expectOne('/api/shipping/quote').flush(QUOTE);
+      await render();
+      q('input[name="method"][value="curbside"]').click();
+      q('#chk-acceptTerms').click();
+      fixture.detectChanges();
+      await submit();
+      const req = http.expectOne('/api/checkout');
+      expect(req.request.body).toMatchObject({
+        contact: { fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' },
+        address: { localityId: 5000, street: 'הרצל', houseNumber: '12', apartment: '5', floor: 3, hasElevator: true },
+        method: 'curbside',
+        marketingConsent: false,
+      });
+      req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+      await render();
+    });
+
+    it('without saved addresses fills only the contact', async () => {
+      await setup(undefined, { me: customerMe(), prefill: prefill([]) });
+      expect(q('#chk-fullName').value).toBe('דנה כהן');
+      expect(q('#chk-street').value).toBe('');
+      expect(el().querySelector('.saved-addresses')).toBeNull();
+    });
+
+    it('a session that ended (prefill 204) is treated as a guest', async () => {
+      vi.useFakeTimers();
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          { provide: ExternalNavigation, useValue: { assign: vi.fn() } },
+        ],
+      });
+      http = TestBed.inject(HttpTestingController);
+      fixture = TestBed.createComponent(CheckoutPage);
+      fixture.detectChanges();
+      http.expectOne('/api/cart').flush(cartView([cartLine(1, 2, 150000)]));
+      http.expectOne('/api/account/me').flush(customerMe());
+      await render();
+      http.expectOne('/api/checkout/prefill').flush(null, { status: 204, statusText: 'No Content' });
+      await render();
+      http.expectOne('/api/promotions/welcome').flush(null);
+      await render();
+      expect(el().querySelector('.signin-banner')).not.toBeNull();
+      expect(q('#chk-fullName').value).toBe('');
+    });
+  });
+
+  it('the server render reads no session and shows no banner', async () => {
+    vi.useFakeTimers();
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: PLATFORM_ID, useValue: 'server' },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(CheckoutPage);
+    fixture.detectChanges();
+    await render();
+    http.expectNone('/api/account/me');
+    http.expectNone('/api/promotions/welcome');
+    http.expectNone('/api/checkout/prefill');
+    expect(el().querySelector('.signin-banner')).toBeNull();
+    expect(el().querySelector('h1')?.textContent).toContain('מעבר לתשלום');
   });
 });

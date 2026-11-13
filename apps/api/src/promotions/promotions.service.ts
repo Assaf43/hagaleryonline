@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { CartDiscount, DiscountType, PromotionKind, PromotionTarget } from '@hg/models';
+import type { CartDiscount, DiscountType, PromotionKind, PromotionTarget, WelcomeBenefit } from '@hg/models';
 import type { ComputedLine } from '../cart/cart-lines.js';
 import {
   OrderStatus,
@@ -152,6 +152,24 @@ export class PromotionsService {
       orderBy: { id: 'asc' },
     });
     return this.withUses(db, rows.map(toRule), exclude);
+  }
+
+  /**
+   * The active welcome promotion inside its dates, as the checkout banner names it (`labelHe` = its name, as in the
+   * cart's discount line); null when there is none. Whether a given customer would get it is not checked here.
+   */
+  async welcomeBenefit(now = new Date()): Promise<WelcomeBenefit | null> {
+    const row = await this.prisma.promotion.findFirst({
+      where: {
+        kind: DbPromotionKind.AUTOMATIC,
+        active: true,
+        isWelcome: true,
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+      },
+      select: { name: true },
+    });
+    return row ? { labelHe: row.name } : null;
   }
 
   /** The signed-in customer's eligibility for the welcome benefit; null for a guest. */

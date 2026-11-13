@@ -102,6 +102,7 @@ describe('promotion form', () => {
       endsAt: '2026-12-31T21:59:59.999Z',
       usageLimit: 100,
       active: true,
+      isWelcome: false,
     });
     expect(promotionInput(valid({ code: ' sale‏10 ' })).input?.code).toBe('SALE10');
     // Whole shekels: "150" and "150.00" are fine.
@@ -117,6 +118,17 @@ describe('promotion form', () => {
       minSubtotal: 0,
       usageLimit: null,
     });
+  });
+
+  it('the welcome benefit: read from the promotion, sent only for an automatic one (decision 79)', () => {
+    expect(emptyForm().isWelcome).toBe(false);
+    expect(toForm({ ...COUPON, kind: 'automatic', code: null, isWelcome: true }).isWelcome).toBe(true);
+    expect(promotionInput(valid({ kind: 'automatic', isWelcome: true })).input).toMatchObject({
+      kind: 'automatic',
+      isWelcome: true,
+    });
+    // A coupon is never a welcome benefit, whatever the hidden box says.
+    expect(promotionInput(valid({ kind: 'coupon', isWelcome: true })).input?.isWelcome).toBe(false);
   });
 
   it('automatic promotions have no code and no usage limit', () => {

@@ -34,6 +34,8 @@ export interface PromotionForm {
   endTime: string;
   usageLimit: string;
   active: boolean;
+  /** "הטבת הצטרפות" (decision 79): only for an automatic promotion. */
+  isWelcome: boolean;
 }
 
 /** The form's fields that can show an error, in the order they appear (the first one gets the focus). */
@@ -115,6 +117,7 @@ export function emptyForm(): PromotionForm {
     endTime: '',
     usageLimit: '',
     active: true,
+    isWelcome: false,
   };
 }
 
@@ -146,6 +149,7 @@ export function toForm(p: AdminPromotion): PromotionForm {
     endTime: end.time,
     usageLimit: p.usageLimit === null ? '' : String(p.usageLimit),
     active: p.active,
+    isWelcome: p.isWelcome,
   };
 }
 
@@ -216,6 +220,8 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
       endsAt,
       usageLimit,
       active: f.active,
+      // Always sent: a coupon is never one (the API refuses it), and saving it clears it on any other promotion.
+      isWelcome: f.kind === 'automatic' && f.isWelcome,
     },
     errors: {},
   };
