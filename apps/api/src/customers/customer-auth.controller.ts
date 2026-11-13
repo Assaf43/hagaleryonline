@@ -13,11 +13,12 @@ import {
   UseFilters,
   UseGuards,
   UseInterceptors,
+  createParamDecorator,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import {
   CHECKOUT_LIMITS,
   type OtpSentResponse,
@@ -25,14 +26,19 @@ import {
   type SignedInResponse,
   type SignUpResponse,
 } from '@hg/models';
-import type { RequestMeta } from '../auth/auth.service.js';
-import { ClientMeta, StorefrontOriginGuard } from '../auth/guards.js';
+import { StorefrontOriginGuard } from '../auth/guards.js';
 import { checkCustomerPassword } from '../auth/passwords.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { AccountError, badField, weakPassword } from './account-errors.js';
 import { normalizeEmail, normalizePhone, normalizeTarget } from './contact-normalize.js';
-import { CustomerAuthService, toMe, type NewCustomer, type SignedIn } from './customer-auth.service.js';
-import type { ResolvedCustomer } from './customer-session.service.js';
+import {
+  CustomerAuthService,
+  toMe,
+  type ClientInfo,
+  type NewCustomer,
+  type SignedIn,
+} from './customer-auth.service.js';
+import { CUSTOMER_COOKIE, type ResolvedCustomer } from './customer-session.service.js';
 import {
   CurrentCustomer,
   CustomerCookie,
@@ -65,6 +71,16 @@ class AccountErrorFilter implements ExceptionFilter {
 
 const SENT: OtpSentResponse = { sent: true };
 
+/** IP, user agent and the incoming `hg_customer` cookie (a new sign-in ends that session). */
+const Client = createParamDecorator((_: unknown, ctx: ExecutionContext): ClientInfo => {
+  const req = ctx.switchToHttp().getRequest<Request>();
+  return {
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    previousToken: req.cookies?.[CUSTOMER_COOKIE] as string | undefined,
+  };
+});
+
 /**
  * Customer accounts (spec §6.1, §6.2, ACC-01, NFR-12): sign-up, sign-in by password or one-time code, sign-out, the
  * current customer, password and contact changes, forgotten password. Every write needs the storefront origin.
@@ -83,12 +99,12 @@ export class CustomerAuthController {
 
   @Post('otp/request')
   @HttpCode(HttpStatus.ACCEPTED)
-  async requestCode(@Body() body: unknown, @ClientMeta() client: RequestMeta): Promise<OtpSentResponse> {
+  async requestCode(@Body() body: unknown, @Client() client: ClientInfo): Promise<OtpSentResponse> {
     const b = record(body);
     const channel = b.channel;
     if (channel !== 'sms' && channel !== 'email') throw badField('channel');
     const purpose = b.purpose;
-    if (purpose !== 'sign_in' && (purpose !== 'sign_up' || channel !== 'sms')) throw badField('purpose');
+    if (purpose !== 'sign_in' && purpose !== 'sign_up') throw badField('purpose');
     const target = channel === 'sms' ? normalizePhone(b.target) : normalizeEmail(b.target);
     if (!target) throw badField('target');
     await this.auth.requestCode(target, channel, purpose, client.ip);
@@ -100,23 +116,19 @@ export class CustomerAuthController {
   @Throttled('signin')
   async verifyCode(
     @Body() body: unknown,
-    @ClientMeta() client: RequestMeta,
+    @Client() client: ClientInfo,
     @Res({ passthrough: true }) res: Response,
   ): Promise<OtpVerifyResponse> {
     const b = record(body);
     const code = codeOf(b.code);
     const purpose = b.purpose ?? 'sign_in';
-    if (purpose === 'sign_up') {
-      const phone = normalizePhone(b.target);
-      if (!phone) throw badField('target');
-      const details = parseDetails({ ...b, phone });
-      return this.signIn(res, await this.auth.verifySignUpCode(details, code, client));
-    }
-    if (purpose !== 'sign_in') throw badField('purpose');
+    if (purpose !== 'sign_in' && purpose !== 'sign_up') throw badField('purpose');
     const parsed = normalizeTarget(b.target);
     if (!parsed) throw badField('target');
-    const result = await this.auth.verifySignInCode(parsed.target, parsed.channel, code, client);
-    if ('signUpToken' in result) return { needsSignUp: true, signUpToken: result.signUpToken };
+    const token = optionalToken(b.signUpToken);
+    const result = await this.auth.verifyCode(parsed.target, parsed.channel, purpose, code, token, client);
+    if ('signUpToken' in result)
+      return { needsSignUp: true, signUpToken: result.signUpToken, verified: result.verified };
     return this.signIn(res, result);
   }
 
@@ -124,17 +136,17 @@ export class CustomerAuthController {
   @HttpCode(HttpStatus.OK)
   async signUp(
     @Body() body: unknown,
-    @ClientMeta() client: RequestMeta,
+    @Client() client: ClientInfo,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SignUpResponse> {
     const b = record(body);
     const details = parseDetails(b);
-    if (b.signUpToken === undefined || b.signUpToken === null || b.signUpToken === '') {
+    const token = optionalToken(b.signUpToken);
+    if (token === undefined) {
       await this.auth.startSignUp(details, client.ip);
       return { verify: true };
     }
-    if (typeof b.signUpToken !== 'string' || b.signUpToken.length > 128) throw badField('signUpToken');
-    return this.signIn(res, await this.auth.signUpWithTicket(details, b.signUpToken, client));
+    return this.signIn(res, await this.auth.signUpWithTicket(details, token, client));
   }
 
   @Post('sign-in')
@@ -142,7 +154,7 @@ export class CustomerAuthController {
   @Throttled('signin')
   async signInWithPassword(
     @Body() body: unknown,
-    @ClientMeta() client: RequestMeta,
+    @Client() client: ClientInfo,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SignedInResponse> {
     const b = record(body);
@@ -186,7 +198,7 @@ export class CustomerAuthController {
   async changeContact(
     @CurrentCustomer() current: ResolvedCustomer,
     @Body() body: unknown,
-    @ClientMeta() client: RequestMeta,
+    @Client() client: ClientInfo,
   ): Promise<OtpSentResponse> {
     const b = record(body);
     const kind = kindOf(b.kind);
@@ -203,12 +215,12 @@ export class CustomerAuthController {
   async confirmContact(@CurrentCustomer() current: ResolvedCustomer, @Body() body: unknown): Promise<SignedInResponse> {
     const b = record(body);
     const kind = kindOf(b.kind);
-    return { customer: await this.auth.confirmContactChange(current.customer, kind, codeOf(b.code)) };
+    return { customer: await this.auth.confirmContactChange(current, kind, codeOf(b.code)) };
   }
 
   @Post('password/reset/request')
   @HttpCode(HttpStatus.ACCEPTED)
-  async requestReset(@Body() body: unknown, @ClientMeta() client: RequestMeta): Promise<OtpSentResponse> {
+  async requestReset(@Body() body: unknown, @Client() client: ClientInfo): Promise<OtpSentResponse> {
     const email = normalizeEmail(record(body).email);
     if (!email) throw badField('email');
     await this.auth.requestPasswordReset(email, client.ip);
@@ -220,7 +232,7 @@ export class CustomerAuthController {
   @Throttled('signin')
   async reset(
     @Body() body: unknown,
-    @ClientMeta() client: RequestMeta,
+    @Client() client: ClientInfo,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SignedInResponse> {
     const b = record(body);
@@ -242,6 +254,13 @@ function record(body: unknown): BodyRecord {
 }
 
 /** Any string up to 16 characters; the code check itself refuses anything but 6 digits. */
+/** An optional `signUpToken` (one or two parts joined by '.'); 400 when it is not a short string. */
+function optionalToken(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || value.length > 160) throw badField('signUpToken');
+  return value;
+}
+
 function codeOf(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 16) throw badField('code');
   return value.trim();

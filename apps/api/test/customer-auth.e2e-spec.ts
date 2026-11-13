@@ -59,19 +59,35 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
   const tokenOf = (cookie: string) => decodeURIComponent(cookie.split(';')[0].slice(COOKIE.length + 1));
   const sha = (value: string) => createHash('sha256').update(value).digest('hex');
 
-  /** Signs up by phone code; returns the signed-in browser. */
-  const signUp = async (opts: { password?: string; marketingConsent?: boolean } = {}) => {
-    const phone = newPhone();
+  /** Verifies the sign-up codes sent to the phone and the e-mail; returns the ticket that covers both. */
+  const verifyBoth = async (b: ReturnType<typeof browser>, phone: string, email: string) => {
+    const first = await b.post('otp/verify', { target: phone, code: smsCode(phone), purpose: 'sign_up' }).expect(200);
+    const second = await b
+      .post('otp/verify', {
+        target: email,
+        code: emailCode(email),
+        purpose: 'sign_up',
+        signUpToken: first.body.signUpToken,
+      })
+      .expect(200);
+    return second.body.signUpToken as string;
+  };
+
+  /** Signs up with both codes; returns the signed-in browser. */
+  const signUp = async (opts: { password?: string; marketingConsent?: boolean; phone?: string } = {}) => {
+    const phone = opts.phone ?? newPhone();
     const email = newEmail();
     const b = browser();
     const details = {
       fullName: 'דנה לוי',
+      phone,
       email,
       password: opts.password,
       marketingConsent: opts.marketingConsent ?? false,
     };
-    await b.post('sign-up', { ...details, phone }).expect(200, { verify: true });
-    await b.post('otp/verify', { target: phone, code: smsCode(phone), purpose: 'sign_up', ...details }).expect(200);
+    await b.post('sign-up', details).expect(200, { verify: true });
+    const signUpToken = await verifyBoth(b, phone, email);
+    await b.post('sign-up', { ...details, signUpToken }).expect(200);
     return { b, phone, email };
   };
 
@@ -96,26 +112,54 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
     await app.close();
   });
 
-  describe('sign-up', () => {
-    it('by phone code: a code goes to the phone, the account is created only when it is entered', async () => {
+  describe('sign-up (decision 80: both phone and e-mail verified by a code)', () => {
+    it('two codes: one to the phone, one to the e-mail; the account is created only when both are entered', async () => {
       const phone = newPhone();
       const email = newEmail();
       const b = browser();
-      const details = { fullName: '  דנה לוי ', email, password: 'correct horse 1', marketingConsent: true };
-      await b.post('sign-up', { ...details, phone: `+972-${phone.slice(1)}` }).expect(200, { verify: true });
+      const details = {
+        fullName: '  דנה לוי ',
+        phone: `+972-${phone.slice(1)}`,
+        email,
+        password: 'correct horse 1',
+        marketingConsent: true,
+      };
+      await b.post('sign-up', details).expect(200, { verify: true });
       expect(await prisma.customer.count({ where: { phone } })).toBe(0);
-      const code = smsCode(phone);
+      const code = smsCode(phone)!;
       expect(code).toMatch(/^\d{6}$/);
+      expect(emailCode(email)).toMatch(/^\d{6}$/);
 
-      await b.post('otp/verify', { target: phone, code: wrongOf(code!), purpose: 'sign_up', ...details }).expect(401);
-      const res = await b.post('otp/verify', { target: phone, code, purpose: 'sign_up', ...details }).expect(200);
+      await b.post('otp/verify', { target: phone, code: wrongOf(code), purpose: 'sign_up' }).expect(401);
+      const first = await b.post('otp/verify', { target: phone, code, purpose: 'sign_up' }).expect(200);
+      expect(first.body).toMatchObject({ needsSignUp: true, verified: { phone, email: null } });
+      expect(customerCookie(first)).toBeUndefined();
+
+      // Only the phone is verified so far.
+      await b
+        .post('sign-up', { ...details, signUpToken: first.body.signUpToken })
+        .expect(400)
+        .expect((r) => expect(r.body).toMatchObject({ code: 'not_verified', field: 'email' }));
+
+      const second = await b
+        .post('otp/verify', {
+          target: email,
+          code: emailCode(email),
+          purpose: 'sign_up',
+          signUpToken: first.body.signUpToken,
+        })
+        .expect(200);
+      expect(second.body).toMatchObject({ needsSignUp: true, verified: { phone, email } });
+      const signUpToken = second.body.signUpToken as string;
+
+      const res = await b.post('sign-up', { ...details, signUpToken }).expect(200);
       const me = (res.body as { customer: CustomerMe }).customer;
       expect(me).toMatchObject({
         fullName: 'דנה לוי',
         phone,
         email,
         phoneVerified: true,
-        emailVerified: false,
+        emailVerified: true,
         hasPassword: true,
         marketingConsent: true,
       });
@@ -126,6 +170,11 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       expect(row.passwordHash).toMatch(/^\$argon2id\$/);
       expect(row.marketingConsentSource).toBe(MarketingConsentSource.SIGNUP);
       expect(row.marketingConsentAt).not.toBeNull();
+
+      await browser()
+        .post('sign-up', { ...details, email: newEmail(), signUpToken })
+        .expect(400)
+        .expect((r) => expect(r.body.code).toBe('invalid_token'));
     });
 
     it('without consent stores no consent time', async () => {
@@ -148,6 +197,19 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
         .expect((r) => expect(r.body.code).toBe('email_taken'));
     });
 
+    it('repeated 409s count against the per-IP code limit and reach 429', async () => {
+      const { phone } = await signUp();
+      throttle.setLimit('otp', 3);
+      try {
+        const b = browser();
+        for (let i = 0; i < 3; i++)
+          await b.post('sign-up', { fullName: 'אחר', phone, email: newEmail(), marketingConsent: false }).expect(409);
+        await b.post('sign-up', { fullName: 'אחר', phone, email: newEmail(), marketingConsent: false }).expect(429);
+      } finally {
+        throttle.setLimit('otp', 100_000);
+      }
+    });
+
     it('refuses a bad phone, e-mail, name or password with 400', async () => {
       const b = browser();
       const ok = { fullName: 'דנה לוי', phone: newPhone(), email: newEmail(), marketingConsent: false };
@@ -163,73 +225,83 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       }
     });
 
-    it('a code entered for an unknown phone leads to sign-up with a single-use ticket', async () => {
+    it('a sign-in code for an unknown phone continues to sign-up; the e-mail still needs its code', async () => {
       const phone = newPhone();
       const email = newEmail();
       const b = browser();
       await b.post('otp/request', { target: phone, channel: 'sms', purpose: 'sign_in' }).expect(202, { sent: true });
       const res = await b.post('otp/verify', { target: phone, code: smsCode(phone) }).expect(200);
-      expect(res.body.needsSignUp).toBe(true);
-      const signUpToken = res.body.signUpToken as string;
+      expect(res.body).toMatchObject({ needsSignUp: true, verified: { phone, email: null } });
       expect(customerCookie(res)).toBeUndefined();
 
-      // The ticket is bound to the verified phone.
+      await b.post('otp/request', { target: email, channel: 'email', purpose: 'sign_up' }).expect(202, { sent: true });
       await b
-        .post('sign-up', { signUpToken, fullName: 'דנה', phone: newPhone(), email, marketingConsent: false })
+        .post('otp/verify', { target: email, code: emailCode(email), purpose: 'sign_up', signUpToken: 'forged' })
         .expect(400)
         .expect((r) => expect(r.body.code).toBe('invalid_token'));
-
-      const done = await b
-        .post('sign-up', { signUpToken, fullName: 'דנה', phone, email, marketingConsent: false })
+      const both = await b
+        .post('otp/verify', {
+          target: email,
+          code: emailCode(email),
+          purpose: 'sign_up',
+          signUpToken: res.body.signUpToken,
+        })
         .expect(200);
-      expect(done.body.customer).toMatchObject({ phone, email, phoneVerified: true, emailVerified: false });
+      const done = await b
+        .post('sign-up', { signUpToken: both.body.signUpToken, fullName: 'דנה', phone, email, marketingConsent: false })
+        .expect(200);
+      expect(done.body.customer).toMatchObject({ phone, email, phoneVerified: true, emailVerified: true });
       expect(customerCookie(done)).toBeDefined();
-      await b
-        .post('sign-up', { signUpToken, fullName: 'דנה', phone, email: newEmail(), marketingConsent: false })
-        .expect(400)
-        .expect((r) => expect(r.body.code).toBe('invalid_token'));
     });
 
-    it('a ticket from an e-mail code verifies the e-mail', async () => {
+    it('pre-account hijack: a verified e-mail cannot carry an unverified phone of somebody else', async () => {
+      const victimPhone = newPhone();
+      const attackerEmail = newEmail();
+      const attacker = browser();
+      await attacker.post('otp/request', { target: attackerEmail, channel: 'email', purpose: 'sign_in' }).expect(202);
+      const { body } = await attacker
+        .post('otp/verify', { target: attackerEmail, code: emailCode(attackerEmail) })
+        .expect(200);
+      expect(body.verified).toEqual({ phone: null, email: attackerEmail });
+
+      await attacker
+        .post('sign-up', {
+          signUpToken: body.signUpToken,
+          fullName: 'תוקף',
+          phone: victimPhone,
+          email: attackerEmail,
+          marketingConsent: false,
+        })
+        .expect(400)
+        .expect((r) => expect(r.body).toMatchObject({ code: 'not_verified', field: 'phone' }));
+      // A code the attacker cannot read does not help either.
+      await attacker.post('otp/request', { target: victimPhone, channel: 'sms', purpose: 'sign_up' }).expect(202);
+      await attacker
+        .post('otp/verify', {
+          target: victimPhone,
+          code: wrongOf(smsCode(victimPhone)!),
+          purpose: 'sign_up',
+          signUpToken: body.signUpToken,
+        })
+        .expect(401);
+      expect(await prisma.customer.count({ where: { phone: victimPhone } })).toBe(0);
+
+      // The victim signs up with the phone as usual.
+      const { b } = await signUp({ phone: victimPhone });
+      expect((await b.me()).body).toMatchObject({ phone: victimPhone, phoneVerified: true, emailVerified: true });
+    });
+
+    it('a ticket for a phone that is now taken answers 409 phone_taken; a 400 does not use it', async () => {
+      const phone = newPhone();
       const email = newEmail();
       const b = browser();
-      await b.post('otp/request', { target: email, channel: 'email', purpose: 'sign_in' }).expect(202);
-      const res = await b.post('otp/verify', { target: email, code: emailCode(email) }).expect(200);
-      const done = await b
-        .post('sign-up', {
-          signUpToken: res.body.signUpToken,
-          fullName: 'דנה',
-          phone: newPhone(),
-          email,
-          marketingConsent: false,
-        })
-        .expect(200);
-      expect(done.body.customer).toMatchObject({ emailVerified: true, phoneVerified: false });
-    });
-
-    it('a ticket for a phone that is now taken answers 409 phone_taken', async () => {
-      const phone = newPhone();
-      const b = browser();
-      await b.post('otp/request', { target: phone, channel: 'sms', purpose: 'sign_in' }).expect(202);
-      const { body } = await b.post('otp/verify', { target: phone, code: smsCode(phone) }).expect(200);
-      await browser()
-        .post('sign-up', {
-          signUpToken: body.signUpToken,
-          fullName: 'א',
-          phone,
-          email: newEmail(),
-          marketingConsent: false,
-        })
-        .expect(400); // fullName too short: the ticket is not used
+      const details = { fullName: 'דנה', phone, email, marketingConsent: false };
+      await b.post('sign-up', details).expect(200);
+      const signUpToken = await verifyBoth(b, phone, email);
+      await b.post('sign-up', { ...details, fullName: 'א', signUpToken }).expect(400);
       await prisma.customer.create({ data: { fullName: 'קיים', phone, email: newEmail() } });
       await b
-        .post('sign-up', {
-          signUpToken: body.signUpToken,
-          fullName: 'דנה',
-          phone,
-          email: newEmail(),
-          marketingConsent: false,
-        })
+        .post('sign-up', { ...details, signUpToken })
         .expect(409)
         .expect((r) => expect(r.body.code).toBe('phone_taken'));
     });
@@ -300,6 +372,17 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       expect(res.body.customer).toMatchObject({ email, emailVerified: true });
     });
 
+    it('two parallel verifies of one code sign in only once', async () => {
+      const { phone } = await signUp();
+      await browser().post('otp/request', { target: phone, channel: 'sms', purpose: 'sign_in' }).expect(202);
+      const code = smsCode(phone);
+      const results = await Promise.all([
+        browser().post('otp/verify', { target: phone, code }),
+        browser().post('otp/verify', { target: phone, code }),
+      ]);
+      expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 401]);
+    });
+
     it('6 wrong codes: the right code no longer works', async () => {
       const { phone } = await signUp();
       const b = browser();
@@ -339,12 +422,13 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       const { email } = await signUp();
       const unknown = newEmail();
       const b = browser();
+      const before = sentTo(email); // the sign-up code
       const known = await b.post('otp/request', { target: email, channel: 'email', purpose: 'sign_in' });
       const other = await b.post('otp/request', { target: unknown, channel: 'email', purpose: 'sign_in' });
       expect(known.status).toBe(202);
       expect(other.status).toBe(known.status);
       expect(other.body).toEqual(known.body);
-      expect(sentTo(email)).toBe(1);
+      expect(sentTo(email)).toBe(before + 1);
       expect(sentTo(unknown)).toBe(1);
     });
 
@@ -378,6 +462,17 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       expect(await prisma.customerSession.count({ where: { tokenHash: token } })).toBe(0);
       const session = await prisma.customerSession.findUniqueOrThrow({ where: { tokenHash: sha(token) } });
       expect(session.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * DAY_MS);
+    });
+
+    it('signing in again from the same browser ends the session its cookie named', async () => {
+      const { b, email, phone } = await signUp({ password: 'correct horse 1' });
+      const customer = await prisma.customer.findUniqueOrThrow({ where: { phone } });
+      const before = await prisma.customerSession.findFirstOrThrow({ where: { customerId: customer.id } });
+      await b.post('sign-in', { email, password: 'correct horse 1' }).expect(200);
+      const sessions = await prisma.customerSession.findMany({ where: { customerId: customer.id } });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].id).not.toBe(before.id);
+      expect((await b.me()).body.phone).toBe(phone);
     });
 
     it('GET me answers 200 null when signed out, never cached', async () => {
@@ -471,6 +566,31 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       expect(res.body.customer).toMatchObject({ email: next, emailVerified: true });
     });
 
+    it('confirming a new phone or e-mail signs out the other sessions', async () => {
+      const { b, email } = await signUp();
+      const other = browser();
+      await other.post('otp/request', { target: email, channel: 'email', purpose: 'sign_in' }).expect(202);
+      await other.post('otp/verify', { target: email, code: emailCode(email) }).expect(200);
+      const next = newPhone();
+      await b.post('contact/change', { kind: 'phone', value: next }).expect(202);
+      await b.post('contact/confirm', { kind: 'phone', code: smsCode(next) }).expect(200);
+      expect((await b.me()).body.phone).toBe(next);
+      expect((await other.me()).body).toBeNull();
+    });
+
+    it('repeated 409s on contact change reach the per-IP code limit', async () => {
+      const { b } = await signUp();
+      const { phone: taken } = await signUp();
+      throttle.setLimit('otp', 2);
+      try {
+        await b.post('contact/change', { kind: 'phone', value: taken }).expect(409);
+        await b.post('contact/change', { kind: 'phone', value: taken }).expect(409);
+        await b.post('contact/change', { kind: 'phone', value: taken }).expect(429);
+      } finally {
+        throttle.setLimit('otp', 100_000);
+      }
+    });
+
     it('setting a first password needs no current one; changing it does, and signs out the other sessions', async () => {
       const { b, email, phone } = await signUp();
       await b.post('password', { next: 'short' }).expect(400);
@@ -498,9 +618,14 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       const { b: old, email } = await signUp({ password: 'correct horse 1' });
       const unknown = newEmail();
       const b = browser();
+      const sentBefore = sentTo(email);
       const known = await b.post('password/reset/request', { email }).expect(202);
       const other = await b.post('password/reset/request', { email: unknown }).expect(202);
       expect(other.body).toEqual(known.body);
+      // The same store work for both; the e-mail goes out in the background, only to the account.
+      expect(await prisma.otpCode.count({ where: { target: email, purpose: 'RESET_PASSWORD' } })).toBe(1);
+      expect(await prisma.otpCode.count({ where: { target: unknown, purpose: 'RESET_PASSWORD' } })).toBe(1);
+      await vi.waitFor(() => expect(sentTo(email)).toBe(sentBefore + 1));
       expect(sentTo(unknown)).toBe(0);
       const code = emailCode(email)!;
 
@@ -517,6 +642,18 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
 
       await browser().post('sign-in', { email, password: 'correct horse 1' }).expect(401);
       await browser().post('sign-in', { email, password: 'brand new pass 1' }).expect(200);
+    });
+
+    it('a failing e-mail provider does not change the reset answer', async () => {
+      const { email } = await signUp();
+      const b = browser();
+      const unknown = await b.post('password/reset/request', { email: newEmail() }).expect(202);
+      emailSpy.mockRejectedValueOnce(new Error('provider down'));
+      const known = await b.post('password/reset/request', { email }).expect(202);
+      expect(known.body).toEqual(unknown.body);
+      await vi.waitFor(async () =>
+        expect(await prisma.notificationLog.count({ where: { template: 'otp', status: 'FAILED' } })).toBeGreaterThan(0),
+      );
     });
 
     it('a sign-in code does not reset a password', async () => {

@@ -60,6 +60,13 @@ export interface OtpStore {
   takeSignUpTicket(tokenHash: string, now: Date): Promise<{ target: string; channel: OtpChannel } | null>;
 }
 
+export interface OtpRequestOptions {
+  customerId?: string;
+  ipChecked?: boolean;
+  deliver?: boolean;
+  background?: boolean;
+}
+
 /** Sends the `otp` template (SMS or e-mail) directly, not through the outbox: the code is useless after 10 minutes. */
 export interface OtpSender {
   send(channel: OtpChannel, target: string, code: string): Promise<void>;
@@ -110,14 +117,19 @@ export class OtpService {
     if (!this.ipLimiter.allow(ip)) throw tooManyRequests(IP_WINDOW_SECONDS);
   }
 
+  /**
+   * Creates and sends a code. Options: `customerId` (contact change), `ipChecked` (the caller already counted the IP,
+   * e.g. before a 409 check), `deliver: false` (the same store work without a message: no account to send to),
+   * `background` (the send is not awaited; a failure is logged), so the answer time does not depend on the send.
+   */
   async request(
     target: string,
     channel: OtpChannel,
     purpose: OtpPurposeCode,
     ip: string | undefined,
-    opts: { customerId?: string } = {},
+    opts: OtpRequestOptions = {},
   ): Promise<void> {
-    this.checkIp(ip);
+    if (!opts.ipChecked) this.checkIp(ip);
     const now = this.now();
     if ((await this.store.countSince(target, new Date(now - OTP_TARGET_WINDOW_MS))) >= OTP_TARGET_LIMIT) {
       this.logger.warn(`Code limit reached for ${mask(channel, target)}: request dropped`);
@@ -133,7 +145,13 @@ export class OtpService {
       expiresAt: new Date(now + OTP_TTL_MS),
       customerId: opts.customerId ?? null,
     });
-    await this.sender.send(channel, target, code);
+    if (opts.deliver === false) return;
+    if (!opts.background) return this.sender.send(channel, target, code);
+    void this.sender
+      .send(channel, target, code)
+      .catch((error: unknown) =>
+        this.logger.error(`Could not send a code to ${mask(channel, target)}: ${(error as Error)?.message ?? error}`),
+      );
   }
 
   async verify(target: string, purpose: OtpPurposeCode, code: string): Promise<boolean> {

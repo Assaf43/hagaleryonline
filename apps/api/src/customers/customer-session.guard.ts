@@ -12,14 +12,18 @@ import {
 
 type CustomerRequest = Request & { customer?: ResolvedCustomer | null };
 
+/** The flags of the `hg_customer` cookie: Secure when COOKIE_SECURE=true or in production. */
+export function customerCookieOptions(cookieSecure: boolean, nodeEnv: string | undefined): CookieOptions {
+  return { httpOnly: true, sameSite: 'lax', secure: cookieSecure || nodeEnv === 'production', path: '/' };
+}
+
 /** Writes and clears the `hg_customer` cookie: httpOnly, SameSite=Lax, path /, Secure in production (spec §6.2). */
 @Injectable()
 export class CustomerCookie {
   private readonly options: CookieOptions;
 
   constructor(auth: AuthConfig, config: ConfigService) {
-    const secure = auth.cookieSecure || config.get<string>('NODE_ENV') === 'production';
-    this.options = { httpOnly: true, sameSite: 'lax', secure, path: '/' };
+    this.options = customerCookieOptions(auth.cookieSecure, config.get<string>('NODE_ENV'));
   }
 
   set(res: Response, token: string): void {

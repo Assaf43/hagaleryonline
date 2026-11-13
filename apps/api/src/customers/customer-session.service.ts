@@ -58,6 +58,12 @@ export class CustomerSessionService {
     return { session: { ...session, lastSeenAt: now, expiresAt }, customer, renewed: true };
   }
 
+  /** Ends the session a cookie names, if any (a new sign-in in the same browser replaces it). */
+  async endByToken(token: string | undefined): Promise<void> {
+    if (!token || token.length > 128) return;
+    await this.prisma.customerSession.deleteMany({ where: { tokenHash: hashToken(token) } });
+  }
+
   async end(sessionId: number): Promise<void> {
     await this.prisma.customerSession.deleteMany({ where: { id: sessionId } });
   }

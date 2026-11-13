@@ -1,5 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import { MemoryOtpStore } from './otp-store.memory.js';
+import { MemoryOtpStore } from '../../test/otp-store.memory.js';
 import {
   OTP_MAX_ATTEMPTS,
   OTP_TTL_MS,
@@ -139,6 +139,33 @@ describe('OtpService (spec §6.2, NFR-12)', () => {
     expect(error).toBeInstanceOf(HttpException);
     expect((error as HttpException).getStatus()).toBe(429);
     expect(sent).toHaveLength(0);
+  });
+
+  it('deliver: false does the same store work but sends nothing', async () => {
+    await otp.request(PHONE, 'sms', 'reset_password', 'ip', { deliver: false });
+    expect(store.rows).toHaveLength(1);
+    expect(sent).toHaveLength(0);
+  });
+
+  it('background: answers before the send finishes, and a failing send does not reject', async () => {
+    let release!: () => void;
+    const slow = new OtpService(
+      store,
+      { send: () => new Promise<void>((_, reject) => (release = () => reject(new Error('provider down')))) },
+      { allow: () => true },
+      'test-pepper',
+      () => now,
+    );
+    await expect(slow.request(PHONE, 'email', 'reset_password', 'ip', { background: true })).resolves.toBeUndefined();
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.rows).toHaveLength(1);
+  });
+
+  it('ipChecked: the caller already counted the IP', async () => {
+    ipAllowed = false;
+    await otp.request(PHONE, 'sms', 'sign_up', 'ip', { ipChecked: true });
+    expect(sent).toHaveLength(1);
   });
 
   it('a sign-up ticket is single use, bound to its target and lives 30 minutes', async () => {

@@ -45,19 +45,29 @@ export interface SignUpDetails {
   marketingConsent: boolean;
 }
 
-/** `POST sign-up`: with `signUpToken` (from a verified code) the account is created at once; without, a code goes to the phone. */
+/**
+ * `POST sign-up` (decision 80: an account is created only when both its phone and its e-mail were verified by a code).
+ * Without `signUpToken`: checks the details (409 `phone_taken` / `email_taken`), sends a code to the phone and one to
+ * the e-mail, answers `{ verify: true }`; nothing is stored. With a `signUpToken` that covers both the phone and the
+ * e-mail sent: creates the account (both verified) and signs in; a contact the ticket does not cover → 400
+ * `not_verified` with `field: 'phone' | 'email'`.
+ */
 export interface SignUpBody extends SignUpDetails {
   signUpToken?: string;
 }
 
 /**
- * `POST otp/verify`: purpose `sign_in` (default) signs in, or, for a phone or e-mail without an account, returns a
- * sign-up ticket (30 minutes, single use). Purpose `sign_up` resends the sign-up details with the code sent to the
- * phone by `POST sign-up` (the server keeps nothing pending): `target` is the phone.
+ * `POST otp/verify`. Purpose `sign_in` (default): signs in the account of that phone or e-mail; without an account it
+ * answers a sign-up ticket for the verified contact. Purpose `sign_up`: never signs in; answers a ticket. Passing the
+ * `signUpToken` of an earlier answer extends that ticket with this contact, so one ticket can cover both the phone and
+ * the e-mail. Tickets live 30 minutes and are used once by `POST sign-up`.
  */
-export type OtpVerifyBody =
-  | { target: string; code: string; purpose?: 'sign_in' }
-  | ({ target: string; code: string; purpose: 'sign_up' } & Omit<SignUpDetails, 'phone'>);
+export interface OtpVerifyBody {
+  target: string;
+  code: string;
+  purpose?: 'sign_in' | 'sign_up';
+  signUpToken?: string;
+}
 
 export interface SignedInResponse {
   customer: CustomerMe;
@@ -66,6 +76,8 @@ export interface SignedInResponse {
 export interface NeedsSignUpResponse {
   needsSignUp: true;
   signUpToken: string;
+  /** The contacts the ticket covers (normalized), null where a code is still needed. */
+  verified: { phone: string | null; email: string | null };
 }
 
 export type OtpVerifyResponse = SignedInResponse | NeedsSignUpResponse;
@@ -116,6 +128,7 @@ export type AccountErrorCode =
   | 'invalid_code'
   | 'invalid_credentials'
   | 'invalid_token'
+  | 'not_verified'
   | 'wrong_password'
   | 'weak_password'
   | 'phone_taken'

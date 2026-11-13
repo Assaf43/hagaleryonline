@@ -17,6 +17,9 @@ export const invalidCode = () => new AccountError(HttpStatus.UNAUTHORIZED, 'inva
 /** One answer for an unknown e-mail, an account without a password and a wrong password. */
 export const invalidCredentials = () => new AccountError(HttpStatus.UNAUTHORIZED, 'invalid_credentials');
 export const invalidToken = () => new AccountError(HttpStatus.BAD_REQUEST, 'invalid_token');
+/** The sign-up ticket does not cover this contact: its code was not entered (decision 80). */
+export const notVerified = (field: 'phone' | 'email') =>
+  new AccountError(HttpStatus.BAD_REQUEST, 'not_verified', { field });
 export const wrongPassword = () => new AccountError(HttpStatus.BAD_REQUEST, 'wrong_password');
 export const weakPassword = (reason: 'too_short' | 'too_long', field = 'password') =>
   new AccountError(HttpStatus.BAD_REQUEST, 'weak_password', { field, reason });

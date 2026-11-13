@@ -1,5 +1,5 @@
 import type { OtpChannel } from '@hg/models';
-import type { NewOtp, OtpPurposeCode, OtpRow, OtpStore } from './otp.service.js';
+import type { NewOtp, OtpPurposeCode, OtpRow, OtpStore } from '../src/customers/otp.service.js';
 
 type Row = OtpRow & { signUpTokenHash: string | null; signUpExpiresAt: Date | null };
 
