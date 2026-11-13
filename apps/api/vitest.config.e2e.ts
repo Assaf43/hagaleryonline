@@ -37,6 +37,10 @@ export default defineConfig({
       THROTTLE_COUPON_LIMIT: '100000',
       THROTTLE_CANCEL_LIMIT: '100000',
       THROTTLE_DELIVERY_LIMIT: '100000',
+      // Customer accounts (Phase 5c): code requests and sign-ins per IP; the 429 tests lower them themselves.
+      THROTTLE_OTP_LIMIT: '100000',
+      THROTTLE_SIGNIN_LIMIT: '100000',
+      OTP_PEPPER: 'e2e-otp-pepper-not-for-production',
       PAYMENT_PROVIDER: 'sandbox',
       // Notifications (Phase 5b): the mock adapters send nothing and log the full message.
       EMAIL_PROVIDER: 'mock',

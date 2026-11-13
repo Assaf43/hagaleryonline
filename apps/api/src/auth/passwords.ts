@@ -1,6 +1,7 @@
 import { hash, verify } from '@node-rs/argon2';
 import { ZxcvbnFactory } from '@zxcvbn-ts/core';
 import * as common from '@zxcvbn-ts/language-common';
+import { CUSTOMER_PASSWORD_MAX, CUSTOMER_PASSWORD_MIN } from '@hg/models';
 
 /** Password rules (decision 59): length over complexity, and no common or guessable passwords. */
 export const MIN_PASSWORD_LENGTH = 12;
@@ -23,6 +24,16 @@ export function checkPassword(password: string, related: string[] = []): Passwor
   const lower = password.toLowerCase();
   if (words.some((w) => lower.includes(w))) return 'too_personal';
   return zxcvbn.check(password, [...words, 'hagalery', 'galery', 'הגלריה']).score < MIN_STRENGTH ? 'too_common' : null;
+}
+
+/**
+ * A customer's password (Phase 5c): only its length, 8–128 characters. Customers sign in mostly by code; the admin's
+ * strength rules above are for staff accounts.
+ */
+export function checkCustomerPassword(password: string): 'too_short' | 'too_long' | null {
+  if (password.length < CUSTOMER_PASSWORD_MIN) return 'too_short';
+  if (password.length > CUSTOMER_PASSWORD_MAX) return 'too_long';
+  return null;
 }
 
 /** argon2id with the library's OWASP-aligned defaults. */

@@ -431,13 +431,17 @@ model Cart {
   tokenHash  String   @unique @map("token_hash")
   /// Entered coupon code (Phase 4d).
   couponCode String?  @map("coupon_code")
+  /// The signed-in customer's cart (Phase 5c, spec §6.4); null for a guest cart.
+  customerId String?  @map("customer_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  items  CartItem[]
-  orders Order[]
+  items    CartItem[]
+  orders   Order[]
+  customer Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@index([updatedAt])
+  @@index([customerId])
   @@map("carts")
 }
 
@@ -463,7 +467,8 @@ model Locality {
   id     Int    @id
   nameHe String @map("name_he")
 
-  zone ZoneLocality?
+  zone      ZoneLocality?
+  addresses CustomerAddress[]
 
   @@index([nameHe])
   @@map("localities")
@@ -621,10 +626,13 @@ model Order {
   /// Staff must look at it for a reason outside the Phase 4 flags (failed refund, late payment on a cancelled order…).
   needsAttention   Boolean             @default(false) @map("needs_attention")
   attentionNote    String?             @map("attention_note")
+  /// The account that placed the order (Phase 5c); null for a guest order, which is never linked (decision 77).
+  customerId       String?             @map("customer_id") @db.Uuid
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
   cart          Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
   promotion     Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
   items         OrderItem[]
   payments      Payment[]
@@ -639,6 +647,7 @@ model Order {
   @@index([cartId])
   @@index([createdAt])
   @@index([promotionId])
+  @@index([customerId])
   @@map("orders")
 }
 
@@ -960,4 +969,116 @@ model MockInvoiceDocument {
   issuedAt       DateTime    @default(now()) @map("issued_at")
 
   @@map("mock_invoice_documents")
+}
+
+// ---------- Customer accounts (Phase 5c, spec §3, §6.1, §6.2, ACC-01, NFR-12, decision 80) ----------
+
+enum MarketingConsentSource {
+  SIGNUP   @map("signup")
+  CHECKOUT @map("checkout")
+  ACCOUNT  @map("account")
+
+  @@map("marketing_consent_source")
+}
+
+/// A storefront customer. Phone (05XXXXXXXX) and e-mail (lower-case) are stored normalized and are unique; each counts
+/// as verified only after a code sent to it was entered (decision 80). The password is optional (argon2).
+model Customer {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  fullName               String                  @map("full_name")
+  phone                  String                  @unique
+  email                  String                  @unique
+  phoneVerifiedAt        DateTime?               @map("phone_verified_at")
+  emailVerifiedAt        DateTime?               @map("email_verified_at")
+  passwordHash           String?                 @map("password_hash")
+  marketingConsent       Boolean                 @default(false) @map("marketing_consent")
+  marketingConsentAt     DateTime?               @map("marketing_consent_at")
+  marketingConsentSource MarketingConsentSource? @map("marketing_consent_source")
+  marketingWithdrawnAt   DateTime?               @map("marketing_withdrawn_at")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+
+  addresses CustomerAddress[]
+  sessions  CustomerSession[]
+  otpCodes  OtpCode[]
+  orders    Order[]
+  carts     Cart[]
+
+  @@map("customers")
+}
+
+/// A saved delivery address: the same fields as the order address snapshot.
+model CustomerAddress {
+  id          String   @id @default(uuid()) @db.Uuid
+  customerId  String   @map("customer_id") @db.Uuid
+  localityId  Int      @map("locality_id")
+  street      String
+  houseNumber String   @map("house_number")
+  apartment   String?
+  floor       Int
+  hasElevator Boolean  @map("has_elevator")
+  notes       String?
+  isDefault   Boolean  @default(false) @map("is_default")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  locality Locality @relation(fields: [localityId], references: [id], onDelete: Restrict)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+/// A signed-in browser (cookie hg_customer): only the SHA-256 of the random token is stored. 30 days, renewed on use
+/// at most once a day; sign-out deletes the row.
+model CustomerSession {
+  id         Int      @id @default(autoincrement())
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  expiresAt  DateTime @map("expires_at")
+  ip         String?
+  userAgent  String?  @map("user_agent")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([expiresAt])
+  @@map("customer_sessions")
+}
+
+enum OtpPurpose {
+  SIGN_IN        @map("sign_in")
+  SIGN_UP        @map("sign_up")
+  VERIFY_CONTACT @map("verify_contact")
+  RESET_PASSWORD @map("reset_password")
+
+  @@map("otp_purpose")
+}
+
+/// A one-time code (spec §6.2): 6 digits, 10 minutes, at most 5 attempts; only an HMAC of code + target + purpose is
+/// stored. Only the newest code of a target and purpose can be used. A sign-in code for a phone or e-mail without an
+/// account leaves a sign-up ticket on its row: `signUpTokenHash` (SHA-256 of the token given to the browser), valid
+/// until `signUpExpiresAt` (30 minutes), cleared when used. `customerId` is set on codes that confirm a new phone or
+/// e-mail of a signed-in customer (the new value is the target).
+model OtpCode {
+  id              Int                 @id @default(autoincrement())
+  target          String
+  channel         NotificationChannel
+  purpose         OtpPurpose
+  codeHash        String              @map("code_hash")
+  expiresAt       DateTime            @map("expires_at")
+  attempts        Int                 @default(0)
+  consumedAt      DateTime?           @map("consumed_at")
+  customerId      String?             @map("customer_id") @db.Uuid
+  signUpTokenHash String?             @unique @map("sign_up_token_hash")
+  signUpExpiresAt DateTime?           @map("sign_up_expires_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([target, createdAt])
+  @@index([customerId])
+  @@map("otp_codes")
 }
