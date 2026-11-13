@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import {
   ACCOUNT_ORDERS_PAGE_SIZE,
+  CHECKOUT_LIMITS,
   MAX_CUSTOMER_ADDRESSES,
   ORDER_STATUS_LABELS_HE,
   type AccountConsent,
   type AccountOrdersPage,
   type CustomerAddressInput,
   type CustomerAddressView,
+  type CustomerMe,
   type MarketingConsentSource as ConsentSourceView,
   type OrderView,
 } from '@hg/models';
@@ -18,6 +20,7 @@ import { effectiveStatus, OrdersService, STATUS_VIEW } from '../orders/orders.se
 import { PrismaService } from '../prisma/prisma.service.js';
 import { accountNotFound, addressLimit, badField } from './account-errors.js';
 import { listAddresses, toView } from './address-view.js';
+import { toMe } from './customer-auth.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -154,6 +157,14 @@ export class AccountService {
    * withdrawal; withdrawing records the withdrawal time (the consent's time and source stay as the record of it). The
    * current value: no change.
    */
+  /** The name as sign-up checks it: trimmed, spaces collapsed, 2–80 characters. */
+  async changeName(customerId: string, body: unknown): Promise<CustomerMe> {
+    const raw = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).name;
+    const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
+    if (name.length < CHECKOUT_LIMITS.fullNameMin || name.length > CHECKOUT_LIMITS.fullNameMax) throw badField('name');
+    return toMe(await this.prisma.customer.update({ where: { id: customerId }, data: { fullName: name } }));
+  }
+
   async setConsent(customer: Customer, body: unknown): Promise<AccountConsent> {
     const value = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).marketingConsent;
     if (typeof value !== 'boolean') throw badField('marketingConsent');

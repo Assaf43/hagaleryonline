@@ -10,7 +10,28 @@
 
       <section class="stack" aria-labelledby="dt-name-title">
         <h3 id="dt-name-title">שם</h3>
-        <p>{{ me.fullName }}</p>
+        <form class="stack name-form" novalidate (submit)="saveName($event)">
+          <div class="field">
+            <label class="field-label" for="dt-name">שם מלא</label>
+            <input
+              class="input"
+              id="dt-name"
+              type="text"
+              autocomplete="name"
+              maxlength="80"
+              [value]="nameDraft() ?? me.fullName"
+              [attr.aria-invalid]="errors()['name'] ? true : null"
+              [attr.aria-describedby]="errors()['name'] ? 'dt-name-error' : null"
+              (input)="input(nameDraft, $event)"
+            />
+            @if (errors()['name']; as e) {
+              <p class="field-error" id="dt-name-error">{{ e }}</p>
+            }
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn btn-secondary" [disabled]="busy()">שמירת שם</button>
+          </div>
+        </form>
       </section>
 
       @for (c of contacts; track c.kind) {
@@ -26,7 +47,6 @@
                 [label]="c.kind === 'phone' ? 'הקוד שנשלח ב־SMS' : 'הקוד שנשלח למייל'"
                 [idPrefix]="'dt-otp-' + c.kind"
                 [error]="codeError()"
-                [disabled]="busy()"
                 (completed)="confirm(c.kind, $event)"
                 (resend)="resend(c.kind)"
               />

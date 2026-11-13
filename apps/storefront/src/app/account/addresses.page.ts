@@ -71,7 +71,8 @@ export class AddressesPage {
     try {
       this.addresses.set(await this.api.addresses());
       this.state.set('ready');
-    } catch {
+    } catch (error) {
+      if (this.store.unauthorized(error)) return;
       this.state.set('error');
     }
   }
@@ -141,6 +142,7 @@ export class AddressesPage {
       this.closeForm();
       await this.load();
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       const failure = accountFailure(error);
       if (failure.code === 'invalid_field' && isAddressField(failure.field)) {
         this.errors.set({ [failure.field]: accountErrorMessage(failure) });
@@ -161,6 +163,7 @@ export class AddressesPage {
       await this.api.updateAddress(a.id, toAddressInput({ ...formFromAddress(a), isDefault: true }));
       await this.load();
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       this.listError.set(accountErrorMessage(accountFailure(error)));
     } finally {
       this.busy.set(false);
@@ -183,6 +186,7 @@ export class AddressesPage {
       this.confirmingDelete.set(null);
       await this.load();
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       this.listError.set(accountErrorMessage(accountFailure(error)));
     } finally {
       this.busy.set(false);

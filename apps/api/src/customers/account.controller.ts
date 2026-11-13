@@ -13,7 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import type { AccountConsent, AccountOrdersPage, CustomerAddressView, OrderView } from '@hg/models';
+import type { AccountConsent, AccountOrdersPage, CustomerAddressView, CustomerMe, OrderView } from '@hg/models';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { AccountService } from './account.service.js';
@@ -77,6 +77,13 @@ export class AccountController {
   @Throttled('cancel')
   cancelOrder(@CurrentCustomer() current: ResolvedCustomer, @Param('number') number: string): Promise<OrderView> {
     return this.account.cancelOrder(current.customer.id, number);
+  }
+
+  /** Changes the customer's name (2–80 characters). */
+  @Put('name')
+  @Throttled('account')
+  name(@CurrentCustomer() current: ResolvedCustomer, @Body() body: unknown): Promise<CustomerMe> {
+    return this.account.changeName(current.customer.id, body);
   }
 
   @Put('consent')

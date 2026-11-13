@@ -1,8 +1,9 @@
 import { Injectable, PLATFORM_ID, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { Router } from '@angular/router';
 import type { CustomerMe } from '@hg/models';
 import { CartStore } from '../core/cart.store';
-import { AccountApi } from './account.api';
+import { AccountApi, accountFailure } from './account.api';
 
 /**
  * The signed-in customer (Phase 5c, ACC-01): the last `CustomerMe` the server sent, or `null`. The session is an
@@ -15,6 +16,7 @@ export class CustomerStore {
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly api = inject(AccountApi);
   private readonly cart = inject(CartStore);
+  private readonly router = inject(Router);
   private readonly state = signal<CustomerMe | null>(null);
   private readonly loaded = signal(false);
   private inflight: Promise<void> | null = null;
@@ -52,12 +54,27 @@ export class CustomerStore {
     void this.cart.refresh();
   }
 
+  /**
+   * Signs out. A failed call rejects and keeps the customer signed in (the page shows an error), because the
+   * cookie may still be valid.
+   */
   async signOut(): Promise<void> {
-    try {
-      await this.api.signOut();
-    } finally {
-      this.restore(null);
-      void this.cart.refresh();
-    }
+    await this.api.signOut();
+    this.restore(null);
+    void this.cart.refresh();
+  }
+
+  /**
+   * For a signed-in page's `catch`: a 401 `not_authenticated` means the session ended (expired, or ended from another
+   * device), so the customer state is cleared and the visitor goes to `/account?next=<this page>`. Returns whether it
+   * did (other errors, including a wrong code's 401, stay with the page).
+   */
+  unauthorized(error: unknown): boolean {
+    const failure = accountFailure(error);
+    if (failure.status !== 401 || failure.code !== 'not_authenticated') return false;
+    this.restore(null);
+    void this.cart.refresh();
+    void this.router.navigate(['/account'], { queryParams: { next: this.router.url } });
+    return true;
   }
 }

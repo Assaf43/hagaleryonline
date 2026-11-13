@@ -50,7 +50,8 @@ export class OrdersPage {
       this.data.set(await this.api.orders(page));
       this.page.set(page);
       this.state.set('ready');
-    } catch {
+    } catch (error) {
+      if (this.store.unauthorized(error)) return;
       this.state.set('error');
     }
   }

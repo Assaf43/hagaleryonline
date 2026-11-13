@@ -38,6 +38,7 @@
               idPrefix="si-reset-otp"
               [error]="codeError()"
               (completed)="resetCodeEntered($event)"
+              (edited)="resetCodeEdited()"
               (resend)="resendReset()"
             />
             <div class="field">
@@ -159,7 +160,6 @@
               [label]="tab() === 'sms' ? 'הקוד שנשלח ב־SMS' : 'הקוד שנשלח במייל'"
               idPrefix="si-otp"
               [error]="codeError()"
-              [disabled]="busy()"
               (completed)="verifyCode($event)"
               (resend)="resend()"
             />

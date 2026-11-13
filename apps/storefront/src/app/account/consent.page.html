@@ -11,23 +11,20 @@
           id="consent-marketing"
           aria-describedby="consent-hint"
           [checked]="me.marketingConsent"
-          [disabled]="busy()"
           (change)="toggle($event)"
         />
         אני מאשר/ת קבלת דיוור ועדכונים שיווקיים
       </label>
       <p class="hint" id="consent-hint">אפשר לבטל את ההסכמה בכל רגע בלחיצה אחת. הסרת הסימון שומרת את הביטול מיד.</p>
-      @if (result(); as r) {
-        @if (r.marketingConsent && r.marketingConsentAt) {
-          <p class="hint">
-            ההסכמה ניתנה ב־<bdi class="num">{{ date(r.marketingConsentAt) }}</bdi>
-          </p>
-        }
-        @if (!r.marketingConsent && r.marketingWithdrawnAt) {
-          <p class="hint">
-            ההסכמה בוטלה ב־<bdi class="num">{{ date(r.marketingWithdrawnAt) }}</bdi>
-          </p>
-        }
+      @if (me.marketingConsent && me.marketingConsentAt) {
+        <p class="hint">
+          ההסכמה ניתנה ב־<bdi class="num">{{ date(me.marketingConsentAt) }}</bdi>
+        </p>
+      }
+      @if (!me.marketingConsent && result()?.marketingWithdrawnAt; as withdrawn) {
+        <p class="hint">
+          ההסכמה בוטלה ב־<bdi class="num">{{ date(withdrawn) }}</bdi>
+        </p>
       }
       <p class="notice" role="status">{{ status() }}</p>
       <p class="form-error" role="alert">{{ error() }}</p>

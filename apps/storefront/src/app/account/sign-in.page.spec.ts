@@ -186,6 +186,28 @@ describe('SignInPage', () => {
       expect([...el().querySelectorAll<HTMLInputElement>('hg-otp-field input')].every((i) => i.value === '')).toBe(
         true,
       );
+      // Focus is back on box 1 (the boxes are never disabled while the code is checked) and the error is announced.
+      expect(document.activeElement).toBe(q('hg-otp-field input'));
+      expect(q('hg-otp-field .field-error').getAttribute('role')).toBe('alert');
+      expect(q('hg-otp-field .field-error').textContent).toContain('הקוד שגוי');
+    });
+
+    it('a code completed while the previous one is being checked is not dropped', async () => {
+      await openSms();
+      typeInto(q('#si-target'), '0501234567');
+      q<HTMLButtonElement>('form.request-form button[type="submit"]').click();
+      http.expectOne('/api/account/otp/request').flush({ sent: true }, { status: 202, statusText: 'Accepted' });
+      await settle();
+      pasteInto(q('hg-otp-field input'), '000000');
+      pasteInto(q('hg-otp-field input'), '111111');
+      const first = http.expectOne('/api/account/otp/verify');
+      failWith(first, 401, 'invalid_code');
+      await settle();
+      const second = http.expectOne('/api/account/otp/verify');
+      expect(second.request.body).toMatchObject({ code: '111111' });
+      second.flush({ customer: customerMe() });
+      await settle();
+      flushCarts(http);
     });
 
     it('needsSignUp continues to the sign-up page with the phone filled', async () => {
@@ -287,6 +309,27 @@ describe('SignInPage', () => {
       expect(TestBed.inject(CustomerStore).me()).not.toBeNull();
       expect(navigateByUrl).toHaveBeenCalledWith('/account/orders');
       flushCarts(http);
+    });
+
+    it('editing a digit drops the code entered before: submitting needs a full code again', async () => {
+      await setup();
+      q<HTMLButtonElement>('button.forgot').click();
+      await settle();
+      typeInto(q('#si-reset-email'), 'dana@example.com');
+      q<HTMLButtonElement>('form.reset-request-form button[type="submit"]').click();
+      http
+        .expectOne('/api/account/password/reset/request')
+        .flush({ sent: true }, { status: 202, statusText: 'Accepted' });
+      await settle();
+      pasteInto(q('hg-otp-field input'), '111222');
+      const box = q<HTMLInputElement>('hg-otp-field input');
+      box.value = '';
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      typeInto(q('#si-reset-password'), 'brand-new-pass');
+      q<HTMLButtonElement>('form.reset-form button[type="submit"]').click();
+      await settle();
+      http.expectNone('/api/account/password/reset');
+      expect(q('hg-otp-field .field-error').textContent).toContain('הקוד');
     });
   });
 });

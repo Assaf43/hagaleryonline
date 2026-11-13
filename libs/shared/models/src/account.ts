@@ -17,6 +17,13 @@ export interface CustomerMe {
   emailVerified: boolean;
   hasPassword: boolean;
   marketingConsent: boolean;
+  /** When the marketing consent was given (ISO time); null when there is none. */
+  marketingConsentAt: string | null;
+}
+
+/** `PUT /api/account/name`: 2–80 characters after trimming (400 `invalid_input`, `field: 'name'`); answers the `CustomerMe`. */
+export interface NameChangeBody {
+  name: string;
 }
 
 /** Where a code is sent: `sms` to a phone, `email` to an e-mail address. */

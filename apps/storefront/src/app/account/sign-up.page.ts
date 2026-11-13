@@ -80,6 +80,7 @@ export class SignUpPage {
   protected readonly codeErrors = signal<Record<Kind, string>>({ phone: '', email: '' });
 
   private token: string | undefined;
+  private readonly queued: { kind: Kind; code: string }[] = [];
   private readonly draft = this.draftStore.current();
 
   constructor() {
@@ -187,7 +188,11 @@ export class SignUpPage {
   }
 
   protected async codeEntered(kind: Kind, code: string): Promise<void> {
-    if (this.busy()) return;
+    if (this.busy()) {
+      // Completed while another code is being checked: checked right after it, never dropped.
+      this.queued.push({ kind, code });
+      return;
+    }
     this.busy.set(true);
     this.formError.set('');
     this.codeErrors.update((e) => ({ ...e, [kind]: '' }));
@@ -220,6 +225,8 @@ export class SignUpPage {
     } finally {
       this.busy.set(false);
     }
+    const next = this.queued.shift();
+    if (next && this.step() === 'codes' && !this.verified()[next.kind]) await this.codeEntered(next.kind, next.code);
   }
 
   protected async resend(kind: Kind): Promise<void> {

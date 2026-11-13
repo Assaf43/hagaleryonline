@@ -93,6 +93,7 @@ export class OrderDetailPage {
       this.state.set('ready');
     } catch (error) {
       if (generation !== this.generation) return;
+      if (this.store.unauthorized(error)) return;
       if (this.order()) return;
       this.state.set(accountFailure(error).status === 404 ? 'not_found' : 'error');
     }
@@ -119,6 +120,7 @@ export class OrderDetailPage {
       const view = await this.api.cancelOrder(this.number());
       this.order.set(view);
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       const failure = accountFailure(error);
       if (failure.status === 409) {
         // Just paid or otherwise no longer cancellable: say so and show the real state.

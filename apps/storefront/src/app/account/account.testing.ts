@@ -21,6 +21,7 @@ export function customerMe(over: Partial<CustomerMe> = {}): CustomerMe {
     emailVerified: true,
     hasPassword: true,
     marketingConsent: false,
+    marketingConsentAt: null,
     ...over,
   };
 }

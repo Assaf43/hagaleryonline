@@ -1,10 +1,11 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
 import type { AccountOrdersPage } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { CustomerStore } from './customer.store';
 import { OrdersPage } from './orders.page';
-import { provideAccountTesting, signedIn, tick } from './account.testing';
+import { provideAccountTesting, signedIn, tick, flushCarts } from './account.testing';
 
 const page = (over: Partial<AccountOrdersPage> = {}): AccountOrdersPage => ({
   items: [
@@ -73,6 +74,30 @@ describe('OrdersPage', () => {
     expect(rows[0].textContent).toContain('3,450');
     expect(rows[0].querySelector('a')?.getAttribute('href')).toBe('/account/orders/100002');
     expect(rows[0].querySelectorAll('bdi').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('says "פריט אחד" for one unit and "N פריטים" otherwise', async () => {
+    await setup(page());
+    const rows = el().querySelectorAll('li.order-row');
+    expect(rows[0].textContent).toContain('2 פריטים');
+    expect(rows[1].textContent).toContain('פריט אחד');
+    expect(rows[1].textContent).not.toContain('1 פריטים');
+  });
+
+  it('a signed-out answer (401) goes to sign-in with ?next=', async () => {
+    http = provideAccountTesting();
+    signedIn(TestBed.inject(CustomerStore));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture = TestBed.createComponent(OrdersPage);
+    fixture.detectChanges();
+    await tick();
+    http
+      .expectOne((r) => r.url === '/api/account/orders')
+      .flush({ statusCode: 401, code: 'not_authenticated' }, { status: 401, statusText: 'Unauthorized' });
+    await settle();
+    expect(TestBed.inject(CustomerStore).me()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/account'], { queryParams: { next: expect.any(String) } });
+    flushCarts(http);
   });
 
   it('shows an empty state', async () => {

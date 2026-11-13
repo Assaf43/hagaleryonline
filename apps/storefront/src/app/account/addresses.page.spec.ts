@@ -1,11 +1,12 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
 import { LocalityField } from '../checkout/locality-field';
 import { CustomerStore } from './customer.store';
 import { AddressesPage } from './addresses.page';
-import { addressView, failWith, provideAccountTesting, signedIn, typeInto, tick } from './account.testing';
+import { addressView, failWith, provideAccountTesting, signedIn, typeInto, tick, flushCarts } from './account.testing';
 
 describe('AddressesPage', () => {
   let fixture: ComponentFixture<AddressesPage>;
@@ -55,6 +56,20 @@ describe('AddressesPage', () => {
       li.querySelector('.badge')?.textContent?.trim(),
     );
     expect(badges).toEqual(['ברירת מחדל', undefined]);
+  });
+
+  it('a signed-out answer (401) goes to sign-in with ?next=', async () => {
+    http = provideAccountTesting();
+    signedIn(TestBed.inject(CustomerStore));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture = TestBed.createComponent(AddressesPage);
+    fixture.detectChanges();
+    await tick();
+    failWith(http.expectOne('/api/account/addresses'), 401, 'not_authenticated');
+    await settle();
+    expect(TestBed.inject(CustomerStore).me()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/account'], { queryParams: { next: expect.any(String) } });
+    flushCarts(http);
   });
 
   it('shows an empty state', async () => {

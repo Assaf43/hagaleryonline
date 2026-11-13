@@ -40,25 +40,34 @@ export class ConsentPage {
     if (isPlatformBrowser(inject(PLATFORM_ID))) void this.store.load();
   }
 
+  /** What the checkbox says now; a change made while a save runs is saved right after it. */
+  private wanted = false;
+
   protected async toggle(event: Event): Promise<void> {
     const box = event.target as HTMLInputElement;
-    if (this.busy()) {
-      box.checked = !box.checked;
-      return;
-    }
-    const wanted = box.checked;
+    this.wanted = box.checked;
+    if (this.busy()) return;
     this.busy.set(true);
     this.status.set('');
     this.error.set('');
     try {
-      const saved = await this.api.setConsent(wanted);
-      this.result.set(saved);
-      const me = this.store.me();
-      if (me) this.store.restore({ ...me, marketingConsent: saved.marketingConsent });
-      this.status.set(saved.marketingConsent ? 'ההסכמה לדיוור נשמרה' : 'ההסכמה לדיוור בוטלה');
+      while (this.wanted !== (this.store.me()?.marketingConsent ?? false)) {
+        const saved = await this.api.setConsent(this.wanted);
+        this.result.set(saved);
+        const me = this.store.me();
+        if (me) {
+          this.store.restore({
+            ...me,
+            marketingConsent: saved.marketingConsent,
+            marketingConsentAt: saved.marketingConsentAt,
+          });
+        }
+        this.status.set(saved.marketingConsent ? 'ההסכמה לדיוור נשמרה' : 'ההסכמה לדיוור בוטלה');
+      }
     } catch (failure) {
+      if (this.store.unauthorized(failure)) return;
       // The checkbox goes back to what the account has.
-      box.checked = !wanted;
+      box.checked = this.store.me()?.marketingConsent ?? false;
       this.error.set(accountErrorMessage(accountFailure(failure)));
     } finally {
       this.busy.set(false);

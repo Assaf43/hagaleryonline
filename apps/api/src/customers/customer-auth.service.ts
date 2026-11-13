@@ -67,6 +67,7 @@ export function toMe(c: Customer): CustomerMe {
     emailVerified: c.emailVerifiedAt !== null,
     hasPassword: c.passwordHash !== null,
     marketingConsent: c.marketingConsent,
+    marketingConsentAt: c.marketingConsentAt?.toISOString() ?? null,
   };
 }
 

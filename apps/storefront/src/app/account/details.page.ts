@@ -15,11 +15,13 @@ import { AccountNav } from './account-nav';
 import { AccountApi, accountErrorMessage, accountFailure } from './account.api';
 import {
   EMAIL_MESSAGE_HE,
+  NAME_MESSAGE_HE,
   PASSWORD_MESSAGE_HE,
   PASSWORD_REQUIRED_MESSAGE_HE,
   PHONE_MESSAGE_HE,
   isEmail,
   isPhone,
+  isValidName,
   isValidPassword,
   normalizeEmail,
   normalizePhone,
@@ -60,6 +62,8 @@ export class DetailsPage {
   protected readonly errors = signal<Record<string, string>>({});
   protected readonly formError = signal('');
 
+  /** What the customer typed in the name box (null: the saved name). */
+  protected readonly nameDraft = signal<string | null>(null);
   protected readonly values = { phone: signal(''), email: signal(''), current: signal(''), next: signal('') };
   /** The kind whose code step is open (one at a time), with its code error. */
   protected readonly confirming = signal<Kind | null>(null);
@@ -78,6 +82,34 @@ export class DetailsPage {
 
   protected input(target: { set(v: string): void }, event: Event): void {
     target.set((event.target as HTMLInputElement).value);
+  }
+
+  // ---------- Name ----------
+
+  protected async saveName(event: Event): Promise<void> {
+    event.preventDefault();
+    if (this.busy()) return;
+    const name = (this.nameDraft() ?? this.store.me()?.fullName ?? '').trim().replace(/\s+/g, ' ');
+    this.status.set('');
+    this.formError.set('');
+    if (!isValidName(name)) {
+      this.errors.set({ name: NAME_MESSAGE_HE });
+      return;
+    }
+    this.errors.set({});
+    this.busy.set(true);
+    try {
+      this.store.restore(await this.api.changeName(name));
+      this.nameDraft.set(null);
+      this.status.set('השם עודכן');
+    } catch (error) {
+      if (this.store.unauthorized(error)) return;
+      const failure = accountFailure(error);
+      if (failure.field === 'name') this.errors.set({ name: NAME_MESSAGE_HE });
+      else this.formError.set(accountErrorMessage(failure));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   // ---------- Phone or e-mail ----------
@@ -102,6 +134,7 @@ export class DetailsPage {
       this.confirming.set(kind);
       afterNextRender(() => this.otp()?.focus(), { injector: this.injector });
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       const failure = accountFailure(error);
       if (failure.field === kind || failure.code === 'phone_taken' || failure.code === 'email_taken') {
         this.errors.set({ [kind]: accountErrorMessage(failure) });
@@ -118,6 +151,7 @@ export class DetailsPage {
     try {
       await this.api.changeContact({ kind, value: this.pending });
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       this.formError.set(accountErrorMessage(accountFailure(error)));
     }
   }
@@ -133,6 +167,7 @@ export class DetailsPage {
       this.confirming.set(null);
       this.status.set(CONTACTS.find((c) => c.kind === kind)!.done);
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       const failure = accountFailure(error);
       if (failure.code === 'invalid_code') {
         this.codeError.set(accountErrorMessage(failure));
@@ -175,6 +210,7 @@ export class DetailsPage {
       this.values.next.set('');
       this.status.set('הסיסמה נשמרה');
     } catch (error) {
+      if (this.store.unauthorized(error)) return;
       const failure = accountFailure(error);
       if (failure.code === 'wrong_password') this.errors.set({ current: accountErrorMessage(failure) });
       else if (failure.code === 'weak_password') this.errors.set({ next: accountErrorMessage(failure) });

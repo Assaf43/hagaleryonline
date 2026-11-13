@@ -1,9 +1,10 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
 import { CustomerStore } from './customer.store';
 import { OrderDetailPage } from './order-detail.page';
-import { failWith, orderView, provideAccountTesting, signedIn, tick } from './account.testing';
+import { failWith, orderView, provideAccountTesting, signedIn, tick, flushCarts } from './account.testing';
 
 const URL = '/api/account/orders/100001';
 
@@ -101,6 +102,21 @@ describe('OrderDetailPage (account)', () => {
     http.expectOne(URL).flush(orderView('paid'));
     await settle();
     expect(text()).toContain('אי אפשר לבטל את ההזמנה כעת');
+  });
+
+  it('a signed-out answer (401) goes to sign-in with ?next=', async () => {
+    http = provideAccountTesting();
+    signedIn(TestBed.inject(CustomerStore));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture = TestBed.createComponent(OrderDetailPage);
+    fixture.componentRef.setInput('number', '100001');
+    fixture.detectChanges();
+    await tick();
+    failWith(http.expectOne(URL), 401, 'not_authenticated');
+    await settle();
+    expect(TestBed.inject(CustomerStore).me()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/account'], { queryParams: { next: expect.any(String) } });
+    flushCarts(http);
   });
 
   it('shows not found for another account order', async () => {

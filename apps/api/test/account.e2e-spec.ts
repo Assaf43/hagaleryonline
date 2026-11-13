@@ -406,6 +406,29 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     expect(row.marketingConsentAt!.getTime()).toBeGreaterThanOrEqual(consentAt!.getTime());
   });
 
+  it('name change: trimmed, 2–80 characters, session required; me carries the consent time', async () => {
+    const c = await newCustomer();
+    const b = browser();
+    await browser().write('put', '/api/account/name', { name: 'דנה' }).expect(401);
+    await b.signIn(c.email);
+
+    const ok = await b.write('put', '/api/account/name', { name: '  דנה   כהן  ' }).expect(200);
+    expect(ok.headers['cache-control']).toBe('no-store');
+    expect(ok.body).toMatchObject({ id: c.id, fullName: 'דנה כהן', email: c.email, marketingConsentAt: null });
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: c.id } })).fullName).toBe('דנה כהן');
+
+    for (const name of ['א', '   ', 'x'.repeat(81), 5, undefined]) {
+      const bad = await b.write('put', '/api/account/name', { name }).expect(400);
+      expect(bad.body).toMatchObject({ code: 'invalid_input', field: 'name' });
+    }
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: c.id } })).fullName).toBe('דנה כהן');
+
+    await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
+    const me = (await b.agent.get('/api/account/me').expect(200)).body as { marketingConsentAt: string };
+    const row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
+    expect(me.marketingConsentAt).toBe(row.marketingConsentAt!.toISOString());
+  });
+
   it('address and consent writes are rate limited per IP (bucket account)', async () => {
     const throttle = app.get(WriteThrottle);
     throttle.setLimit('account', 2);

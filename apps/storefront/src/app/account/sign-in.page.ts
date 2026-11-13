@@ -76,6 +76,7 @@ export class SignInPage {
   protected readonly targetText = signal('');
   protected readonly codeStep = signal(false);
   private target = '';
+  private queuedCode: string | null = null;
   private channel: OtpChannel = 'sms';
 
   protected readonly emailText = signal('');
@@ -212,7 +213,11 @@ export class SignInPage {
   }
 
   protected async verifyCode(code: string): Promise<void> {
-    if (this.busy()) return;
+    if (this.busy()) {
+      // Completed while the previous code is being checked: checked right after it, never dropped.
+      this.queuedCode = code;
+      return;
+    }
     this.busy.set(true);
     this.codeError.set('');
     this.formError.set('');
@@ -236,6 +241,7 @@ export class SignInPage {
       const failure = accountFailure(error);
       if (failure.code === 'invalid_code') {
         this.codeError.set(accountErrorMessage(failure));
+        this.focusCode();
         this.otp()?.clear();
       } else {
         this.formError.set(accountErrorMessage(failure));
@@ -243,6 +249,9 @@ export class SignInPage {
     } finally {
       this.busy.set(false);
     }
+    const queued = this.queuedCode;
+    this.queuedCode = null;
+    if (queued !== null && !this.store.me() && this.codeStep()) await this.verifyCode(queued);
   }
 
   protected changeTarget(): void {
@@ -303,6 +312,11 @@ export class SignInPage {
   protected resetCodeEntered(code: string): void {
     this.resetCode = code;
     this.codeError.set('');
+  }
+
+  /** Any edit of a digit makes the code entered before stale. */
+  protected resetCodeEdited(): void {
+    this.resetCode = '';
   }
 
   protected async submitReset(event: Event): Promise<void> {

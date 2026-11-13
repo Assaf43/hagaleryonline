@@ -28,7 +28,12 @@
                   <span class="badge">{{ o.statusLabelHe }}</span>
                 </div>
                 <p class="hint">
-                  <bdi class="num">{{ date(o.createdAt) }}</bdi> · <bdi class="num">{{ o.itemCount }}</bdi> פריטים
+                  <bdi class="num">{{ date(o.createdAt) }}</bdi> ·
+                  @if (o.itemCount === 1) {
+                    פריט אחד
+                  } @else {
+                    <bdi class="num">{{ o.itemCount }}</bdi> פריטים
+                  }
                 </p>
                 <p>
                   סה״כ <bdi class="num">{{ price(o.total) }}</bdi>

@@ -148,6 +148,35 @@ describe('SignUpPage', () => {
     failWith(http.expectOne('/api/account/otp/verify'), 401, 'invalid_code');
     await settle();
     expect(el().querySelectorAll('hg-otp-field .field-error')).toHaveLength(1);
+    expect(q('hg-otp-field .field-error').getAttribute('role')).toBe('alert');
+    expect(document.activeElement).toBe(otp(0));
+  });
+
+  it('a code completed while another is being checked is not dropped', async () => {
+    await setup();
+    fillDetails();
+    submit();
+    http.expectOne('/api/account/sign-up').flush({ verify: true });
+    await settle();
+    pasteInto(otp(0), '111111');
+    pasteInto(otp(1), '222222');
+    http.expectOne('/api/account/otp/verify').flush({
+      needsSignUp: true,
+      signUpToken: 't-phone',
+      verified: { phone: '0501234567', email: null },
+    });
+    await settle();
+    const second = http.expectOne('/api/account/otp/verify');
+    expect(second.request.body).toMatchObject({ code: '222222', signUpToken: 't-phone' });
+    second.flush({
+      needsSignUp: true,
+      signUpToken: 't-both',
+      verified: { phone: '0501234567', email: 'dana@example.com' },
+    });
+    await settle();
+    http.expectOne('/api/account/sign-up').flush({ customer: customerMe() });
+    await settle();
+    flushCarts(http);
   });
 
   describe('continuing from a sign-in code (needsSignUp)', () => {

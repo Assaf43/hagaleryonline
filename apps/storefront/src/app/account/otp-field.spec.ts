@@ -9,6 +9,7 @@ describe('OtpField', () => {
   const resendButton = () => el().querySelector<HTMLButtonElement>('button.resend')!;
   let completed: string[];
   let resends: number;
+  let edits: number;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -18,6 +19,8 @@ describe('OtpField', () => {
     fixture.componentRef.setInput('idPrefix', 'otp-a');
     completed = [];
     resends = 0;
+    edits = 0;
+    fixture.componentInstance.edited.subscribe(() => edits++);
     fixture.componentInstance.completed.subscribe((c) => completed.push(c));
     fixture.componentInstance.resend.subscribe(() => resends++);
     fixture.detectChanges();
@@ -107,6 +110,23 @@ describe('OtpField', () => {
     fixture.detectChanges();
     expect(boxes().every((b) => b.value === '')).toBe(true);
     expect(document.activeElement).toBe(boxes()[0]);
+  });
+
+  it('emits edited on every change (typing, paste, backspace), so a page can drop a stale code', () => {
+    boxes()[0].value = '1';
+    boxes()[0].dispatchEvent(new Event('input', { bubbles: true }));
+    expect(edits).toBe(1);
+    pasteInto(boxes()[0], '123456');
+    expect(edits).toBe(2);
+    boxes()[5].value = '';
+    boxes()[5].dispatchEvent(new Event('input', { bubbles: true }));
+    expect(edits).toBe(3);
+  });
+
+  it('announces the error: it is an alert', () => {
+    fixture.componentRef.setInput('error', 'הקוד שגוי');
+    fixture.detectChanges();
+    expect(el().querySelector('.field-error')!.getAttribute('role')).toBe('alert');
   });
 
   it('shows an error tied to the group', () => {

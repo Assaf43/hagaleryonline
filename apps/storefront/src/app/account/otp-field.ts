@@ -50,7 +50,7 @@ export const RESEND_AFTER_SECONDS = 60;
         }
       </div>
       @if (error()) {
-        <p class="field-error" [id]="errorId()">{{ error() }}</p>
+        <p class="field-error" role="alert" [id]="errorId()">{{ error() }}</p>
       }
       <button type="button" class="btn btn-secondary resend" [disabled]="resendIn() > 0" (click)="resendClick()">
         @if (resendIn() > 0) {
@@ -97,6 +97,8 @@ export class OtpField {
   readonly disabled = input(false);
   readonly completed = output<string>();
   readonly resend = output<void>();
+  /** The customer changed a digit (typing, paste, delete): a page drops any code it kept from before. */
+  readonly edited = output<void>();
 
   protected readonly length = LENGTH;
   protected readonly digits = signal<string[]>(Array<string>(LENGTH).fill(''));
@@ -151,6 +153,7 @@ export class OtpField {
   protected typed(index: number, event: Event): void {
     const input = event.target as HTMLInputElement;
     const typed = input.value.replace(/\D/g, '');
+    this.edited.emit();
     if (!typed) {
       this.set(index, '');
       input.value = '';
@@ -163,7 +166,10 @@ export class OtpField {
   protected paste(event: ClipboardEvent): void {
     event.preventDefault();
     const typed = (event.clipboardData?.getData('text') ?? '').replace(/\D/g, '');
-    if (typed) this.fill(0, typed);
+    if (typed) {
+      this.edited.emit();
+      this.fill(0, typed);
+    }
   }
 
   protected keydown(index: number, event: KeyboardEvent): void {
@@ -171,6 +177,7 @@ export class OtpField {
       case 'Backspace':
         if (!this.digits()[index] && index > 0) {
           event.preventDefault();
+          this.edited.emit();
           this.set(index - 1, '');
           this.focusBox(index - 1);
         }

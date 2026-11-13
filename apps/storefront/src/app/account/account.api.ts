@@ -6,6 +6,7 @@ import type {
   AccountErrorCode,
   AccountOrdersPage,
   ConsentBody,
+  NameChangeBody,
   ContactChangeBody,
   ContactConfirmBody,
   CustomerAddressInput,
@@ -68,6 +69,11 @@ export class AccountApi {
 
   changePassword(body: PasswordChangeBody) {
     return firstValueFrom(this.http.post<SignedInResponse>('/api/account/password', body));
+  }
+
+  changeName(name: string) {
+    const body: NameChangeBody = { name };
+    return firstValueFrom(this.http.put<CustomerMe>('/api/account/name', body));
   }
 
   changeContact(body: ContactChangeBody) {

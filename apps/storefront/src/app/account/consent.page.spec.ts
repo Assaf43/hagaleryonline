@@ -1,9 +1,10 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
 import { CustomerStore } from './customer.store';
 import { ConsentPage } from './consent.page';
-import { customerMe, failWith, provideAccountTesting, signedIn, tick } from './account.testing';
+import { customerMe, failWith, provideAccountTesting, signedIn, tick, flushCarts } from './account.testing';
 
 describe('ConsentPage', () => {
   let fixture: ComponentFixture<ConsentPage>;
@@ -76,12 +77,51 @@ describe('ConsentPage', () => {
     expect(el().querySelector('[role="status"]')?.textContent).toContain('בוטלה');
   });
 
+  it('the checkbox is never disabled while saving (the focus stays on it)', async () => {
+    await setup(false);
+    box().focus();
+    box().click();
+    fixture.detectChanges();
+    expect(box().disabled).toBe(false);
+    expect(document.activeElement).toBe(box());
+    http.expectOne('/api/account/consent').flush({
+      marketingConsent: true,
+      marketingConsentAt: '2026-11-12T10:00:00.000Z',
+      marketingConsentSource: 'account',
+      marketingWithdrawnAt: null,
+    });
+    await settle();
+  });
+
+  it('shows the consent date from the first load (me.marketingConsentAt)', async () => {
+    http = provideAccountTesting();
+    signedIn(
+      TestBed.inject(CustomerStore),
+      customerMe({ marketingConsent: true, marketingConsentAt: '2026-11-12T10:00:00.000Z' }),
+    );
+    fixture = TestBed.createComponent(ConsentPage);
+    fixture.detectChanges();
+    expect(el().textContent).toContain('12.11.2026');
+  });
+
+  it('a signed-out answer (401) clears the customer and goes to sign-in with ?next=', async () => {
+    await setup(false);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    box().click();
+    failWith(http.expectOne('/api/account/consent'), 401, 'not_authenticated');
+    await settle();
+    expect(TestBed.inject(CustomerStore).me()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/account'], { queryParams: { next: expect.any(String) } });
+    flushCarts(http);
+  });
+
   it('a failed save restores the checkbox and shows an alert', async () => {
     await setup(false);
     box().click();
     failWith(http.expectOne('/api/account/consent'), 429, 'too_many_requests');
     await settle();
     expect(box().checked).toBe(false);
-    expect(el().querySelector('[role="alert"]')?.textContent).toContain('ביצעתם יותר מדי ניסיונות');
+    const alerts = [...el().querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(' ');
+    expect(alerts).toContain('ביצעתם יותר מדי ניסיונות');
   });
 });

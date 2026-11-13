@@ -1,5 +1,7 @@
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
 import { CustomerStore } from './customer.store';
 import { customerMe, flushCarts, provideAccountTesting } from './account.testing';
 
@@ -76,5 +78,30 @@ describe('CustomerStore', () => {
     await done;
     expect(store.me()).toBeNull();
     expect(http.match('/api/cart')).toHaveLength(1);
+  });
+
+  it('a failed sign-out keeps the customer signed in and rejects', async () => {
+    const http = provideAccountTesting();
+    const store = TestBed.inject(CustomerStore);
+    store.restore(customerMe());
+    const done = store.signOut();
+    http.expectOne('/api/account/sign-out').flush({}, { status: 500, statusText: 'Error' });
+    await expect(done).rejects.toBeTruthy();
+    expect(store.me()).not.toBeNull();
+    http.expectNone('/api/cart');
+  });
+
+  it('unauthorized(): only a not_authenticated 401 clears the customer and goes to /account?next=', () => {
+    provideAccountTesting();
+    const store = TestBed.inject(CustomerStore);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    store.restore(customerMe());
+    const wrongCode = new HttpErrorResponse({ status: 401, error: { code: 'invalid_code' } });
+    expect(store.unauthorized(wrongCode)).toBe(false);
+    expect(store.me()).not.toBeNull();
+    const expired = new HttpErrorResponse({ status: 401, error: { code: 'not_authenticated' } });
+    expect(store.unauthorized(expired)).toBe(true);
+    expect(store.me()).toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/account'], { queryParams: { next: expect.any(String) } });
   });
 });
