@@ -1,0 +1,184 @@
+<section class="container page narrow">
+  <h1>התחברות</h1>
+
+  @if (ready()) {
+    @if (resetting()) {
+      <div class="stack">
+        <h2>איפוס סיסמה</h2>
+        @if (resetStep() === 'email') {
+          <form class="stack reset-request-form" novalidate (submit)="requestReset($event)">
+            <div class="field">
+              <label class="field-label" for="si-reset-email">דוא״ל</label>
+              <input
+                class="input"
+                id="si-reset-email"
+                type="email"
+                dir="ltr"
+                autocomplete="email"
+                maxlength="254"
+                [value]="resetEmail()"
+                [attr.aria-invalid]="errors().email ? true : null"
+                [attr.aria-describedby]="errors().email ? 'si-reset-email-error' : null"
+                (input)="input(resetEmail, $event)"
+              />
+              @if (errors().email; as e) {
+                <p class="field-error" id="si-reset-email-error">{{ e }}</p>
+              }
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">שליחת קוד</button>
+              <button type="button" class="btn btn-secondary" (click)="cancelReset()">חזרה להתחברות</button>
+            </div>
+          </form>
+        } @else {
+          <form class="stack reset-form" novalidate (submit)="submitReset($event)">
+            <p class="notice" role="status">{{ codeSent }}</p>
+            <hg-otp-field
+              label="הקוד שנשלח במייל"
+              idPrefix="si-reset-otp"
+              [error]="codeError()"
+              (completed)="resetCodeEntered($event)"
+              (resend)="resendReset()"
+            />
+            <div class="field">
+              <label class="field-label" for="si-reset-password">סיסמה חדשה</label>
+              <input
+                class="input"
+                id="si-reset-password"
+                type="password"
+                autocomplete="new-password"
+                maxlength="128"
+                [value]="resetPassword()"
+                [attr.aria-invalid]="errors().password ? true : null"
+                [attr.aria-describedby]="errors().password ? 'si-reset-password-error' : 'si-reset-password-hint'"
+                (input)="input(resetPassword, $event)"
+              />
+              <p class="hint" id="si-reset-password-hint">8 עד 128 תווים</p>
+              @if (errors().password; as e) {
+                <p class="field-error" id="si-reset-password-error">{{ e }}</p>
+              }
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">שמירת סיסמה והתחברות</button>
+              <button type="button" class="btn btn-secondary" (click)="cancelReset()">חזרה להתחברות</button>
+            </div>
+          </form>
+        }
+        <p class="form-error" role="alert">{{ formError() }}</p>
+      </div>
+    } @else {
+      <div class="tabs" role="tablist" aria-label="דרך ההתחברות" (keydown)="tabKey($event)">
+        @for (t of tabs; track t.id) {
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            [id]="'tab-' + t.id"
+            [attr.aria-selected]="tab() === t.id"
+            [attr.aria-controls]="'panel-signin'"
+            [tabindex]="tab() === t.id ? 0 : -1"
+            (click)="selectTab(t.id)"
+          >
+            {{ t.label }}
+          </button>
+        }
+      </div>
+
+      <div class="panel" role="tabpanel" id="panel-signin" [attr.aria-labelledby]="'tab-' + tab()">
+        @if (tab() === 'password') {
+          <form class="stack password-form" novalidate (submit)="signInWithPassword($event)">
+            <div class="field">
+              <label class="field-label" for="si-email">דוא״ל</label>
+              <input
+                class="input"
+                id="si-email"
+                type="email"
+                dir="ltr"
+                autocomplete="email"
+                maxlength="254"
+                [value]="emailText()"
+                [attr.aria-invalid]="errors().email ? true : null"
+                [attr.aria-describedby]="errors().email ? 'si-email-error' : null"
+                (input)="input(emailText, $event)"
+              />
+              @if (errors().email; as e) {
+                <p class="field-error" id="si-email-error">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" for="si-password">סיסמה</label>
+              <input
+                class="input"
+                id="si-password"
+                type="password"
+                autocomplete="current-password"
+                maxlength="128"
+                [value]="passwordText()"
+                [attr.aria-invalid]="errors().password ? true : null"
+                [attr.aria-describedby]="errors().password ? 'si-password-error' : null"
+                (input)="input(passwordText, $event)"
+              />
+              @if (errors().password; as e) {
+                <p class="field-error" id="si-password-error">{{ e }}</p>
+              }
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">התחברות</button>
+              <button type="button" class="link-btn forgot" (click)="startReset()">שכחתי סיסמה</button>
+            </div>
+          </form>
+        } @else if (!codeStep()) {
+          <form class="stack request-form" novalidate (submit)="sendCode($event)">
+            <div class="field">
+              <label class="field-label" for="si-target">{{ tab() === 'sms' ? 'טלפון נייד' : 'דוא״ל' }}</label>
+              <input
+                class="input"
+                id="si-target"
+                dir="ltr"
+                maxlength="254"
+                [attr.type]="tab() === 'sms' ? 'tel' : 'email'"
+                [attr.inputmode]="tab() === 'sms' ? 'tel' : null"
+                [attr.autocomplete]="tab() === 'sms' ? 'tel' : 'email'"
+                [value]="targetText()"
+                [attr.aria-invalid]="errors().target ? true : null"
+                [attr.aria-describedby]="errors().target ? 'si-target-error' : null"
+                (input)="input(targetText, $event)"
+              />
+              @if (errors().target; as e) {
+                <p class="field-error" id="si-target-error">{{ e }}</p>
+              }
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn btn-primary" [disabled]="busy()">שליחת קוד</button>
+            </div>
+          </form>
+        } @else {
+          <div class="stack">
+            <p class="notice" role="status">{{ codeSent }}</p>
+            <hg-otp-field
+              [label]="tab() === 'sms' ? 'הקוד שנשלח ב־SMS' : 'הקוד שנשלח במייל'"
+              idPrefix="si-otp"
+              [error]="codeError()"
+              [disabled]="busy()"
+              (completed)="verifyCode($event)"
+              (resend)="resend()"
+            />
+            <div class="actions">
+              <button type="button" class="link-btn" (click)="changeTarget()">
+                {{ tab() === 'sms' ? 'שינוי מספר הטלפון' : 'שינוי כתובת הדוא״ל' }}
+              </button>
+            </div>
+          </div>
+        }
+        <p class="form-error" role="alert">{{ formError() }}</p>
+      </div>
+
+      <p class="hint">
+        אין לכם חשבון עדיין?
+        <a routerLink="/account/sign-up" [queryParams]="next() ? { next: next() } : null">להרשמה</a>
+      </p>
+    }
+  } @else {
+    <p class="state">טוען…</p>
+  }
+</section>

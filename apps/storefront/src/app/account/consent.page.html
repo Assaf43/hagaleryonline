@@ -1,0 +1,38 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+  <h2>דיוור ועדכונים</h2>
+
+  @if (store.me(); as me) {
+    <div class="stack">
+      <label class="check">
+        <input
+          type="checkbox"
+          id="consent-marketing"
+          aria-describedby="consent-hint"
+          [checked]="me.marketingConsent"
+          [disabled]="busy()"
+          (change)="toggle($event)"
+        />
+        אני מאשר/ת קבלת דיוור ועדכונים שיווקיים
+      </label>
+      <p class="hint" id="consent-hint">אפשר לבטל את ההסכמה בכל רגע בלחיצה אחת. הסרת הסימון שומרת את הביטול מיד.</p>
+      @if (result(); as r) {
+        @if (r.marketingConsent && r.marketingConsentAt) {
+          <p class="hint">
+            ההסכמה ניתנה ב־<bdi class="num">{{ date(r.marketingConsentAt) }}</bdi>
+          </p>
+        }
+        @if (!r.marketingConsent && r.marketingWithdrawnAt) {
+          <p class="hint">
+            ההסכמה בוטלה ב־<bdi class="num">{{ date(r.marketingWithdrawnAt) }}</bdi>
+          </p>
+        }
+      }
+      <p class="notice" role="status">{{ status() }}</p>
+      <p class="form-error" role="alert">{{ error() }}</p>
+    </div>
+  } @else {
+    <p class="state">טוען…</p>
+  }
+</section>

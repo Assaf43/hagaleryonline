@@ -40,91 +40,11 @@ h2 {
   }
 }
 
-.keep {
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-info-soft);
-  border-radius: var(--radius-md);
-  font-weight: 600;
-}
-
-.layout {
-  display: grid;
-  gap: var(--space-6);
-  align-items: start;
-  inline-size: 100%;
-
-  @media (width >= 960px) {
-    grid-template-columns: minmax(0, 1fr) 380px;
-  }
-}
-
-.side {
-  display: grid;
-  gap: var(--space-5);
-
-  section {
-    display: grid;
-    gap: var(--space-2);
-  }
-}
-
-.totals {
-  padding: var(--space-4);
-  background: var(--color-surface-alt);
-  border-radius: var(--radius-md);
-}
-
-.lines {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--space-3);
-}
-
-.line {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-block-end: var(--space-3);
-  border-block-end: var(--border-width) solid var(--color-border);
-}
-
-.line-info {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.model {
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.row {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.total {
-  font-weight: 700;
-  font-size: var(--font-h3);
-}
-
 .refunded {
   font-weight: 600;
 }
 
-.document-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--space-2);
-}
-
-.support a,
-.document-list a {
+.support a {
   color: inherit;
 
   // Not colour alone: the links stay underlined.

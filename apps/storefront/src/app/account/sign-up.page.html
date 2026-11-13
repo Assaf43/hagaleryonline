@@ -1,0 +1,138 @@
+<section class="container page narrow">
+  <h1>הרשמה</h1>
+
+  @if (!ready()) {
+    <p class="state">טוען…</p>
+  } @else if (step() === 'details') {
+    <form class="stack details-form" novalidate (submit)="submit($event)">
+      <div class="field">
+        <label class="field-label" for="su-name">שם מלא</label>
+        <input
+          class="input"
+          id="su-name"
+          type="text"
+          autocomplete="name"
+          maxlength="80"
+          [value]="name()"
+          [attr.aria-invalid]="errors().name ? true : null"
+          [attr.aria-describedby]="errors().name ? 'su-name-error' : null"
+          (input)="input(name, $event)"
+        />
+        @if (errors().name; as e) {
+          <p class="field-error" id="su-name-error">{{ e }}</p>
+        }
+      </div>
+      <div class="field">
+        <label class="field-label" for="su-phone">טלפון נייד</label>
+        <input
+          class="input"
+          id="su-phone"
+          type="tel"
+          dir="ltr"
+          inputmode="tel"
+          autocomplete="tel"
+          maxlength="20"
+          [readOnly]="lockedPhone()"
+          [value]="phone()"
+          [attr.aria-invalid]="errors().phone ? true : null"
+          [attr.aria-describedby]="errors().phone ? 'su-phone-error' : lockedPhone() ? 'su-phone-hint' : null"
+          (input)="input(phone, $event)"
+        />
+        @if (lockedPhone()) {
+          <p class="hint" id="su-phone-hint">הטלפון אומת בקוד</p>
+        }
+        @if (errors().phone; as e) {
+          <p class="field-error" id="su-phone-error">{{ e }}</p>
+        }
+      </div>
+      <div class="field">
+        <label class="field-label" for="su-email">דוא״ל</label>
+        <input
+          class="input"
+          id="su-email"
+          type="email"
+          dir="ltr"
+          autocomplete="email"
+          maxlength="254"
+          [readOnly]="lockedEmail()"
+          [value]="email()"
+          [attr.aria-invalid]="errors().email ? true : null"
+          [attr.aria-describedby]="errors().email ? 'su-email-error' : lockedEmail() ? 'su-email-hint' : null"
+          (input)="input(email, $event)"
+        />
+        @if (lockedEmail()) {
+          <p class="hint" id="su-email-hint">הדוא״ל אומת בקוד</p>
+        }
+        @if (errors().email; as e) {
+          <p class="field-error" id="su-email-error">{{ e }}</p>
+        }
+      </div>
+      <div class="field">
+        <label class="field-label" for="su-password">סיסמה (לא חובה)</label>
+        <input
+          class="input"
+          id="su-password"
+          type="password"
+          autocomplete="new-password"
+          maxlength="128"
+          [value]="password()"
+          [attr.aria-invalid]="errors().password ? true : null"
+          [attr.aria-describedby]="errors().password ? 'su-password-error' : 'su-password-hint'"
+          (input)="input(password, $event)"
+        />
+        <p class="hint" id="su-password-hint">אפשר להתחבר גם בלי סיסמה, עם קוד שנשלח אליכם</p>
+        @if (errors().password; as e) {
+          <p class="field-error" id="su-password-error">{{ e }}</p>
+        }
+      </div>
+      <label class="check">
+        <input type="checkbox" id="su-consent" [checked]="consent()" (change)="setConsent($event)" />
+        אני מאשר/ת קבלת דיוור ועדכונים שיווקיים
+      </label>
+      <p class="hint">בהמשך נשלח קוד לטלפון ולדוא״ל כדי לאמת אותם.</p>
+      <p class="form-error" role="alert">{{ formError() }}</p>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary" [disabled]="busy()">המשך</button>
+        <a routerLink="/account" [queryParams]="next() ? { next: next() } : null" class="link-btn">יש לי כבר חשבון</a>
+      </div>
+    </form>
+  } @else {
+    <div class="stack">
+      <p class="notice" role="status">שלחנו קוד אימות. הזינו אותו כדי להשלים את ההרשמה.</p>
+      @if (needsCode().phone) {
+        <div class="stack">
+          <hg-otp-field
+            label="הקוד שנשלח ב־SMS לטלפון"
+            idPrefix="su-otp-phone"
+            [error]="codeErrors().phone"
+            [disabled]="busy() || verified().phone"
+            (completed)="codeEntered('phone', $event)"
+            (resend)="resend('phone')"
+          />
+          @if (verified().phone) {
+            <p class="hint">הטלפון אומת</p>
+          }
+        </div>
+      }
+      @if (needsCode().email) {
+        <div class="stack">
+          <hg-otp-field
+            label="הקוד שנשלח למייל"
+            idPrefix="su-otp-email"
+            [error]="codeErrors().email"
+            [disabled]="busy() || verified().email"
+            (completed)="codeEntered('email', $event)"
+            (resend)="resend('email')"
+          />
+          @if (verified().email) {
+            <p class="hint">הדוא״ל אומת</p>
+          }
+        </div>
+      }
+      <p class="form-error" role="alert">{{ formError() }}</p>
+      <div class="actions">
+        <button type="button" class="link-btn" (click)="backToDetails()">חזרה לעריכת הפרטים</button>
+      </div>
+    </div>
+  }
+</section>

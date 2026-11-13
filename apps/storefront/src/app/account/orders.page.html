@@ -1,0 +1,56 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+
+  <h2 id="orders-title">ההזמנות שלי</h2>
+  @switch (state()) {
+    @case ('loading') {
+      <p class="state" role="status">טוען…</p>
+    }
+    @case ('error') {
+      <div class="state" role="alert">
+        <p>לא הצלחנו לטעון את ההזמנות.</p>
+        <button type="button" class="btn btn-secondary retry" (click)="load(page())">נסו שוב</button>
+      </div>
+    }
+    @case ('ready') {
+      @if (data(); as d) {
+        @if (d.items.length === 0) {
+          <p class="state">עדיין אין הזמנות בחשבון</p>
+        } @else {
+          <ul class="list" aria-labelledby="orders-title">
+            @for (o of d.items; track o.number) {
+              <li class="card order-row">
+                <div class="card-head">
+                  <a class="order-link" [routerLink]="['/account/orders', o.number]"
+                    >הזמנה <bdi class="num">{{ o.number }}</bdi></a
+                  >
+                  <span class="badge">{{ o.statusLabelHe }}</span>
+                </div>
+                <p class="hint">
+                  <bdi class="num">{{ date(o.createdAt) }}</bdi> · <bdi class="num">{{ o.itemCount }}</bdi> פריטים
+                </p>
+                <p>
+                  סה״כ <bdi class="num">{{ price(o.total) }}</bdi>
+                </p>
+              </li>
+            }
+          </ul>
+          @if (pages() > 1) {
+            <nav class="pager" aria-label="עמודי ההזמנות">
+              <button type="button" class="btn btn-secondary" [disabled]="page() <= 1" (click)="load(page() - 1)">
+                הקודם
+              </button>
+              <span
+                >עמוד <bdi class="num">{{ page() }}</bdi> מתוך <bdi class="num">{{ pages() }}</bdi></span
+              >
+              <button type="button" class="btn btn-secondary" [disabled]="page() >= pages()" (click)="load(page() + 1)">
+                הבא
+              </button>
+            </nav>
+          }
+        }
+      }
+    }
+  }
+</section>

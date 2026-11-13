@@ -12,35 +12,20 @@ import {
   viewChild,
   type ElementRef,
 } from '@angular/core';
-import { DiscountAmount } from '../core/discount-amount';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
-import { INVOICE_TYPE_LABELS_HE, type OrderStatus, type OrderView } from '@hg/models';
+import { ORDER_STATUS_TITLES, OrderDetail } from './order-detail';
+import type { OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
-import { deliveryEstimateText, formatPrice } from '../core/format';
+import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { SUPPORT_CONTACT } from '../core/support-contact';
-import {
-  CheckoutApi,
-  ExternalNavigation,
-  SHIPPING_METHOD_LABELS_HE,
-  apiErrorCode,
-  checkoutErrorMessage,
-} from '../checkout/checkout.api';
+import { CheckoutApi, ExternalNavigation, apiErrorCode, checkoutErrorMessage } from '../checkout/checkout.api';
 
 const POLL_MS = 3000;
 /** A pending order is polled for at most this long; then the customer can check again by hand. */
 const POLL_FOR_MS = 60_000;
-
-/** Headlines that keep their Phase 4 wording; every other status shows the API's `statusLabelHe`. */
-const STATUS_TITLES: Partial<Record<OrderStatus, string>> = {
-  paid: 'ההזמנה התקבלה ושולמה',
-  pending_payment: 'ממתינים לאישור התשלום…',
-  cancelled: 'ההזמנה בוטלה',
-  payment_failed: 'התשלום לא הושלם',
-  expired: 'זמן התשלום עבר',
-};
 
 /**
  * Order confirmation `/order/:number?t=<token>` (spec §5.5, CHK-04): status, lines, address, method, totals and
@@ -50,7 +35,7 @@ const STATUS_TITLES: Partial<Record<OrderStatus, string>> = {
  */
 @Component({
   selector: 'hg-order-page',
-  imports: [DiscountAmount, RouterLink],
+  imports: [OrderDetail, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './order.page.html',
   styleUrl: './order.page.scss',
@@ -79,7 +64,7 @@ export class OrderPage {
 
   protected readonly title = computed(() => {
     const o = this.order();
-    return o ? (STATUS_TITLES[o.status] ?? o.statusLabelHe) : '';
+    return o ? (ORDER_STATUS_TITLES[o.status] ?? o.statusLabelHe) : '';
   });
   /** Paid orders the customer cannot cancel online: they are sent to customer service. */
   protected readonly contactSupport = computed(() => {
@@ -101,26 +86,13 @@ export class OrderPage {
     const s = this.order()?.status;
     return s === 'payment_failed' || s === 'expired';
   });
-  /** "הרצל 12, דירה 5, תל אביב - יפו". */
-  protected readonly addressLine = computed(() => {
-    const a = this.order()?.address;
-    if (!a) return '';
-    const apartment = a.apartment ? `, דירה ${a.apartment}` : '';
-    return `${a.street} ${a.houseNumber}${apartment}, ${a.localityNameHe}`;
-  });
-  protected readonly estimate = computed(() => {
-    const e = this.order()?.deliveryEstimate;
-    return e ? deliveryEstimateText(e.leadTimeDays) : '';
-  });
-  protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
-  protected readonly invoiceLabels = INVOICE_TYPE_LABELS_HE;
   protected readonly price = formatPrice;
 
   /** The document opens through the API with the order token, like the page itself (spec §5.4). */
-  protected documentUrl(id: string): string {
+  protected readonly documentUrl = (id: string): string => {
     const number = encodeURIComponent(this.number());
     return `/api/orders/${number}/invoices/${encodeURIComponent(id)}?t=${encodeURIComponent(this.t() ?? '')}`;
-  }
+  };
 
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pollStart = 0;

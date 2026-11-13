@@ -34,6 +34,8 @@ describe('App', () => {
     expect(el.querySelector('main#main')).toBeTruthy();
     // The header reads the cart once it has rendered in the browser (CRT-01).
     http.expectOne('/api/cart').flush({ lines: [], itemCount: 0, subtotal: 0, notices: [] });
+    // ... and the customer session, for the account icon (ACC-01).
+    http.expectOne('/api/account/me').flush(null);
     http.verify();
   });
 
