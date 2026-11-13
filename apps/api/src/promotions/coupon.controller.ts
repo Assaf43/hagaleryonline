@@ -3,8 +3,7 @@ import type { Request, Response } from 'express';
 import { MAX_COUPON_CODE_LENGTH, type CartView } from '@hg/models';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
-import { customerIdOf, sendCart } from '../cart/cart.controller.js';
-import { cartTokenOf as tokenOf } from '../cart/cart-token.js';
+import { ownerOf, sendCart } from '../cart/cart.controller.js';
 import { CartError, CartService } from '../cart/cart.service.js';
 import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
 import type { ResolvedCustomer } from '../customers/customer-session.service.js';
@@ -36,7 +35,7 @@ export class CouponController {
     const { code } = (body ?? {}) as Record<string, unknown>;
     if (typeof code !== 'string' || code.trim().length === 0 || code.trim().length > MAX_COUPON_CODE_LENGTH)
       throw new CartError(HttpStatus.BAD_REQUEST, 'invalid_input');
-    return sendCart(this.config, req, res, await this.cart.applyCoupon(tokenOf(req), code, customerIdOf(customer)));
+    return sendCart(this.config, req, res, await this.cart.applyCoupon(ownerOf(req, customer), code));
   }
 
   @Delete()
@@ -45,6 +44,6 @@ export class CouponController {
     @Res({ passthrough: true }) res: Response,
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
-    return sendCart(this.config, req, res, await this.cart.removeCoupon(tokenOf(req), customerIdOf(customer)));
+    return sendCart(this.config, req, res, await this.cart.removeCoupon(ownerOf(req, customer)));
   }
 }

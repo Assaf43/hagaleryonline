@@ -251,10 +251,13 @@ export class CustomerAuthController {
     return this.signIn(res, client, await this.auth.resetPassword(email, code, next, client));
   }
 
-  /** Sets the session cookie and points `hg_cart` at the account's cart (merged, spec §6.4). */
-  private signIn(res: Response, client: ClientInfo, { customer, token, cartToken }: SignedIn): SignedInResponse {
+  /**
+   * Sets the session cookie and drops `hg_cart`: the guest cart was merged into the account's cart, which the session
+   * finds from now on (spec §6.4).
+   */
+  private signIn(res: Response, client: ClientInfo, { customer, token }: SignedIn): SignedInResponse {
     this.cookie.set(res, token);
-    writeCartCookie(this.config, res, cartToken, client.cartToken !== undefined);
+    writeCartCookie(this.config, res, null, client.cartToken !== undefined);
     return { customer };
   }
 }

@@ -55,8 +55,6 @@ export interface SignedIn {
   customer: CustomerMe;
   /** The new session's cookie value. */
   token: string;
-  /** What the `hg_cart` cookie carries from now on (the account's cart after the merge); null: no cart. */
-  cartToken: string | null;
 }
 
 export function toMe(c: Customer): CustomerMe {
@@ -303,12 +301,15 @@ export class CustomerAuthService {
     return this.prisma.customer.update({ where: { id: customer.id }, data: { [field]: new Date() } });
   }
 
-  /** Every sign-in ends here (password, code, sign-up, reset): a new session, then the cart merge. */
+  /**
+   * Every sign-in ends here (password, code, sign-up, reset): the cart merge (spec §6.4), then the new session — a
+   * merge that fails leaves no session behind.
+   */
   private async signedIn(customer: Customer, client: ClientInfo): Promise<SignedIn> {
     await this.sessions.endByToken(client.previousToken);
+    await this.cart.attachToCustomer(client.cartToken, customer.id);
     const token = await this.sessions.start(customer.id, { ip: client.ip, userAgent: client.userAgent });
-    const cartToken = await this.cart.attachToCustomer(client.cartToken, customer.id);
-    return { customer: toMe(customer), token, cartToken };
+    return { customer: toMe(customer), token };
   }
 
   /** Reads every part of a ticket (each a live, unused token of one contact); 400 `invalid_token` otherwise. */

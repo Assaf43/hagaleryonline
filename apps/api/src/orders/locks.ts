@@ -8,7 +8,10 @@ import { Prisma } from '../generated/prisma/client.js';
  *    Nothing else takes it, and whoever waits for it holds no lock yet, so it cannot close a cycle with the row
  *    locks below. It makes one account's checkouts run one after the other, so only one live order holds the
  *    benefit (decision 79);
- *  - cart merge on sign-in (CartService.attachToCustomer): the account's cart and the guest cart, by ascending id;
+ *  - account cart (Phase 5c): a transaction-scoped advisory lock per account (`lockAccountCart`), taken first by the
+ *    first add of a signed-in customer (so two first adds make one cart) and by the cart merge on sign-in
+ *    (CartService.attachToCustomer), which then locks every cart involved by ascending id. Only these take it, and a
+ *    waiter holds no row lock yet;
  *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
  *    limited promotions it may use (PromotionsService.lockLimited), so their usage counts hold until commit;
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
@@ -28,6 +31,11 @@ export async function lockCart(tx: Prisma.TransactionClient, cartId: string): Pr
 /** One account's welcome-benefit lock (see above); released at commit or rollback. */
 export async function lockWelcome(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'welcome:' + customerId}::text))`;
+}
+
+/** One account's cart lock (see above); released at commit or rollback. */
+export async function lockAccountCart(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'cart:' + customerId}::text))`;
 }
 
 /** Locks the payment rows of an order (ascending id); taken before `lockOrder` where a payment is also updated. */

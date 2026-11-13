@@ -284,5 +284,15 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: true })).expect(200);
     const rows = await prisma.promotion.findMany({ where: { isWelcome: true } });
     expect(rows.map((r) => r.id)).toEqual([first.id]);
+
+    // An edit without isWelcome (an older form) keeps the mark; an explicit false removes it.
+    const { isWelcome: _omit, ...withoutFlag } = automatic({ name: 'ZZ הטבה א', value: 15 });
+    expect(_omit).toBeUndefined();
+    const kept = (await owner.put(`/promotions/${first.id}`, withoutFlag).expect(200)).body as AdminPromotion;
+    expect(kept).toMatchObject({ value: 15, isWelcome: true });
+    const off = (
+      await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: false })).expect(200)
+    ).body as AdminPromotion;
+    expect(off.isWelcome).toBe(false);
   });
 });

@@ -113,8 +113,10 @@ export function parsePromotionInput(body: unknown): AdminPromotionInput {
   if (typeof b.active !== 'boolean') throw invalid('active');
 
   // The welcome benefit (decision 79) is applied automatically: never a coupon.
-  const isWelcome = b.isWelcome ?? false;
-  if (typeof isWelcome !== 'boolean' || (isWelcome && kind !== 'automatic')) throw invalid('isWelcome');
+  // Missing: unchanged on an edit (false for a new promotion).
+  const isWelcome = b.isWelcome ?? undefined;
+  if (isWelcome !== undefined && (typeof isWelcome !== 'boolean' || (isWelcome && kind !== 'automatic')))
+    throw invalid('isWelcome');
 
   return {
     name,

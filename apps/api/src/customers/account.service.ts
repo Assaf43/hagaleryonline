@@ -150,15 +150,21 @@ export class AccountService {
   }
 
   /**
-   * Marketing consent (CLAUDE.md §4.4): giving it records the time and source `account`; withdrawing records the
-   * withdrawal time (the earlier consent's time and source stay as the record of it). The current value: no change.
+   * Marketing consent (CLAUDE.md §4.4): giving it records the time and source `account` and clears an earlier
+   * withdrawal; withdrawing records the withdrawal time (the consent's time and source stay as the record of it). The
+   * current value: no change.
    */
   async setConsent(customer: Customer, body: unknown): Promise<AccountConsent> {
     const value = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).marketingConsent;
     if (typeof value !== 'boolean') throw badField('marketingConsent');
     const now = new Date();
     const data: Prisma.CustomerUpdateManyMutationInput = value
-      ? { marketingConsent: true, marketingConsentAt: now, marketingConsentSource: MarketingConsentSource.ACCOUNT }
+      ? {
+          marketingConsent: true,
+          marketingConsentAt: now,
+          marketingConsentSource: MarketingConsentSource.ACCOUNT,
+          marketingWithdrawnAt: null,
+        }
       : { marketingConsent: false, marketingWithdrawnAt: now };
     // Only when it changes: a repeated answer keeps the recorded times.
     await this.prisma.customer.updateMany({ where: { id: customer.id, marketingConsent: !value }, data });

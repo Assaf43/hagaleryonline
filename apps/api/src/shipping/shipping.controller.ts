@@ -2,26 +2,32 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@n
 import type { Request } from 'express';
 import type { ShippingQuote, ShippingQuoteRequest } from '@hg/models';
 import { StorefrontOriginGuard } from '../auth/guards.js';
-import { cartTokenOf } from '../cart/cart-token.js';
+import { ownerOf } from '../cart/cart.controller.js';
 import { CartService } from '../cart/cart.service.js';
+import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
+import type { ResolvedCustomer } from '../customers/customer-session.service.js';
 import { MAX_FLOOR } from './shipping-rules.js';
 import { ShippingError, ShippingNotConfiguredError, ShippingService } from './shipping.service.js';
 
 /** Public shipping API (spec §4.3). POSTs go through StorefrontOriginGuard (storefront origin only). */
 @Controller('shipping')
-@UseGuards(StorefrontOriginGuard)
+@UseGuards(StorefrontOriginGuard, OptionalCustomerGuard)
 export class ShippingController {
   constructor(
     private readonly cart: CartService,
     private readonly shipping: ShippingService,
   ) {}
 
-  /** Both methods with a line-by-line breakdown for the cart of the cookie (SHP-01–03). */
+  /** Both methods with a line-by-line breakdown for the cart (the account's, else the cookie's; SHP-01–03). */
   @Post('quote')
   @HttpCode(HttpStatus.OK)
-  async quote(@Body() body: unknown, @Req() req: Request): Promise<ShippingQuote> {
+  async quote(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
+  ): Promise<ShippingQuote> {
     const request = parseQuoteRequest(body);
-    const items = await this.cart.shippableItems(cartTokenOf(req));
+    const items = await this.cart.shippableItems(ownerOf(req, customer));
     try {
       return await this.shipping.quote(items, request);
     } catch (e) {

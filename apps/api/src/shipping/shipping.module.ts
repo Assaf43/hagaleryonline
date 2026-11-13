@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
+import { CustomerSessionModule } from '../customers/customer-session.module.js';
 import { LocalitiesController } from './localities.controller.js';
 import { LocalitiesService } from './localities.service.js';
 import { ManualShippingProvider } from './manual-shipping.provider.js';
@@ -16,7 +17,7 @@ import { ShippingPriceList, ShippingService } from './shipping.service.js';
  * The cart needs the "from" price and the quote needs the cart, hence the forwardRef with CartModule.
  */
 @Module({
-  imports: [AuthModule, forwardRef(() => CartModule)],
+  imports: [AuthModule, CustomerSessionModule, forwardRef(() => CartModule)],
   controllers: [LocalitiesController, ShippingController, ShippingAdminController],
   providers: [
     LocalitiesService,

@@ -1,4 +1,5 @@
 import type { AddressInfo } from 'node:net';
+import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -17,13 +18,22 @@ import { AppModule } from './../src/app.module.js';
 import { hashPassword } from './../src/auth/passwords.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
-import { MarketingConsentSource, OrderStatus } from './../src/generated/prisma/client.js';
+import {
+  DiscountType,
+  MarketingConsentSource,
+  OrderStatus,
+  PromotionKind,
+  PromotionTarget,
+} from './../src/generated/prisma/client.js';
+import { SMS_PROVIDER, type SmsProvider } from './../src/notifications/notification-provider.js';
+import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { deleteOrders } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc12.e2e.test';
 const PASSWORD = 'correct horse 12';
+const COUPON = 'ZZACC12';
 /** תל אביב - יפו: in no zone. */
 const LOCALITY = 5000;
 
@@ -32,6 +42,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
   let app: NestExpressApplication;
   let prisma: PrismaService;
   let passwordHash: string;
+  let smsSpy: MockInstance<SmsProvider['sendSms']>;
   /** 100,000 a unit, 4 in stock. */
   let sofa: number;
   /** 50,000 a unit, 100 in stock. */
@@ -136,6 +147,8 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.customer.deleteMany({ where: { email: { endsWith: DOMAIN } } });
+    await prisma.promotion.deleteMany({ where: { code: COUPON } });
+    await prisma.otpCode.deleteMany({ where: { target: { startsWith: '05' } } });
   };
 
   beforeAll(async () => {
@@ -145,6 +158,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     prisma = app.get(PrismaService);
     passwordHash = await hashPassword(PASSWORD);
+    smsSpy = vi.spyOn(app.get<SmsProvider>(SMS_PROVIDER), 'sendSms');
     await cleanup();
     await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZACC' } } });
     await prisma.category.deleteMany({ where: { slug: 'zz-acc12' } });
@@ -314,7 +328,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       await b.signIn(c.email);
       const numbers: number[] = [];
       for (let i = 0; i < 11; i++) {
-        // A new cart each time (a checkout expires the cart's earlier pending order; it still belongs to the account).
+        // The account's one cart each time: each checkout expires its earlier pending order, which stays the account's.
         numbers.push((await placeOrder(b)).number);
       }
       const first = (await b.agent.get('/api/account/orders').expect(200)).body as AccountOrdersPage;
@@ -383,20 +397,51 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       marketingWithdrawnAt: row.marketingWithdrawnAt!.toISOString(),
     });
     expect((await b.agent.get('/api/account/me').expect(200)).body).toMatchObject({ marketingConsent: false });
+
+    // Consent again: a new time, and the withdrawal is cleared.
+    const again = await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
+    expect(again.body).toMatchObject({ marketingConsent: true, marketingWithdrawnAt: null });
+    row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
+    expect(row.marketingWithdrawnAt).toBeNull();
+    expect(row.marketingConsentAt!.getTime()).toBeGreaterThanOrEqual(consentAt!.getTime());
   });
 
-  describe('cart merge', () => {
-    it('the first sign-in links the guest cart and keeps its cookie', async () => {
+  it('address and consent writes are rate limited per IP (bucket account)', async () => {
+    const throttle = app.get(WriteThrottle);
+    throttle.setLimit('account', 2);
+    try {
+      const b = browser();
+      await b.signIn((await newCustomer()).email);
+      await b.write('post', '/api/account/addresses', address()).expect(201);
+      await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
+      const limited = await b.write('post', '/api/account/addresses', address()).expect(429);
+      expect(limited.body).toMatchObject({ code: 'too_many_requests' });
+      expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+      // Reads are not limited.
+      await b.agent.get('/api/account/addresses').expect(200);
+    } finally {
+      throttle.setLimit('account', 100_000);
+    }
+  });
+
+  describe('one cart per account, merged on sign-in', () => {
+    const lines = (view: CartView) => view.lines.map((l) => [l.variantId, l.quantity]).sort((a, z) => a[0] - z[0]);
+    const sorted = (pairs: number[][]) => [...pairs].sort((a, z) => a[0] - z[0]);
+    const cartCookie = (res: request.Response) =>
+      ([res.headers['set-cookie'] ?? []].flat() as string[]).find((h) => h.startsWith('hg_cart='));
+
+    it('the first sign-in links the guest cart; the cookie is dropped and the session finds the cart', async () => {
       const c = await newCustomer();
       const b = browser();
       await b.add(lamp, 2);
-      await b.signIn(c.email);
-      const carts = await prisma.cart.findMany({ include: { items: true } });
+      const signIn = await b.signIn(c.email);
+      expect(cartCookie(signIn)).toMatch(/^hg_cart=;/);
+      const carts = await prisma.cart.findMany();
       expect(carts).toEqual([expect.objectContaining({ customerId: c.id })]);
-      expect((await b.cart()).lines.map((l) => [l.variantId, l.quantity])).toEqual([[lamp, 2]]);
+      expect(lines(await b.cart())).toEqual([[lamp, 2]]);
     });
 
-    it("the customer's cart absorbs the guest lines (summed, clamped); the guest cart is deleted", async () => {
+    it("the account's cart absorbs the guest lines (summed, clamped); the guest cart is deleted", async () => {
       const c = await newCustomer();
       const phone = browser();
       await phone.signIn(c.email);
@@ -408,57 +453,166 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       await laptop.add(sofa, 3);
       await laptop.add(lamp, 5);
       const guestCart = await prisma.cart.findFirstOrThrow({ where: { customerId: null } });
-      const signIn = await laptop.signIn(c.email);
-      expect(([signIn.headers['set-cookie'] ?? []].flat() as string[]).some((h) => h.startsWith('hg_cart='))).toBe(
-        true,
-      );
+      await laptop.signIn(c.email);
 
       expect(await prisma.cart.findUnique({ where: { id: guestCart.id } })).toBeNull();
-      const items = await prisma.cartItem.findMany({
-        where: { cartId: customerCart.id },
-        orderBy: { variantId: 'asc' },
-      });
+      const items = await prisma.cartItem.findMany({ where: { cartId: customerCart.id } });
       // 2 + 3 sofas clamped to the 4 in stock; 1 + 5 lamps.
-      expect(items.map((i) => [i.variantId, i.quantity])).toEqual(
-        [
-          [sofa, 4],
-          [lamp, 6],
-        ].sort((a, z) => a[0] - z[0]),
-      );
-      // The laptop's cookie now names the customer's cart.
-      const view = await laptop.cart();
-      expect(view.lines.map((l) => [l.variantId, l.quantity]).sort((a, z) => a[0] - z[0])).toEqual(
-        [
-          [sofa, 4],
-          [lamp, 6],
-        ].sort((a, z) => a[0] - z[0]),
-      );
+      const merged = sorted([
+        [sofa, 4],
+        [lamp, 6],
+      ]);
+      expect(sorted(items.map((i) => [i.variantId, i.quantity]))).toEqual(merged);
+      // Both browsers see the same cart.
+      expect(lines(await laptop.cart())).toEqual(merged);
+      expect(lines(await phone.cart())).toEqual(merged);
       expect(await prisma.cart.count()).toBe(1);
     });
 
-    it('a sign-in without a guest cart points the cookie at the customer’s cart; sign-out drops it', async () => {
+    it('two sessions of one account see and change the same cart; sign-out drops it', async () => {
       const c = await newCustomer();
       const first = browser();
-      await first.signIn(c.email);
-      await first.add(lamp, 1);
       const second = browser();
+      await first.signIn(c.email);
       await second.signIn(c.email);
-      expect((await second.cart()).lines.map((l) => l.variantId)).toEqual([lamp]);
+      await first.add(lamp, 1);
+      await second.add(sofa, 1);
+      await second.agent.patch(`/api/cart/items/${lamp}`).set('Origin', ORIGIN).send({ quantity: 3 }).expect(200);
+      const both = sorted([
+        [sofa, 1],
+        [lamp, 3],
+      ]);
+      expect(lines(await first.cart())).toEqual(both);
+      expect(lines(await second.cart())).toEqual(both);
+      await first.write('delete', `/api/cart/items/${sofa}`).expect(200);
+      expect(lines(await second.cart())).toEqual([[lamp, 3]]);
+      expect(await prisma.cart.count({ where: { customerId: c.id } })).toBe(1);
+      // The shipping quote and checkout use the same cart.
+      const order = await orderOf(await second.checkout());
+      expect(order.cartId).toBe((await prisma.cart.findFirstOrThrow({ where: { customerId: c.id } })).id);
+
       await second.signOut();
       expect((await second.cart()).lines).toEqual([]);
+      expect(lines(await first.cart())).toEqual([[lamp, 3]]);
     });
 
-    it("another customer's cart left in the browser is not merged", async () => {
+    it('an older second cart of the account is absorbed at the next sign-in', async () => {
+      const c = await newCustomer();
+      const b = browser();
+      await b.signIn(c.email);
+      await b.add(lamp, 1);
+      const newest = await prisma.cart.findFirstOrThrow({ where: { customerId: c.id } });
+      const older = await prisma.cart.create({
+        data: {
+          tokenHash: `zz-older-${c.id}`,
+          customerId: c.id,
+          couponCode: null,
+          updatedAt: new Date(Date.now() - 60_000),
+          items: {
+            create: [
+              { variantId: lamp, quantity: 2, unitPriceAtAdd: 50_000 },
+              { variantId: sofa, quantity: 1, unitPriceAtAdd: 100_000 },
+            ],
+          },
+        },
+      });
+      // Not merged before a sign-in: the session reads the newest cart.
+      expect(lines(await b.cart())).toEqual([[lamp, 1]]);
+      const other = browser();
+      await other.signIn(c.email);
+      expect(await prisma.cart.findUnique({ where: { id: older.id } })).toBeNull();
+      const merged = sorted([
+        [sofa, 1],
+        [lamp, 3],
+      ]);
+      expect(lines(await other.cart())).toEqual(merged);
+      expect(lines(await b.cart())).toEqual(merged);
+      expect((await prisma.cart.findMany({ where: { customerId: c.id } })).map((x) => x.id)).toEqual([newest.id]);
+    });
+
+    it('merges on a sign-in by SMS code too', async () => {
+      const c = await newCustomer();
+      const phone = browser();
+      await phone.signIn(c.email);
+      await phone.add(lamp, 1);
+      const guest = browser();
+      await guest.add(lamp, 2);
+      await guest
+        .write('post', '/api/account/otp/request', { target: c.phone, channel: 'sms', purpose: 'sign_in' })
+        .expect(202);
+      const call = smsSpy.mock.calls.filter(([m]) => m.to === c.phone).at(-1)!;
+      const code = /(\d{6})/.exec(call[0].text)![1];
+      await guest.write('post', '/api/account/otp/verify', { target: c.phone, code }).expect(200);
+      expect(lines(await guest.cart())).toEqual([[lamp, 3]]);
+      expect(await prisma.cart.count()).toBe(1);
+    });
+
+    it("the guest cart's coupon carries over when the account's cart has none", async () => {
+      await prisma.promotion.create({
+        data: {
+          name: 'ZZ קופון חשבון',
+          kind: PromotionKind.COUPON,
+          code: COUPON,
+          discountType: DiscountType.PERCENT,
+          value: 10,
+          target: PromotionTarget.ORDER,
+        },
+      });
+      const c = await newCustomer();
+      const phone = browser();
+      await phone.signIn(c.email);
+      await phone.add(lamp, 1);
+      const guest = browser();
+      await guest.add(sofa, 1);
+      await guest.write('post', '/api/cart/coupon', { code: COUPON }).expect(200);
+      await guest.signIn(c.email);
+      const view = await phone.cart();
+      expect(view.couponCode).toBe(COUPON);
+      expect(view.discount).toMatchObject({ code: COUPON, amount: 15_000 });
+    });
+
+    it('a guest cart with a live pending order is emptied and detached, not deleted (the order keeps its cart)', async () => {
+      const c = await newCustomer();
+      const phone = browser();
+      await phone.signIn(c.email);
+      await phone.add(sofa, 1);
+      const guest = browser();
+      await guest.add(lamp, 1);
+      const order = await orderOf(await guest.checkout());
+      await guest.signIn(c.email);
+      const kept = await prisma.cart.findUniqueOrThrow({ where: { id: order.cartId! }, include: { items: true } });
+      expect(kept).toMatchObject({ customerId: null, items: [] });
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).cartId).toBe(kept.id);
+      expect(lines(await guest.cart())).toEqual(
+        sorted([
+          [sofa, 1],
+          [lamp, 1],
+        ]),
+      );
+    });
+
+    it('a double-submitted sign-in merges once and answers 200 twice', async () => {
+      const c = await newCustomer();
+      const phone = browser();
+      await phone.signIn(c.email);
+      await phone.add(lamp, 1);
+      const guest = browser();
+      await guest.add(lamp, 2);
+      const send = () => guest.write('post', '/api/account/sign-in', { email: c.email, password: PASSWORD });
+      const results = await Promise.all([send(), send()]);
+      expect(results.map((r) => r.status)).toEqual([200, 200]);
+      expect(lines(await phone.cart())).toEqual([[lamp, 3]]);
+      expect(await prisma.cart.count()).toBe(1);
+    });
+
+    it("another account's cart left in the browser is not merged or shown", async () => {
       const a = await newCustomer();
       const z = await newCustomer();
       const b = browser();
+      // A's guest cart, then A signs in: it becomes A's cart. Its old cookie is replayed by hand while Z signs in.
+      const cookie = cartCookie(await b.add(lamp, 1))!;
       await b.signIn(a.email);
-      await b.add(lamp, 1);
       const aCart = await prisma.cart.findFirstOrThrow({ where: { customerId: a.id } });
-      // The cookie of A's cart stays (sent by hand) while Z signs in.
-      const cookie = ([(await b.agent.get('/api/cart')).headers['set-cookie'] ?? []].flat() as string[]).find((h) =>
-        h.startsWith('hg_cart='),
-      )!;
       const z1 = browser();
       await z1.agent
         .post('/api/account/sign-in')
@@ -468,6 +622,9 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
         .expect(200);
       expect(await prisma.cartItem.count({ where: { cartId: aCart.id } })).toBe(1);
       expect(await prisma.cart.count({ where: { customerId: z.id } })).toBe(0);
+      // A guest replaying the cookie of an account's cart sees nothing.
+      const view = await browser().agent.get('/api/cart').set('Cookie', cookie.split(';')[0]).expect(200);
+      expect((view.body as CartView).lines).toEqual([]);
     });
   });
 

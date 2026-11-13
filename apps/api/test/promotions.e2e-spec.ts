@@ -793,69 +793,85 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
       expect((await b.cart()).discount?.amount).toBe(5_000);
     });
 
-    it('another live pending order holding it hides it from a second cart; a bigger promotion still wins', async () => {
+    it('a live pending order of the account outside its cart holds it; a bigger promotion still wins', async () => {
       await welcome();
       const { b, customer } = await customerBrowser();
-      // Signed in before either has a cart: two carts of one account.
-      const other = await signedIn(customer.email);
       await b.add(lamp, 1);
-      txOf(await b.checkout());
-      await other.add(sofa, 1);
-      expect((await other.cart()).discount).toBeNull();
+      const held = await orderOfTx(txOf(await b.checkout()));
+      // The order no longer belongs to the account's cart (as after a merge that detached its cart).
+      await prisma.order.update({ where: { id: held.id }, data: { cartId: null } });
+      expect((await b.cart()).discount).toBeNull();
 
       // One discount per order: a bigger automatic promotion beats the welcome benefit.
       await deleteOrders(prisma, { customerId: customer.id });
+      expect((await b.cart()).discount).toMatchObject({ labelHe: 'הטבת הצטרפות' });
       await promotion({ name: 'מבצע גדול', kind: PromotionKind.AUTOMATIC, code: null, value: 30 });
-      expect((await other.cart()).discount).toMatchObject({ labelHe: 'מבצע גדול', amount: 30_000 });
+      expect((await b.cart()).discount).toMatchObject({ labelHe: 'מבצע גדול', amount: 15_000 });
     });
 
-    it('two concurrent checkouts of one new account: exactly one gets the welcome discount (Review Focus 5)', async () => {
+    it('two concurrent checkouts of one new account: exactly one live order holds the welcome discount (Review Focus 5)', async () => {
       const p = await welcome();
       const { b: a, customer } = await customerBrowser();
       const b = await signedIn(customer.email);
-      // Two carts of the same account, different products (no shared variant lock).
-      await a.add(sofa, 1);
-      await b.add(lamp, 1);
-      const [totalA, totalB] = await Promise.all([a.expectedTotal(), b.expectedTotal()]);
-      expect((await a.cart()).discount?.amount).toBe(10_000);
+      // Both sessions work on the account's one cart.
+      await a.add(lamp, 1);
+      const total = await a.expectedTotal();
+      expect(await b.expectedTotal()).toBe(total);
       expect((await b.cart()).discount?.amount).toBe(5_000);
 
       // Hold the account's welcome lock while both checkouts start, so both wait on it.
       let release!: () => void;
-      const held = new Promise<void>((resolve) => (release = resolve));
+      const gate = new Promise<void>((resolve) => (release = resolve));
       const holder = prisma.$transaction(
         async (tx) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'welcome:' + customer.id}::text))`;
-          await held;
+          await gate;
         },
         { timeout: 20_000 },
       );
-      const racing = Promise.all([a.checkout(totalA), b.checkout(totalB)]);
+      const racing = Promise.all([a.checkout(total), b.checkout(total)]);
       await new Promise((resolve) => setTimeout(resolve, 600));
       release();
       await holder;
       const results = await racing;
 
-      expect(results.map((r) => r.status).sort((x, y) => x - y)).toEqual([201, 409]);
-      expect(results.find((r) => r.status === 409)!.body).toMatchObject({ code: 'promotion_ended' });
+      // The later checkout of the same cart replaces the earlier order (expired), as for any cart.
+      expect(results.map((r) => r.status)).toEqual([201, 201]);
+      const live = { customerId: customer.id, promotionId: p.id, status: OrderStatus.PENDING_PAYMENT };
+      expect(await prisma.order.count({ where: live })).toBe(1);
+      expect(await prisma.order.count({ where: { customerId: customer.id, status: OrderStatus.EXPIRED } })).toBe(1);
+    });
+
+    it('a welcome discount held by another live order of the account → 409 promotion_ended at checkout', async () => {
+      const p = await welcome();
+      const { b, customer } = await customerBrowser();
+      await b.add(lamp, 1);
+      const total = await b.expectedTotal();
+      const first = await orderOfTx(txOf(await b.checkout(total)));
+      await prisma.order.update({ where: { id: first.id }, data: { cartId: null } });
+
+      const res = await b.checkout(total);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'promotion_ended' });
       expect(await prisma.order.count({ where: { customerId: customer.id, promotionId: p.id } })).toBe(1);
-      expect(await prisma.order.count({ where: { customerId: customer.id } })).toBe(1);
+      // Seen without the discount, the order goes through.
+      expect(await orderOfTx(txOf(await b.checkout()))).toMatchObject({ discount: 0, promotionId: null });
     });
 
     it('retry of a welcome order is refused once the account has a paid order', async () => {
       const p = await welcome();
-      const { b, customer } = await customerBrowser();
-      const other = await signedIn(customer.email);
+      const { b } = await customerBrowser();
       await b.add(lamp, 1);
       const tx1 = txOf(await b.checkout());
       await fail(tx1).expect(200);
       const first = await orderOfTx(tx1);
       expect(first.promotionId).toBe(p.id);
       expect((await viewOf(first.number, first.publicToken)).canRetryPayment).toBe(true);
+      // Detached from the cart, so the next order does not supersede it.
+      await prisma.order.update({ where: { id: first.id }, data: { cartId: null } });
 
-      // Another order of the account, from another cart, is paid.
-      await other.add(sofa, 1);
-      await pay(txOf(await other.checkout())).expect(200);
+      // Another order of the account is paid.
+      await pay(txOf(await b.checkout())).expect(200);
 
       expect((await viewOf(first.number, first.publicToken)).canRetryPayment).toBe(false);
       expect((await retry(first.number, first.publicToken).expect(409)).body.code).toBe('promotion_ended');

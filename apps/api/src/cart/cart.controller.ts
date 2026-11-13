@@ -19,7 +19,7 @@ import { StorefrontOriginGuard } from '../auth/guards.js';
 import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
 import type { ResolvedCustomer } from '../customers/customer-session.service.js';
 import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
-import { CartError, CartService, type CartResult } from './cart.service.js';
+import { CartError, CartService, type CartOwner, type CartResult } from './cart.service.js';
 
 /** Most units one request may ask for; the line limit clamps it further. */
 const MAX_REQUEST_QUANTITY = 999;
@@ -42,7 +42,7 @@ export class CartController {
     @Res({ passthrough: true }) res: Response,
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
-    return this.respond(req, res, await this.cart.read(tokenOf(req), customerIdOf(customer)));
+    return this.respond(req, res, await this.cart.read(ownerOf(req, customer)));
   }
 
   @Post('items')
@@ -54,12 +54,7 @@ export class CartController {
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
     const { variantId, quantity } = (body ?? {}) as Record<string, unknown>;
-    const result = await this.cart.add(
-      tokenOf(req),
-      parseId(variantId),
-      parseQuantity(quantity),
-      customerIdOf(customer),
-    );
+    const result = await this.cart.add(ownerOf(req, customer), parseId(variantId), parseQuantity(quantity));
     return this.respond(req, res, result);
   }
 
@@ -72,12 +67,7 @@ export class CartController {
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
     const { quantity } = (body ?? {}) as Record<string, unknown>;
-    const result = await this.cart.update(
-      tokenOf(req),
-      parseIdParam(variantId),
-      parseQuantity(quantity),
-      customerIdOf(customer),
-    );
+    const result = await this.cart.update(ownerOf(req, customer), parseIdParam(variantId), parseQuantity(quantity));
     return this.respond(req, res, result);
   }
 
@@ -88,11 +78,7 @@ export class CartController {
     @Res({ passthrough: true }) res: Response,
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
-    return this.respond(
-      req,
-      res,
-      await this.cart.remove(tokenOf(req), parseIdParam(variantId), customerIdOf(customer)),
-    );
+    return this.respond(req, res, await this.cart.remove(ownerOf(req, customer), parseIdParam(variantId)));
   }
 
   private respond(req: Request, res: Response, result: CartResult): CartView {
@@ -100,9 +86,12 @@ export class CartController {
   }
 }
 
-/** Renews the cookie of a live cart; drops a cookie that no longer names one. Returns the view to send. */
+/**
+ * Renews the cookie of a live guest cart; drops a cookie that no longer names one; leaves it alone for a signed-in
+ * customer (token undefined). Returns the view to send.
+ */
 export function sendCart(config: AuthConfig, req: Request, res: Response, { view, token }: CartResult): CartView {
-  writeCartCookie(config, res, token, tokenOf(req) !== undefined);
+  if (token !== undefined) writeCartCookie(config, res, token, tokenOf(req) !== undefined);
   return view;
 }
 
@@ -116,6 +105,11 @@ export function writeCartCookie(config: AuthConfig, res: Response, token: string
 /** The signed-in customer's id, or null for a guest. */
 export function customerIdOf(customer: ResolvedCustomer | null): string | null {
   return customer?.customer.id ?? null;
+}
+
+/** Whose cart a request works on: the signed-in account's, else the cookie's guest cart. */
+export function ownerOf(req: Request, customer: ResolvedCustomer | null): CartOwner {
+  return { token: tokenOf(req), customerId: customerIdOf(customer) };
 }
 
 function parseIdParam(value: string): number {

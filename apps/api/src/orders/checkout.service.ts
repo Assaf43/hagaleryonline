@@ -96,7 +96,8 @@ export class CheckoutService {
   ): Promise<CheckoutResponse> {
     // 1. Input, cart and locality.
     const input = parseCheckoutRequest(body);
-    const cart = await this.cart.resolve(token);
+    // Signed in: the account's cart (found by the session); a guest: the cookie's cart.
+    const cart = await this.cart.resolve({ token, customerId });
     if (!cart) throw emptyCart();
     const locality = await this.prisma.locality.findUnique({ where: { id: input.address.localityId } });
     if (!locality) throw fieldError('address.localityId', MESSAGES['address.localityId']);

@@ -139,7 +139,7 @@ export interface AdminPromotionInput {
   active: boolean;
   /**
    * The welcome benefit (decision 79): automatic promotions only (400 `isWelcome` otherwise). Saving it `true` clears
-   * it on every other promotion (each change audited). Missing = false.
+   * it on every other promotion (each change audited). Missing: false on create, unchanged on edit.
    */
   isWelcome?: boolean;
 }

@@ -24,7 +24,8 @@ import { CurrentCustomer, CustomerSessionGuard } from './customer-session.guard.
 /**
  * The signed-in customer's own data (spec §6.3, ACC-03, ACC-04, ACC-05): saved addresses, order history and the cancel
  * of an unpaid order, marketing consent. Every route needs a session (401 `not_authenticated`); writes need the
- * storefront origin; answers are never cached. Ids and order numbers of other accounts answer 404.
+ * storefront origin; answers are never cached. Ids and order numbers of other accounts answer 404. Address and
+ * consent writes count against `THROTTLE_ACCOUNT_LIMIT` per IP (bucket `account`), the cancel against `cancel`.
  */
 @Controller('account')
 @UseGuards(StorefrontOriginGuard, WriteThrottleGuard, CustomerSessionGuard)
@@ -39,11 +40,13 @@ export class AccountController {
   }
 
   @Post('addresses')
+  @Throttled('account')
   createAddress(@CurrentCustomer() current: ResolvedCustomer, @Body() body: unknown): Promise<CustomerAddressView> {
     return this.account.createAddress(current.customer.id, body);
   }
 
   @Put('addresses/:id')
+  @Throttled('account')
   updateAddress(
     @CurrentCustomer() current: ResolvedCustomer,
     @Param('id') id: string,
@@ -54,6 +57,7 @@ export class AccountController {
 
   @Delete('addresses/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttled('account')
   deleteAddress(@CurrentCustomer() current: ResolvedCustomer, @Param('id') id: string): Promise<void> {
     return this.account.deleteAddress(current.customer.id, id);
   }
@@ -76,6 +80,7 @@ export class AccountController {
   }
 
   @Put('consent')
+  @Throttled('account')
   consent(@CurrentCustomer() current: ResolvedCustomer, @Body() body: unknown): Promise<AccountConsent> {
     return this.account.setConsent(current.customer, body);
   }

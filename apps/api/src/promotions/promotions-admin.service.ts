@@ -111,7 +111,7 @@ export class PromotionsAdminService {
     return this.inTx(input, async (tx) => {
       if (input.isWelcome) await this.takeWelcome(tx, null, meta);
       await this.check(tx, input, null);
-      const row = await tx.promotion.create({ data: toData(input) });
+      const row = await tx.promotion.create({ data: toData(input, input.isWelcome === true) });
       const view = (await this.views(tx, [row]))[0];
       await this.audit.record(
         { ...meta, action: 'promotion.create', entityType: 'promotion', entityId: row.id, after: auditView(view) },
@@ -127,7 +127,9 @@ export class PromotionsAdminService {
       const existing = await this.locked(tx, id);
       await this.check(tx, input, id);
       const before = (await this.views(tx, [existing]))[0];
-      const row = await tx.promotion.update({ where: { id }, data: toData(input) });
+      // A missing isWelcome keeps the current mark (an automatic promotion only).
+      const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'automatic');
+      const row = await tx.promotion.update({ where: { id }, data: toData(input, isWelcome) });
       const view = (await this.views(tx, [row]))[0];
       const change = auditDiff(auditView(before), auditView(view));
       if (change)
@@ -280,7 +282,7 @@ export class PromotionsAdminService {
   }
 }
 
-function toData(input: AdminPromotionInput) {
+function toData(input: AdminPromotionInput, isWelcome: boolean) {
   return {
     name: input.name,
     kind: KIND_TO_DB[input.kind],
@@ -294,7 +296,7 @@ function toData(input: AdminPromotionInput) {
     endsAt: input.endsAt ? new Date(input.endsAt) : null,
     usageLimit: input.usageLimit,
     active: input.active,
-    isWelcome: input.isWelcome === true,
+    isWelcome,
   };
 }
 

@@ -6,7 +6,8 @@ import { IpThrottle } from '../auth/login-throttle.js';
 import { CheckoutError } from './order-errors.js';
 
 /** The public write endpoints that are rate limited per IP (a window of 15 minutes each). */
-export type ThrottleBucket = 'checkout' | 'retry' | 'sandbox' | 'coupon' | 'cancel' | 'delivery' | 'otp' | 'signin';
+export type ThrottleBucket =
+  'checkout' | 'retry' | 'sandbox' | 'coupon' | 'cancel' | 'delivery' | 'otp' | 'signin' | 'account';
 
 const WINDOW_MS = 15 * 60_000;
 /** Production defaults per IP per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
@@ -20,6 +21,8 @@ const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   // Customer accounts (Phase 5c, spec §6.2): code requests, and password / code attempts.
   otp: 10,
   signin: 20,
+  // The account's own data (spec §6.3): saved addresses and marketing consent.
+  account: 60,
 };
 
 /**

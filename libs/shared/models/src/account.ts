@@ -193,8 +193,8 @@ export const ACCOUNT_ORDERS_PAGE_SIZE = 10;
 
 /**
  * `PUT /api/account/consent { marketingConsent }` (CLAUDE.md §4.4): giving consent records its time and source
- * `account`; withdrawing records `marketingWithdrawnAt` (the earlier consent's time and source are kept). Sending the
- * current value changes nothing.
+ * `account` and clears `marketingWithdrawnAt`; withdrawing records `marketingWithdrawnAt` (the consent's time and
+ * source are kept). Sending the current value changes nothing.
  */
 export interface ConsentBody {
   marketingConsent: boolean;
