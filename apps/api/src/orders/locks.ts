@@ -13,7 +13,8 @@ import { Prisma } from '../generated/prisma/client.js';
  *    (CartService.attachToCustomer), which then locks every cart involved by ascending id. Only these take it, and a
  *    waiter holds no row lock yet;
  *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
- *    limited promotions it may use (PromotionsService.lockLimited), so their usage counts hold until commit;
+ *    limited promotions it may use and, signed in, the active welcome promotion (PromotionsService.lockLimited), so
+ *    their usage counts hold until commit and the account's paid orders are read only after it;
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
  *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);

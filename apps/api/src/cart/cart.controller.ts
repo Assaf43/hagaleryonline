@@ -12,11 +12,11 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { CookieOptions, Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import type { CartView } from '@hg/models';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
-import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
+import { OptionalCustomer, OptionalCustomerGuard, customerCookieOptions } from '../customers/customer-session.guard.js';
 import type { ResolvedCustomer } from '../customers/customer-session.service.js';
 import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
 import { CartError, CartService, type CartOwner, type CartResult } from './cart.service.js';
@@ -95,9 +95,17 @@ export function sendCart(config: AuthConfig, req: Request, res: Response, { view
   return view;
 }
 
-/** Sets the `hg_cart` cookie to `token`, or drops it (when the request had one) for null. */
-export function writeCartCookie(config: AuthConfig, res: Response, token: string | null, hadCookie: boolean): void {
-  const options: CookieOptions = { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/' };
+/**
+ * Sets the `hg_cart` cookie to `token`, or drops it (when the request had one) for null. Same flags as `hg_customer`:
+ * httpOnly, SameSite=Lax, path /, Secure when COOKIE_SECURE=true or in production.
+ */
+export function writeCartCookie(
+  config: Pick<AuthConfig, 'cookieSecure' | 'nodeEnv'>,
+  res: Response,
+  token: string | null,
+  hadCookie: boolean,
+): void {
+  const options = customerCookieOptions(config.cookieSecure, config.nodeEnv);
   if (token) res.cookie(CART_COOKIE, token, { ...options, maxAge: CART_TTL_MS });
   else if (hadCookie) res.clearCookie(CART_COOKIE, options);
 }

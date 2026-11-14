@@ -842,6 +842,55 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
       expect(await prisma.order.count({ where: { customerId: customer.id, status: OrderStatus.EXPIRED } })).toBe(1);
     });
 
+    it('a webhook paying the welcome order while a checkout waits for the promotion lock: no second welcome discount', async () => {
+      const p = await welcome();
+      const { b, customer } = await customerBrowser();
+      await b.add(lamp, 1);
+      const total = await b.expectedTotal();
+      const first = await orderOfTx(txOf(await b.checkout(total)));
+      expect(first.promotionId).toBe(p.id);
+      // Outside the cart, so the next checkout neither supersedes it nor waits on its row.
+      await prisma.order.update({ where: { id: first.id }, data: { cartId: null } });
+
+      // As the webhook does: the order becomes paid and the promotion row is locked (its use +1) until commit.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let locked!: () => void;
+      const holding = new Promise<void>((resolve) => (locked = resolve));
+      const webhook = prisma.$transaction(
+        async (tx) => {
+          await tx.order.update({ where: { id: first.id }, data: { status: OrderStatus.PAID } });
+          await tx.promotion.update({ where: { id: p.id }, data: { usedCount: { increment: 1 } } });
+          locked();
+          await gate;
+        },
+        { timeout: 20_000 },
+      );
+      await holding;
+      const racing = b.checkout(total);
+      // Commit the payment only once the checkout waits for the promotion row (deterministic, no sleep race).
+      const waiting = async () =>
+        (
+          await prisma.$queryRaw<{ n: bigint }[]>`
+            SELECT count(*) AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query ILIKE '%FROM promotions%FOR UPDATE%'`
+        )[0].n > 0n;
+      const deadline = Date.now() + 10_000;
+      while (!(await waiting())) {
+        if (Date.now() > deadline) throw new Error('the checkout never waited for the promotion lock');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      release();
+      await webhook;
+      const res = await racing;
+
+      // The account now has a paid order: the total with the welcome discount no longer holds.
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ code: 'price_changed', total: total + 5_000 });
+      expect(await prisma.order.count({ where: { customerId: customer.id, promotionId: p.id } })).toBe(1);
+    });
+
     it('a welcome discount held by another live order of the account → 409 promotion_ended at checkout', async () => {
       const p = await welcome();
       const { b, customer } = await customerBrowser();

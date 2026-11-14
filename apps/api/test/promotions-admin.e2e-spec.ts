@@ -7,6 +7,7 @@ import type { AdminPromotion, AdminPromotionInput, AuditPage, PromotionCategoryO
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { PromotionsService } from './../src/promotions/promotions.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 const STOREFRONT = 'http://localhost:4200';
@@ -265,7 +266,7 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
       .expect(400);
     expect(res.body).toMatchObject({ code: 'invalid_coupon', messageHe: 'תוקף הקופון פג' });
   });
-  it('the welcome benefit: automatic only; marking one clears it on the others, audited', async () => {
+  it('the welcome benefit: automatic only; marking one clears it on the others and turns them off, audited', async () => {
     const bad = await owner.post('/promotions', { ...coupon({ code: 'ZZWELCOME' }), isWelcome: true }).expect(400);
     expect(bad.body).toMatchObject({ code: 'invalid', field: 'isWelcome' });
     await owner.post('/promotions', { ...automatic(), isWelcome: 'yes' }).expect(400);
@@ -276,14 +277,27 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     expect(plain.isWelcome).toBe(false);
     const second = await create(automatic({ name: 'ZZ הטבה ב', isWelcome: true }));
     expect(second.isWelcome).toBe(true);
-    expect((await owner.get(`/promotions/${first.id}`).expect(200)).body).toMatchObject({ isWelcome: false });
+    // The old welcome promotion is turned off too: it must not become an automatic discount for every shopper.
+    expect((await owner.get(`/promotions/${first.id}`).expect(200)).body).toMatchObject({
+      isWelcome: false,
+      active: false,
+    });
+    expect((await app.get(PromotionsService).automatic(prisma)).map((r) => r.id)).not.toContain(first.id);
     const cleared = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(first.id));
-    expect(cleared).toMatchObject({ before: { 'הטבת הצטרפות': 'כן' }, after: { 'הטבת הצטרפות': 'לא' } });
+    expect(cleared).toMatchObject({
+      before: { 'הטבת הצטרפות': 'כן', פעיל: 'כן' },
+      after: { 'הטבת הצטרפות': 'לא', פעיל: 'לא' },
+    });
 
-    // Editing marks it back and clears the second.
+    // Editing marks it back (and on again) and clears and turns off the second.
     await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: true })).expect(200);
     const rows = await prisma.promotion.findMany({ where: { isWelcome: true } });
     expect(rows.map((r) => r.id)).toEqual([first.id]);
+    expect(rows[0].active).toBe(true);
+    expect(await prisma.promotion.findUniqueOrThrow({ where: { id: second.id } })).toMatchObject({
+      isWelcome: false,
+      active: false,
+    });
 
     // An edit without isWelcome (an older form) keeps the mark; an explicit false removes it.
     const { isWelcome: _omit, ...withoutFlag } = automatic({ name: 'ZZ הטבה א', value: 15 });
@@ -293,6 +307,36 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     const off = (
       await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: false })).expect(200)
     ).body as AdminPromotion;
-    expect(off.isWelcome).toBe(false);
+    expect(off).toMatchObject({ isWelcome: false, active: false });
+  });
+
+  it('unticking an active welcome promotion turns it off as well, audited (not an automatic discount for all)', async () => {
+    const welcome = await create(automatic({ name: 'ZZ הטבה ג', isWelcome: true }));
+    expect(welcome).toMatchObject({ isWelcome: true, active: true });
+
+    const off = (
+      await owner
+        .put(`/promotions/${welcome.id}`, automatic({ name: 'ZZ הטבה ג', isWelcome: false, active: true }))
+        .expect(200)
+    ).body as AdminPromotion;
+    expect(off).toMatchObject({ isWelcome: false, active: false });
+    expect(await prisma.promotion.findUniqueOrThrow({ where: { id: welcome.id } })).toMatchObject({
+      isWelcome: false,
+      active: false,
+    });
+    expect((await app.get(PromotionsService).automatic(prisma)).map((r) => r.id)).not.toContain(welcome.id);
+    const entry = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(welcome.id));
+    expect(entry).toMatchObject({
+      before: { 'הטבת הצטרפות': 'כן', פעיל: 'כן' },
+      after: { 'הטבת הצטרפות': 'לא', פעיל: 'לא' },
+    });
+
+    // Turning it on again afterwards is a separate, deliberate save: it then stays on as a plain automatic promotion.
+    const on = (
+      await owner
+        .put(`/promotions/${welcome.id}`, automatic({ name: 'ZZ הטבה ג', isWelcome: false, active: true }))
+        .expect(200)
+    ).body as AdminPromotion;
+    expect(on).toMatchObject({ isWelcome: false, active: true });
   });
 });

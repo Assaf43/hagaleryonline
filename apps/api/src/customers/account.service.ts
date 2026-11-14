@@ -152,11 +152,6 @@ export class AccountService {
     return this.lifecycle.cancelByCustomer(number, { customerId });
   }
 
-  /**
-   * Marketing consent (CLAUDE.md §4.4): giving it records the time and source `account` and clears an earlier
-   * withdrawal; withdrawing records the withdrawal time (the consent's time and source stay as the record of it). The
-   * current value: no change.
-   */
   /** The name as sign-up checks it: trimmed, spaces collapsed, 2–80 characters. */
   async changeName(customerId: string, body: unknown): Promise<CustomerMe> {
     const raw = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).name;
@@ -165,6 +160,11 @@ export class AccountService {
     return toMe(await this.prisma.customer.update({ where: { id: customerId }, data: { fullName: name } }));
   }
 
+  /**
+   * Marketing consent (CLAUDE.md §4.4): giving it records the time and source `account` and clears an earlier
+   * withdrawal; withdrawing records the withdrawal time (the consent's time and source stay as the record of it). The
+   * current value: no change.
+   */
   async setConsent(customer: Customer, body: unknown): Promise<AccountConsent> {
     const value = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).marketingConsent;
     if (typeof value !== 'boolean') throw badField('marketingConsent');

@@ -16,6 +16,7 @@ import {
 } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { CustomerCleanupService } from './../src/customers/customer-cleanup.service.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc.e2e.test';
@@ -661,6 +662,54 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       const b = browser();
       await b.post('otp/request', { target: email, channel: 'email', purpose: 'sign_in' }).expect(202);
       await b.post('password/reset', { email, code: emailCode(email), next: 'brand new pass 1' }).expect(401);
+    });
+  });
+
+  describe('retention (NFR-12): the daily cleanup', () => {
+    it('deletes expired sessions and codes a day past their expiry, keeping live ones and live sign-up tickets', async () => {
+      const { email } = await signUp();
+      const customer = await prisma.customer.findUniqueOrThrow({ where: { email } });
+      const now = new Date();
+      const ago = (ms: number) => new Date(now.getTime() - ms);
+      const later = (ms: number) => new Date(now.getTime() + ms);
+      const session = (expiresAt: Date) =>
+        prisma.customerSession.create({
+          data: { customerId: customer.id, tokenHash: sha(`cleanup-${expiresAt.getTime()}-${unique()}`), expiresAt },
+        });
+      const expiredSession = await session(ago(1_000));
+      const liveSession = await session(later(DAY_MS));
+
+      const code = (target: string, expiresAt: Date, ticket: Date | null = null) =>
+        prisma.otpCode.create({
+          data: {
+            target,
+            channel: 'SMS',
+            purpose: 'SIGN_UP',
+            codeHash: 'x',
+            expiresAt,
+            ...(ticket ? { signUpTokenHash: sha(`ticket-${unique()}`), signUpExpiresAt: ticket } : {}),
+          },
+        });
+      const old = await code(newPhone(), ago(DAY_MS + 60_000));
+      const recent = await code(newPhone(), ago(DAY_MS - 60_000));
+      const live = await code(newPhone(), later(60_000));
+      // A sign-up ticket outlives its code: a row is kept while its ticket is less than a day past its expiry.
+      const ticketed = await code(newPhone(), ago(DAY_MS + 60_000), ago(DAY_MS - 60_000));
+      const oldTicket = await code(newPhone(), ago(DAY_MS + 60_000), ago(DAY_MS + 30_000));
+
+      const result = await app.get(CustomerCleanupService).deleteExpired(now);
+      expect(result.sessions).toBeGreaterThanOrEqual(1);
+      expect(result.codes).toBeGreaterThanOrEqual(2);
+
+      const sessions = await prisma.customerSession.findMany({
+        where: { id: { in: [expiredSession.id, liveSession.id] } },
+      });
+      expect(sessions.map((r) => r.id)).toEqual([liveSession.id]);
+      const ids = [old, recent, live, ticketed, oldTicket].map((r) => r.id);
+      const left = await prisma.otpCode.findMany({ where: { id: { in: ids } }, orderBy: { id: 'asc' } });
+      expect(left.map((r) => r.id)).toEqual([recent.id, live.id, ticketed.id]);
+      // The account's own live session (from sign-up) is untouched.
+      expect(await prisma.customerSession.count({ where: { customerId: customer.id } })).toBeGreaterThanOrEqual(2);
     });
   });
 });

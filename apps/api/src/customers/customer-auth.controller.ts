@@ -266,7 +266,6 @@ function record(body: unknown): BodyRecord {
   return body && typeof body === 'object' && !Array.isArray(body) ? (body as BodyRecord) : {};
 }
 
-/** Any string up to 16 characters; the code check itself refuses anything but 6 digits. */
 /** An optional `signUpToken` (one or two parts joined by '.'); 400 when it is not a short string. */
 function optionalToken(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
@@ -274,6 +273,7 @@ function optionalToken(value: unknown): string | undefined {
   return value;
 }
 
+/** Any string up to 16 characters; the code check itself refuses anything but 6 digits. */
 function codeOf(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 16) throw badField('code');
   return value.trim();

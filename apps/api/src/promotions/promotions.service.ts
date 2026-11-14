@@ -202,7 +202,9 @@ export class PromotionsService {
    * promotions (locks.ts).
    */
   async lockLimited(tx: Prisma.TransactionClient, couponCode: string | null, welcome = false): Promise<void> {
-    // With `welcome`, the active welcome promotion too (in the same id order), so it cannot change until commit.
+    // With `welcome` (any signed-in checkout), the active welcome promotion too (in the same id order), so it cannot
+    // change until commit and a webhook paying a welcome order (it locks the row for its use +1) is waited for before
+    // the checkout reads `hasPaidOrder` (CheckoutService).
     await tx.$queryRaw`
       SELECT id FROM promotions
       WHERE (usage_limit IS NOT NULL AND (code = ${couponCode} OR (kind = 'automatic' AND active)))

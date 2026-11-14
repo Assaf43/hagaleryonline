@@ -145,8 +145,13 @@ export class CheckoutService {
         // The one discount of the order (decision 70), on the locked lines at their current prices. The limited
         // promotions are locked last (cart → orders → variants → promotions), so their uses — paid plus live
         // pending orders of other carts (this cart's were just expired) — hold until commit (spec §6).
+        // A signed-in checkout also locks the active welcome promotion, and only THEN reads whether the account has
+        // a paid order. The webhook paying a welcome order holds that row (its use +1) until it commits, so either
+        // this read waits for it and sees the order paid, or the webhook waits for this commit and every read here
+        // still sees the order pending (welcomeHeld). Read before the lock, a payment committed while this waits
+        // would be missed by both reads: a second welcome discount.
+        await this.promotions.lockLimited(tx, couponCode, customerId !== null);
         const customer = await this.promotions.welcomeCustomer(tx, customerId);
-        await this.promotions.lockLimited(tx, couponCode, customer?.hasPaidOrder === false);
         const evaluated = await this.promotions.evaluate(
           tx,
           discountLines(lines, (l) => l.storedQuantity),
