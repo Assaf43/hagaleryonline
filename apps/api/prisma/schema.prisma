@@ -348,6 +348,7 @@ model AdminUser {
   tokens        AdminToken[]
   recoveryCodes AdminRecoveryCode[]
   auditEntries  AuditLog[]
+  ticketNotes   TicketNote[]
 
   @@map("admin_users")
 }
@@ -645,6 +646,7 @@ model Order {
   jobs          OutboxJob[]
   notifications NotificationLog[]
   invoices      Invoice[]
+  tickets       SupportTicket[]
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -1009,6 +1011,7 @@ model Customer {
   otpCodes  OtpCode[]
   orders    Order[]
   carts     Cart[]
+  tickets   SupportTicket[]
 
   @@map("customers")
 }
@@ -1087,4 +1090,103 @@ model OtpCode {
   @@index([target, createdAt])
   @@index([customerId])
   @@map("otp_codes")
+}
+
+// ---------- Support: returns, damaged products, contact (Phase 5d, spec §3, §7, SRV-02, SRV-03, SRV-05) ----------
+
+enum SupportTicketType {
+  RETURN          @map("return")
+  EXCHANGE        @map("exchange")
+  DAMAGED         @map("damaged")
+  CONTACT         @map("contact")
+  /// Opened by the delivery link's change request (spec §5.3).
+  DELIVERY_CHANGE @map("delivery_change")
+
+  @@map("support_ticket_type")
+}
+
+enum SupportTicketStatus {
+  NEW         @map("new")
+  IN_PROGRESS @map("in_progress")
+  CLOSED      @map("closed")
+
+  @@map("support_ticket_status")
+}
+
+/// A customer request (spec §7). The number comes from `support_tickets_number_seq`, which starts at 5001 (migration
+/// support). Contact details are a snapshot (the order's contact, or the contact form's fields). Replies happen
+/// outside the system; money goes through the order's refund action.
+model SupportTicket {
+  id         String              @id @default(uuid()) @db.Uuid
+  number     Int                 @unique @default(autoincrement())
+  type       SupportTicketType
+  status     SupportTicketStatus @default(NEW)
+  orderId    String?             @map("order_id") @db.Uuid
+  customerId String?             @map("customer_id") @db.Uuid
+  fullName   String              @map("full_name")
+  /// 05XXXXXXXX.
+  phone      String
+  /// Lower-case.
+  email      String
+  subject    String?
+  /// The customer's words: the return note, the damage description, the contact message or the delivery note.
+  message    String?
+  /// `ReturnReason` of @hg/models (returns and exchanges only).
+  reasonCode String?             @map("reason_code")
+  /// [{ orderItemId, quantity? }] (returns, exchanges and damaged products).
+  items      Json?
+  createdAt  DateTime            @default(now()) @map("created_at")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  order       Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  customer    Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  notes       TicketNote[]
+  attachments TicketAttachment[]
+
+  @@index([status, createdAt])
+  @@index([type, status])
+  @@index([orderId])
+  @@index([customerId])
+  @@map("support_tickets")
+}
+
+/// An internal staff note on a ticket (spec §7.2).
+model TicketNote {
+  id          Int      @id @default(autoincrement())
+  ticketId    String   @map("ticket_id") @db.Uuid
+  adminUserId Int      @map("admin_user_id")
+  body        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author AdminUser     @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_notes")
+}
+
+/// A damaged-product photo: a WebP in private storage (`support/<ticketId>/…`), served only to staff. Kept for now
+/// (no retention job yet).
+model TicketAttachment {
+  id         Int      @id @default(autoincrement())
+  ticketId   String   @map("ticket_id") @db.Uuid
+  storageKey String   @unique @map("storage_key")
+  mimeType   String   @map("mime_type")
+  /// Bytes.
+  size       Int
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@map("ticket_attachments")
+}
+
+/// The one row of store settings (id 1, inserted by migration support), managed in the admin (spec §3).
+model StoreSettings {
+  id               Int @id @default(1)
+  /// Days after `deliveredAt` a return or exchange can be requested (SRV-02).
+  returnWindowDays Int @default(14) @map("return_window_days")
+
+  @@map("store_settings")
 }

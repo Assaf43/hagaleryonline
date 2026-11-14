@@ -10,12 +10,14 @@ import {
   type RefundData,
 } from './order-messages.js';
 import { otpEmail, otpText, type OtpData } from './otp.js';
+import { ticketAlert, ticketReceived, type TicketAlertData, type TicketReceivedData } from './support.js';
 import type { RenderedEmail } from './layout.js';
 
 export type { RenderedEmail } from './layout.js';
 export type { OrderLinkData, OrderPaidData, OrderPaidLine, RefundData } from './order-messages.js';
 export type { OtpData } from './otp.js';
 export type { DeliverySlotSmsData } from './sms.js';
+export type { TicketAlertData, TicketReceivedData } from './support.js';
 
 /** The data each e-mail template needs. All Hebrew strings live in this folder (GEN-04). */
 export interface EmailTemplateData {
@@ -25,6 +27,8 @@ export interface EmailTemplateData {
   order_cancelled: OrderLinkData;
   refund: RefundData;
   otp: OtpData;
+  ticket_received: TicketReceivedData;
+  ticket_alert: TicketAlertData;
 }
 export type EmailTemplate = keyof EmailTemplateData;
 
@@ -41,6 +45,8 @@ const EMAIL: { [T in EmailTemplate]: (data: EmailTemplateData[T]) => RenderedEma
   order_cancelled: orderCancelled,
   refund,
   otp: otpEmail,
+  ticket_received: ticketReceived,
+  ticket_alert: ticketAlert,
 };
 
 const SMS: { [T in SmsTemplate]: (data: SmsTemplateData[T]) => string } = {

@@ -23,11 +23,8 @@ export class ImageRejected extends Error {
   }
 }
 
-/**
- * Checks an upload by its content, turns it upright (phone photos store rotation in EXIF), converts
- * it to sRGB and makes the resized copies. sharp drops all metadata unless asked to keep it.
- */
-export async function processImage(input: Buffer): Promise<ProcessedImage> {
+/** Reads an upload's header by its content (never its name): the format, and the size as shown (after EXIF rotation). */
+async function inspect(input: Buffer): Promise<{ originalExt: string; width: number; height: number }> {
   if (input.length > IMAGE_UPLOAD.maxBytes) throw new ImageRejected('too_large');
   let meta: Metadata;
   try {
@@ -38,18 +35,29 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
   const originalExt = meta.format && FORMATS[meta.format];
   if (!originalExt) throw new ImageRejected('type');
 
-  // Size as shown, after EXIF rotation.
   const { width, height } = meta.autoOrient;
   if (Math.max(width, height) < IMAGE_UPLOAD.minLongSide) throw new ImageRejected('too_small');
+  return { originalExt, width, height };
+}
 
+/** Upright, sRGB, at most `width` wide (never upscaled), without metadata. */
+const upright = (input: Buffer, width: number) =>
+  sharp(input, { limitInputPixels: 80_000_000 })
+    .autoOrient()
+    .resize({ width, withoutEnlargement: true })
+    .toColorspace('srgb');
+
+/**
+ * Checks an upload by its content, turns it upright (phone photos store rotation in EXIF), converts
+ * it to sRGB and makes the resized copies. sharp drops all metadata unless asked to keep it.
+ */
+export async function processImage(input: Buffer): Promise<ProcessedImage> {
+  const { originalExt, width, height } = await inspect(input);
   const widths = [...new Set(IMAGE_WIDTHS.map((w) => Math.min(w, width)))];
   try {
     const copies = await Promise.all(
       widths.map(async (w) => {
-        const resized = sharp(input, { limitInputPixels: 80_000_000 })
-          .autoOrient()
-          .resize({ width: w, withoutEnlargement: true })
-          .toColorspace('srgb');
+        const resized = upright(input, w);
         const [webp, avif] = await Promise.all([
           resized.clone().webp({ quality: 82 }).toBuffer(),
           resized.clone().avif({ quality: 55, effort: 4 }).toBuffer(),
@@ -58,6 +66,19 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
       }),
     );
     return { originalExt, width, height, copies };
+  } catch {
+    throw new ImageRejected('unreadable');
+  }
+}
+
+/**
+ * The same checks as `processImage` (content, upright, metadata removed), but one WebP of at most `maxWidth` and no
+ * kept original: private photos that only staff look at (damaged-product photos, spec §7.1).
+ */
+export async function processPrivatePhoto(input: Buffer, maxWidth = 1600): Promise<Buffer> {
+  await inspect(input);
+  try {
+    return await upright(input, maxWidth).webp({ quality: 82 }).toBuffer();
   } catch {
     throw new ImageRejected('unreadable');
   }

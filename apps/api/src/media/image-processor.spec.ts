@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { processImage } from './image-processor.js';
+import { processImage, processPrivatePhoto } from './image-processor.js';
 
 const photo = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 3, background: { r: 200, g: 180, b: 150 } } });
@@ -46,5 +46,27 @@ describe('processImage', () => {
       problem: 'type',
     });
     await expect(processImage(Buffer.from('not a picture'))).rejects.toMatchObject({ problem: 'unreadable' });
+  });
+});
+
+describe('processPrivatePhoto (support photos, spec §7.1)', () => {
+  it('one upright WebP of at most 1600 px wide, without GPS or camera data', async () => {
+    const input = await photo(3000, 2000)
+      .withExif({ IFD0: { Make: 'Phone' }, IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '32/1 4/1 0/1' } })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toBuffer();
+    const meta = await sharp(await processPrivatePhoto(input)).metadata();
+    expect(meta).toMatchObject({ format: 'webp', width: 1600 });
+    expect(meta.height).toBeGreaterThan(1600);
+    expect(meta.exif).toBeUndefined();
+  });
+
+  it('a smaller photo keeps its size; content that is not a photo is refused', async () => {
+    expect((await sharp(await processPrivatePhoto(await photo(900, 700).png().toBuffer())).metadata()).width).toBe(900);
+    await expect(processPrivatePhoto(Buffer.from('not a picture'))).rejects.toMatchObject({ problem: 'unreadable' });
+    await expect(processPrivatePhoto(await photo(800, 600).gif().toBuffer())).rejects.toMatchObject({
+      problem: 'type',
+    });
   });
 });

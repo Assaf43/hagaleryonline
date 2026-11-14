@@ -12,3 +12,4 @@ export * from './jobs.js';
 export * from './notifications.js';
 export * from './invoices.js';
 export * from './account.js';
+export * from './support.js';

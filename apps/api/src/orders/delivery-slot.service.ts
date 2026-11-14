@@ -2,8 +2,9 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import type { DeliveryAnswerRequest, DeliveryLinkView } from '@hg/models';
 import { hashToken } from '../auth/crypto.js';
 import { AuditService } from '../audit/audit.service.js';
-import { DeliverySlotState, OrderStatus } from '../generated/prisma/client.js';
+import { DeliverySlotState, OrderStatus, SupportTicketType } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { orderContact, SupportService } from '../support/support.service.js';
 import { lockOrder } from './locks.js';
 import { badField, CheckoutError, orderNotFound } from './order-errors.js';
 import { SLOT_NOTE_MAX, slotStateView } from './delivery-slot.js';
@@ -16,13 +17,15 @@ const ATTENTION_NOTE_MAX = 500;
 /**
  * The delivery confirmation link (spec §5.3, SHP-04). The token in the URL is the only key; only its SHA-256 is
  * stored. An unknown token, a superseded slot and a cancelled order all answer 404; the view also once the order
- * moved past DELIVERY_SCHEDULED, an answer then 409 `slot_closed`.
+ * moved past DELIVERY_SCHEDULED, an answer then 409 `slot_closed`. A change request also opens a `delivery_change`
+ * support ticket (spec §7) in the same transaction.
  */
 @Injectable()
 export class DeliverySlotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly support: SupportService,
   ) {}
 
   /** 404 also once the order moved past DELIVERY_SCHEDULED (shipped, delivered): the link has done its job. */
@@ -66,11 +69,18 @@ export class DeliverySlotService {
       if (answer === 'change') {
         const current = await tx.order.findUniqueOrThrow({
           where: { id: slot.orderId },
-          select: { attentionNote: true },
+          select: { attentionNote: true, contact: true, customerId: true },
         });
         await tx.order.update({
           where: { id: slot.orderId },
           data: { needsAttention: true, attentionNote: changeNote(current.attentionNote, note) },
+        });
+        await this.support.open(tx, {
+          type: SupportTicketType.DELIVERY_CHANGE,
+          orderId: slot.orderId,
+          customerId: current.customerId,
+          ...orderContact(current.contact),
+          message: note || null,
         });
       }
       await this.audit.record(
