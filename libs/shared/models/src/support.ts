@@ -149,3 +149,106 @@ export const SUPPORT_FIELD_MESSAGES_HE: Record<SupportField, string> = {
 
 export const SUPPORT_NOT_DELIVERED_HE = 'אפשר לשלוח בקשה זו רק להזמנה שסופקה';
 export const SUPPORT_RETURN_WINDOW_PASSED_HE = 'חלפה התקופה להחזרה או להחלפה של הזמנה זו';
+
+// ---- Admin inbox (spec §7.2, permission `support.manage`) ----
+
+/** Hebrew name of each ticket status (admin inbox). */
+export const SUPPORT_TICKET_STATUS_LABELS_HE: Record<SupportTicketStatus, string> = {
+  new: 'חדשה',
+  in_progress: 'בטיפול',
+  closed: 'סגורה',
+};
+
+/** Length of an internal staff note (characters, after trimming). */
+export const TICKET_NOTE_LIMITS = { min: 1, max: 2000 } as const;
+
+/** The return window setting (`PUT /api/admin/settings/store`): whole days. */
+export const RETURN_WINDOW_LIMITS = { min: 1, max: 60 } as const;
+
+/** One row of `GET /api/admin/support?type=&status=&page=` (30 per page, newest first). */
+export interface AdminTicketRow {
+  number: number;
+  type: SupportTicketType;
+  status: SupportTicketStatus;
+  createdAt: string;
+  fullName: string;
+  phone: string;
+  subject: string | null;
+  /** The linked order (for a contact ticket: the number the customer typed, when such an order exists). */
+  orderNumber: number | null;
+  attachmentCount: number;
+}
+
+export interface AdminTicketPage {
+  items: AdminTicketRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** `GET /api/admin/support/count-new`: tickets in status `new` (the menu badge). */
+export interface AdminTicketNewCount {
+  count: number;
+}
+
+/** A line the ticket is about, with the order line's snapshot (null fields when the order line is gone). */
+export interface AdminTicketItem {
+  orderItemId: number;
+  /** Requested quantity (returns and exchanges); null for a damaged product. */
+  quantity: number | null;
+  sku: string | null;
+  modelName: string | null;
+  nameHe: string | null;
+  optionLabels: string[];
+  orderedQuantity: number | null;
+}
+
+/** A damaged-product photo; opened through `GET /api/admin/support/:number/attachments/:id`. */
+export interface AdminTicketAttachment {
+  id: number;
+  mimeType: string;
+  size: number;
+}
+
+export interface AdminTicketNote {
+  id: number;
+  body: string;
+  createdAt: string;
+  author: { id: number; name: string };
+}
+
+/** `GET /api/admin/support/:number`, and the answer of the status and note actions. */
+export interface AdminTicketDetail {
+  number: number;
+  type: SupportTicketType;
+  status: SupportTicketStatus;
+  createdAt: string;
+  updatedAt: string;
+  contact: { fullName: string; phone: string; email: string };
+  subject: string | null;
+  message: string | null;
+  reasonCode: ReturnReason | null;
+  orderNumber: number | null;
+  /** The ticket belongs to a customer account (the order's account, or the signed-in sender of a contact form). */
+  hasAccount: boolean;
+  items: AdminTicketItem[];
+  attachments: AdminTicketAttachment[];
+  /** Oldest first. */
+  notes: AdminTicketNote[];
+}
+
+/** `POST /api/admin/support/:number/status`. */
+export interface AdminTicketStatusRequest {
+  status: SupportTicketStatus;
+}
+
+/** `POST /api/admin/support/:number/notes`: 1–2000 characters. */
+export interface AdminTicketNoteRequest {
+  body: string;
+}
+
+/** `GET` / `PUT /api/admin/settings/store` (Super Admin or `orders.manage`). */
+export interface StoreSettingsView {
+  /** Days after delivery a return or exchange can be requested (1–60). */
+  returnWindowDays: number;
+}

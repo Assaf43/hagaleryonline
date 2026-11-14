@@ -16,6 +16,7 @@ export const PERMISSIONS = [
   { key: 'promotions.manage', labelHe: 'מבצעים וקופונים' },
   { key: 'audit.view', labelHe: 'צפייה ביומן השינויים' },
   { key: 'invoices.export', labelHe: 'חשבוניות ודוחות לרואה החשבון' },
+  { key: 'support.manage', labelHe: 'תיבת פניות' },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]['key'];
@@ -36,7 +37,11 @@ export const PERMISSION_TEMPLATES = [
     labelHe: 'עורך תוכן',
     permissions: ['catalog.view', 'catalog.edit', 'catalog.import', 'media.manage', 'content.manage'],
   },
-  { code: 'customer_service', labelHe: 'שירות לקוחות', permissions: ['catalog.view', 'orders.view', 'orders.manage'] },
+  {
+    code: 'customer_service',
+    labelHe: 'שירות לקוחות',
+    permissions: ['catalog.view', 'orders.view', 'orders.manage', 'support.manage'],
+  },
   { code: 'store_seller', labelHe: 'מוכר בחנות', permissions: ['orders.view'] },
 ] as const satisfies readonly { code: string; labelHe: string; permissions: readonly Permission[] }[];
 
