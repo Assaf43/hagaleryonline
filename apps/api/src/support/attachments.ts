@@ -1,13 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import {
-  HttpException,
-  HttpStatus,
-  Injectable,
-  type CallHandler,
-  type ExecutionContext,
-  type NestInterceptor,
-} from '@nestjs/common';
+import { Injectable, type CallHandler, type ExecutionContext, type NestInterceptor } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { transformException } from '@nestjs/platform-express/multer/multer/multer.utils.js';
+import type { Request, Response } from 'express';
 import type { Observable } from 'rxjs';
 import { SUPPORT_LIMITS } from '@hg/models';
 import { ImageRejected, processPrivatePhoto } from '../media/image-processor.js';
@@ -33,24 +28,43 @@ const Multer = FilesInterceptor('photos', SUPPORT_LIMITS.photosMax, {
   limits: { fileSize: SUPPORT_LIMITS.photoMaxBytes, files: SUPPORT_LIMITS.photosMax, fields: 20, fieldSize: 16_384 },
 });
 
+/** The multer errors that are about the photos (multer names its errors by `code`). */
+const PHOTO_ERRORS = new Set(['LIMIT_FILE_SIZE', 'LIMIT_FILE_COUNT', 'LIMIT_UNEXPECTED_FILE']);
+
+type ArrayUpload = (req: Request, res: Response, done: (error?: unknown) => void) => void;
+
+/** The multer instance of Nest's `FilesInterceptor` (memory storage, Nest's default field-name limits) for `photos`. */
+function photosUpload(): ArrayUpload {
+  const inner = new Multer() as unknown as { multer?: { array?: (field: string, max: number) => ArrayUpload } };
+  // Fails at startup, not on a customer's upload, if a Nest upgrade renames the field.
+  if (typeof inner.multer?.array !== 'function') throw new Error('FilesInterceptor no longer exposes its multer');
+  return inner.multer.array('photos', SUPPORT_LIMITS.photosMax);
+}
+
 /**
- * Reads the multipart body of `POST /api/support/damaged` into memory: files `photos` (at most 5, 10 MB each). Any
- * upload problem multer finds (a sixth file, a file too large, a file under another name) is the form's
- * 400 `{ field: 'photos' }` instead of multer's own 400 / 413. Runs after the guards, so the per-IP throttle has
+ * Reads the multipart body of `POST /api/support/damaged` into memory: files `photos` (at most 5, 10 MB each). A
+ * file too large, a sixth file or a file under another name is the form's 400 `{ field: 'photos' }`; any other
+ * multipart problem keeps Nest's own answer (a generic 400). Runs after the guards, so the per-IP throttle has
  * counted the request before any upload is read.
  */
 @Injectable()
 export class SupportPhotosInterceptor implements NestInterceptor {
-  private readonly multer: NestInterceptor = new Multer();
+  private readonly upload = photosUpload();
 
   async intercept(ctx: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
-    try {
-      return await this.multer.intercept(ctx, next);
-    } catch (error) {
-      const status = error instanceof HttpException ? error.getStatus() : 0;
-      if (status === HttpStatus.BAD_REQUEST || status === HttpStatus.PAYLOAD_TOO_LARGE) throw supportField('photos');
-      throw error;
-    }
+    const http = ctx.switchToHttp();
+    await new Promise<void>((resolve, reject) =>
+      this.upload(http.getRequest<Request>(), http.getResponse<Response>(), (error) => {
+        if (!error) return resolve();
+        const code = (error as { code?: unknown }).code;
+        reject(
+          typeof code === 'string' && PHOTO_ERRORS.has(code)
+            ? supportField('photos')
+            : transformException(error as Error & { code?: string }),
+        );
+      }),
+    );
+    return next.handle();
   }
 }
 

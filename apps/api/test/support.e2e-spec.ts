@@ -256,6 +256,25 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       expect((await post('returns', returnBody(other, { order: null }), cookie).expect(404)).body.code).toBe(
         'not_found',
       );
+
+      // A ticket about an order belongs to the order's account, also when filed signed out with number + phone.
+      const signedOut = await post('returns', returnBody(own)).expect(202);
+      expect((await ticketOf(signedOut)).customerId).toBe(customer.id);
+      // A contact ticket without an order takes the signed-in customer; with an order, the order's account (none).
+      const contactBody = {
+        fullName: 'ZZ לקוח',
+        phone: PHONE,
+        email: 'a@example.test',
+        subject: 'נושא',
+        message: 'הודעה ארוכה מספיק',
+      };
+      expect((await ticketOf(await post('contact', contactBody, cookie).expect(202))).customerId).toBe(customer.id);
+      const aboutGuestOrder = await post(
+        'contact',
+        { ...contactBody, orderNumber: String(other.number) },
+        cookie,
+      ).expect(202);
+      expect(await ticketOf(aboutGuestOrder)).toMatchObject({ orderId: other.id, customerId: null });
     });
   });
 
@@ -309,6 +328,26 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       expect(await prisma.supportTicket.count({ where: { orderId: order.id } })).toBe(0);
     });
 
+    it('a photo over 10 MB or a file under another field → 400 photos; another multipart problem → a plain 400', async () => {
+      const order = await makeOrder(OrderStatus.DELIVERED);
+      const big = Buffer.alloc(10 * 1024 * 1024 + 1, 1);
+      const tooLarge = await damaged(order, [{ data: big, name: 'big.jpg' }]).expect(400);
+      expect(tooLarge.body).toMatchObject({ code: 'invalid_field', field: 'photos' });
+      const otherField = await damaged(order, [])
+        .attach('file', await photo(), 'a.jpg')
+        .expect(400);
+      expect(otherField.body.field).toBe('photos');
+      const extra = Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`x${i}`, 'v']));
+      const tooManyFields = await damaged(order, [{ data: await photo(), name: 'a.jpg' }], extra).expect(400);
+      expect(tooManyFields.body.field).toBeUndefined();
+      expect(await prisma.supportTicket.count({ where: { orderId: order.id } })).toBe(0);
+    });
+
+    it('a small photo (400×300) is accepted', async () => {
+      const order = await makeOrder(OrderStatus.DELIVERED);
+      await damaged(order, [{ data: await photo(400, 300), name: 'small.jpg' }]).expect(202);
+    });
+
     it('before delivery → 409 not_delivered', async () => {
       const order = await makeOrder(OrderStatus.SHIPPED, { deliveredAt: null });
       const res = await damaged(order, [{ data: await photo(), name: 'a.jpg' }]).expect(409);
@@ -353,7 +392,8 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       const jobs = await prisma.outboxJob.count();
       const a = await post('returns', returnBody(order, { website: 'http://spam.test' })).expect(202);
       expect(a.body).toEqual({});
-      await damaged(order, [{ data: await photo(), name: 'a.jpg' }], { website: 'x' }).expect(202);
+      const d = await damaged(order, [{ data: await photo(), name: 'a.jpg' }], { website: 'x' }).expect(202);
+      expect(d.body).toEqual({});
       const c = await post('contact', { website: 'spam', fullName: 'x' }).expect(202);
       expect(c.body).toEqual({});
       expect(await prisma.supportTicket.count()).toBe(before);

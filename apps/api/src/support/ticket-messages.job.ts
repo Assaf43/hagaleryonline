@@ -21,7 +21,8 @@ const TYPE_CODE: Record<SupportTicketType, TicketTypeCode> = {
 /**
  * Handlers of the ticket e-mails (spec §7.1): `email.ticket_received` to the ticket's contact e-mail, and
  * `email.ticket_alert` to the business inbox `SUPPORT_EMAIL` (read once; without it the alert is skipped with a
- * warning, it is not required at startup). A provider error throws, so the outbox retries.
+ * warning, it is not required at startup). A missing recipient finishes the job with a warning (a retry cannot fix
+ * it); a provider error throws, so the outbox retries.
  */
 @Injectable()
 export class TicketMessagesJob implements OnModuleInit {
@@ -54,6 +55,11 @@ export class TicketMessagesJob implements OnModuleInit {
   async received({ ticketId }: TicketJob): Promise<void> {
     const ticket = await this.load(ticketId);
     if (!ticket) return;
+    // Retrying cannot give a ticket an address: finish the job instead of failing it eight times.
+    if (!ticket.email.trim()) {
+      this.logger.warn(`Ticket ${ticket.number} has no e-mail address: no confirmation e-mail`);
+      return;
+    }
     await this.notifications.email(
       'ticket_received',
       ticket.email,

@@ -23,8 +23,14 @@ export class ImageRejected extends Error {
   }
 }
 
-/** Reads an upload's header by its content (never its name): the format, and the size as shown (after EXIF rotation). */
-async function inspect(input: Buffer): Promise<{ originalExt: string; width: number; height: number }> {
+/**
+ * Reads an upload's header by its content (never its name): the format, and the size as shown (after EXIF rotation).
+ * `minLongSide` is the catalog's minimum unless the caller sets its own.
+ */
+async function inspect(
+  input: Buffer,
+  { minLongSide = IMAGE_UPLOAD.minLongSide }: { minLongSide?: number } = {},
+): Promise<{ originalExt: string; width: number; height: number }> {
   if (input.length > IMAGE_UPLOAD.maxBytes) throw new ImageRejected('too_large');
   let meta: Metadata;
   try {
@@ -36,7 +42,7 @@ async function inspect(input: Buffer): Promise<{ originalExt: string; width: num
   if (!originalExt) throw new ImageRejected('type');
 
   const { width, height } = meta.autoOrient;
-  if (Math.max(width, height) < IMAGE_UPLOAD.minLongSide) throw new ImageRejected('too_small');
+  if (Math.max(width, height) < minLongSide) throw new ImageRejected('too_small');
   return { originalExt, width, height };
 }
 
@@ -72,11 +78,13 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
 }
 
 /**
- * The same checks as `processImage` (content, upright, metadata removed), but one WebP of at most `maxWidth` and no
- * kept original: private photos that only staff look at (damaged-product photos, spec §7.1).
+ * The same content checks as `processImage` (a JPEG, PNG or WebP that sharp can read, upright, metadata removed), but
+ * one WebP of at most `maxWidth` and no kept original: private photos that only staff look at (damaged-product photos,
+ * spec §7.1). No minimum size: a small customer photo is still evidence. The upload size limit is the caller's (the
+ * support form allows 10 MB).
  */
 export async function processPrivatePhoto(input: Buffer, maxWidth = 1600): Promise<Buffer> {
-  await inspect(input);
+  await inspect(input, { minLongSide: 1 });
   try {
     return await upright(input, maxWidth).webp({ quality: 82 }).toBuffer();
   } catch {

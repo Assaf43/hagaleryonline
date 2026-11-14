@@ -62,6 +62,12 @@ describe('processPrivatePhoto (support photos, spec §7.1)', () => {
     expect(meta.exif).toBeUndefined();
   });
 
+  it('a small photo (400×300) is accepted here, while the catalog path still refuses it', async () => {
+    const small = await photo(400, 300).jpeg().toBuffer();
+    expect((await sharp(await processPrivatePhoto(small)).metadata()).width).toBe(400);
+    await expect(processImage(small)).rejects.toMatchObject({ problem: 'too_small' });
+  });
+
   it('a smaller photo keeps its size; content that is not a photo is refused', async () => {
     expect((await sharp(await processPrivatePhoto(await photo(900, 700).png().toBuffer())).metadata()).width).toBe(900);
     await expect(processPrivatePhoto(Buffer.from('not a picture'))).rejects.toMatchObject({ problem: 'unreadable' });

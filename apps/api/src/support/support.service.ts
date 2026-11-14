@@ -32,7 +32,11 @@ const DEFAULT_RETURN_WINDOW_DAYS = 14;
 const NO_ORDER_PHONE = '----------';
 const NO_GIVEN_PHONE = '__________';
 
-/** A new ticket: the type, what it is about and the contact snapshot. */
+/**
+ * A new ticket: the type, what it is about and the contact snapshot. A ticket about an order belongs to the order's
+ * account (`order.customerId`, null for a guest order); only a contact ticket without an order takes the signed-in
+ * customer.
+ */
 export interface NewTicket {
   id?: string;
   type: SupportTicketType;
@@ -92,7 +96,7 @@ export class SupportService {
       this.open(tx, {
         type: input.type === 'return' ? SupportTicketType.RETURN : SupportTicketType.EXCHANGE,
         orderId: order.id,
-        customerId: customer?.id ?? null,
+        customerId: order.customerId,
         ...orderContact(order.contact),
         reasonCode: input.reasonCode,
         message: input.note,
@@ -127,7 +131,7 @@ export class SupportService {
           id,
           type: SupportTicketType.DAMAGED,
           orderId: order.id,
-          customerId: customer?.id ?? null,
+          customerId: order.customerId,
           ...orderContact(order.contact),
           message: input.description,
           items: [{ orderItemId: input.orderItemId }],
@@ -151,12 +155,15 @@ export class SupportService {
     const order =
       input.orderNumber === null
         ? null
-        : await this.prisma.order.findUnique({ where: { number: input.orderNumber }, select: { id: true } });
+        : await this.prisma.order.findUnique({
+            where: { number: input.orderNumber },
+            select: { id: true, customerId: true },
+          });
     const ticket = await this.prisma.$transaction((tx) =>
       this.open(tx, {
         type: SupportTicketType.CONTACT,
         orderId: order?.id ?? null,
-        customerId: customer?.id ?? null,
+        customerId: order ? order.customerId : (customer?.id ?? null),
         fullName: input.fullName,
         phone: input.phone,
         email: input.email,
