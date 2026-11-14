@@ -14,11 +14,17 @@ export function formatOrderNumber(number: number): string {
   return String(number);
 }
 
-/** The order number of a URL segment, or null when it cannot be one (digits only, from 100001, at most 12 digits). */
+/** The largest order number: `orders.number` is a PostgreSQL integer (int4). */
+export const MAX_ORDER_NUMBER = 2_147_483_647;
+
+/**
+ * The order number of a URL segment, or null when it cannot be one (digits only, from 100001 up to the int4 limit).
+ * A larger number would make the database query fail (500) instead of the endpoint's normal 404.
+ */
 export function parseOrderNumber(value: string): number | null {
   if (!/^\d{6,12}$/.test(value)) return null;
   const number = Number(value);
-  return number >= FIRST_ORDER_NUMBER ? number : null;
+  return number >= FIRST_ORDER_NUMBER && number <= MAX_ORDER_NUMBER ? number : null;
 }
 
 /** The confirmation page of an order (storefront, relative). */

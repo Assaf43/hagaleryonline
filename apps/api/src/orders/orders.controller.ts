@@ -17,14 +17,14 @@ export class OrdersController {
   @Get(':number')
   @Header('Cache-Control', 'no-store')
   view(@Param('number') number: string, @Query('t') token: unknown): Promise<OrderView> {
-    return this.orders.view(number, typeof token === 'string' ? token : undefined);
+    return this.orders.view(number, { token: typeof token === 'string' ? token : undefined });
   }
 
   /** Cancels an order that is still waiting for payment (spec §4.2). */
   @Post(':number/cancel')
   @Throttled('cancel')
   cancel(@Param('number') number: string, @Query('t') token: unknown): Promise<OrderView> {
-    return this.lifecycle.cancelByCustomer(number, typeof token === 'string' ? token : undefined);
+    return this.lifecycle.cancelByCustomer(number, { token: typeof token === 'string' ? token : undefined });
   }
 
   @Post(':number/retry-payment')

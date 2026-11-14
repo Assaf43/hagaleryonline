@@ -1,0 +1,88 @@
+@let o = order();
+<p class="keep">
+  שמרו את מספר ההזמנה: <bdi class="num">{{ o.number }}</bdi>
+</p>
+
+<div class="layout">
+  <section aria-labelledby="order-lines">
+    <h2 id="order-lines">המוצרים</h2>
+    <ul class="lines">
+      @for (l of o.lines; track $index) {
+        <li class="line">
+          <span class="line-info">
+            <bdi dir="ltr" class="model">{{ l.modelName }}</bdi>
+            <span class="muted small">{{ l.nameHe }}</span>
+            @if (l.optionLabels.length) {
+              <span class="muted small">{{ l.optionLabels.join(' · ') }}</span>
+            }
+            <span class="muted small"
+              >כמות: <span class="num">{{ l.quantity }}</span> ·
+              <span class="num">{{ price(l.unitPrice) }}</span> ליחידה</span
+            >
+          </span>
+          <span class="num">{{ price(l.lineTotal) }}</span>
+        </li>
+      }
+    </ul>
+  </section>
+
+  <div class="side">
+    <section aria-labelledby="order-delivery">
+      <h2 id="order-delivery">משלוח</h2>
+      <p>
+        {{ addressLine() }}
+      </p>
+      <p class="muted small">
+        קומה <span class="num">{{ o.address.floor }}</span> ·
+        {{ o.address.hasElevator ? 'יש מעלית' : 'אין מעלית' }}
+      </p>
+      @if (o.address.notes) {
+        <p class="muted small">הערות לשליח: {{ o.address.notes }}</p>
+      }
+      <p>{{ methodLabels[o.method] }}</p>
+      @if (estimate()) {
+        <p class="muted small">{{ estimate() }}</p>
+      }
+    </section>
+
+    <section class="totals" aria-labelledby="order-totals">
+      <h2 id="order-totals">סיכום</h2>
+      <p class="row">
+        <span>סכום ביניים</span><span class="num">{{ price(o.subtotal) }}</span>
+      </p>
+      @if (o.discount > 0) {
+        <p class="row discount-row">
+          <span>{{ o.discountInfo?.labelHe ?? 'הנחה' }}:</span>&ngsp;<hg-discount-amount [amount]="o.discount" />
+        </p>
+      }
+      @for (l of o.shippingLines; track $index) {
+        <p class="row muted small">
+          <span>{{ l.labelHe }}</span
+          ><span class="num">{{ price(l.amount) }}</span>
+        </p>
+      }
+      <p class="row">
+        <span>משלוח</span><span class="num">{{ price(o.shippingTotal) }}</span>
+      </p>
+      <p class="row total">
+        <span>סה״כ</span><span class="num">{{ price(o.total) }}</span>
+      </p>
+      <p class="muted small">המחיר כולל מע״מ</p>
+    </section>
+
+    @if (documentUrl() && o.invoices.length) {
+      <section class="documents" aria-labelledby="order-documents">
+        <h2 id="order-documents">מסמכים</h2>
+        <ul class="document-list">
+          @for (d of o.invoices; track d.id) {
+            <li>
+              <a [href]="documentUrl()!(d.id)" target="_blank" rel="noopener"
+                >{{ invoiceLabels[d.type] }} <bdi>{{ d.number }}</bdi></a
+              >
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  </div>
+</div>

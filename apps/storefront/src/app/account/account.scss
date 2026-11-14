@@ -1,0 +1,240 @@
+// Shared by the account pages (sign-in, sign-up, orders, details, addresses, consent).
+:host {
+  display: block;
+}
+
+.page {
+  display: grid;
+  gap: var(--space-5);
+  padding-block: var(--space-5) var(--space-7);
+  align-content: start;
+}
+
+.narrow {
+  inline-size: 100%;
+  max-inline-size: 520px;
+  margin-inline: auto;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--font-h3);
+}
+
+.state {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  color: var(--color-text-secondary);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-4);
+
+  @media (width >= 600px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.textarea {
+  block-size: auto;
+  padding-block: var(--space-2);
+  resize: vertical;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-height);
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.form-error {
+  color: var(--color-danger);
+  font-size: var(--font-small);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.notice {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-info-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: var(--control-height);
+}
+
+// Tabs (BRAND.md: the active tab has a strong underline).
+.tabs {
+  display: flex;
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.tab {
+  flex: 1;
+  min-block-size: var(--control-height);
+  padding-inline: var(--space-3);
+  border: 0;
+  border-block-end: var(--border-width-strong) solid transparent;
+  background: none;
+  color: var(--color-text-secondary);
+  font: inherit;
+  cursor: pointer;
+
+  &[aria-selected='true'] {
+    color: var(--color-text);
+    font-weight: 700;
+    border-block-end-color: var(--color-text);
+  }
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-4);
+  padding-block-start: var(--space-4);
+}
+
+// Account navigation (orders, details, addresses, consent).
+.account-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  border-block-end: var(--border-width) solid var(--color-border);
+  padding-block-end: var(--space-3);
+
+  a,
+  button {
+    min-block-size: var(--control-height);
+    padding-inline: var(--space-3);
+    display: inline-flex;
+    align-items: center;
+    border: 0;
+    background: none;
+    color: var(--color-text-secondary);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  a.active {
+    color: var(--color-text);
+    font-weight: 700;
+    text-decoration: underline;
+  }
+
+  button {
+    margin-inline-start: auto;
+    text-decoration: underline;
+  }
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.badge {
+  padding-inline: var(--space-2);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+}
+
+.order-link {
+  color: inherit;
+  font-weight: 700;
+}
+
+.pager {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.cancel-dialog {
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  max-inline-size: min(420px, 90vw);
+
+  &::backdrop {
+    background: var(--color-overlay);
+  }
+
+  h2 {
+    margin-block-end: var(--space-3);
+  }
+}

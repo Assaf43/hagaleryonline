@@ -22,6 +22,8 @@ export class AuthConfig {
   /** Where the storefront runs; only its origin may send public writes (cart). */
   readonly storefrontUrl: string;
   readonly cookieSecure: boolean;
+  /** NODE_ENV as read at startup: public cookies are Secure in production whatever COOKIE_SECURE says. */
+  readonly nodeEnv: string | undefined;
   readonly secretBox: SecretBox;
   /** Password and code attempts per IP per 15 minutes (NFR-12). */
   readonly ipAttemptLimit: number;
@@ -35,6 +37,7 @@ export class AuthConfig {
       );
     this.storefrontUrl = (storefrontUrl || 'http://localhost:4200').replace(/\/$/, '');
     this.cookieSecure = config.get<string>('COOKIE_SECURE', 'false') === 'true';
+    this.nodeEnv = config.get<string>('NODE_ENV');
     this.secretBox = new SecretBox(config.getOrThrow<string>('TOTP_ENCRYPTION_KEY'));
     this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', '30'));
   }

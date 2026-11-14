@@ -132,3 +132,13 @@ legend {
   border-radius: var(--radius-md);
   font-size: var(--font-small);
 }
+
+// "הטבת הצטרפות" (decision 79): the checkbox and its hint, read together.
+.welcome {
+  display: grid;
+  gap: var(--space-1);
+
+  label {
+    cursor: pointer;
+  }
+}

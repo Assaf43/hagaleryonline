@@ -3,9 +3,10 @@ import type { Request, Response } from 'express';
 import { MAX_COUPON_CODE_LENGTH, type CartView } from '@hg/models';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
-import { sendCart } from '../cart/cart.controller.js';
-import { cartTokenOf as tokenOf } from '../cart/cart-token.js';
+import { ownerOf, sendCart } from '../cart/cart.controller.js';
 import { CartError, CartService } from '../cart/cart.service.js';
+import { OptionalCustomer, OptionalCustomerGuard } from '../customers/customer-session.guard.js';
+import type { ResolvedCustomer } from '../customers/customer-session.service.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 
 /**
@@ -13,7 +14,7 @@ import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
  * (400 `invalid_coupon` with `messageHe` otherwise); `DELETE /api/cart/coupon` removes it. Both answer the cart view.
  */
 @Controller('cart/coupon')
-@UseGuards(StorefrontOriginGuard)
+@UseGuards(StorefrontOriginGuard, OptionalCustomerGuard)
 export class CouponController {
   constructor(
     private readonly cart: CartService,
@@ -29,15 +30,20 @@ export class CouponController {
     @Body() body: unknown,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CartView> {
     const { code } = (body ?? {}) as Record<string, unknown>;
     if (typeof code !== 'string' || code.trim().length === 0 || code.trim().length > MAX_COUPON_CODE_LENGTH)
       throw new CartError(HttpStatus.BAD_REQUEST, 'invalid_input');
-    return sendCart(this.config, req, res, await this.cart.applyCoupon(tokenOf(req), code));
+    return sendCart(this.config, req, res, await this.cart.applyCoupon(ownerOf(req, customer), code));
   }
 
   @Delete()
-  async remove(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<CartView> {
-    return sendCart(this.config, req, res, await this.cart.removeCoupon(tokenOf(req)));
+  async remove(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @OptionalCustomer() customer: ResolvedCustomer | null,
+  ): Promise<CartView> {
+    return sendCart(this.config, req, res, await this.cart.removeCoupon(ownerOf(req, customer)));
   }
 }

@@ -27,7 +27,7 @@ import { canAdvance, canCancel } from './order-transitions.js';
 import { parseAmount, parseReason } from './refund-amount.js';
 import { RefundService } from './refund.service.js';
 import { OrdersAdminService } from './orders-admin.service.js';
-import { effectiveStatus, OrdersService, STATUS_VIEW } from './orders.service.js';
+import { effectiveStatus, OrdersService, STATUS_VIEW, type OrderAccess } from './orders.service.js';
 
 const STATUS_FROM_VIEW = new Map<string, OrderStatus>(
   (Object.entries(STATUS_VIEW) as [OrderStatus, OrderStatusView][]).map(([prisma, view]) => [view, prisma]),
@@ -114,13 +114,14 @@ export class OrderLifecycleService {
   }
 
   /**
-   * POST /api/orders/:number/cancel?t= — only while waiting for payment (and within the reservation). Locks the
-   * order's payments, then the order (the webhook's lock order), so a payment webhook landing at the same moment
-   * either wins (the order is paid: 409) or finds the payment cancelled.
+   * POST /api/orders/:number/cancel?t= and POST /api/account/orders/:number/cancel (the account's own order) — only
+   * while waiting for payment (and within the reservation). Locks the order's payments, then the order (the webhook's
+   * lock order), so a payment webhook landing at the same moment either wins (the order is paid: 409) or finds the
+   * payment cancelled.
    */
-  async cancelByCustomer(numberParam: string, token: string | undefined): Promise<OrderView> {
-    // The 404 for an unknown number or a wrong token is the view's.
-    await this.orders.view(numberParam, token);
+  async cancelByCustomer(numberParam: string, access: OrderAccess): Promise<OrderView> {
+    // The 404 for an unknown number, a wrong token or another account's order is the view's.
+    await this.orders.view(numberParam, access);
     const number = parseOrderNumber(numberParam)!;
     const found = await this.prisma.order.findUniqueOrThrow({ where: { number }, select: { id: true } });
     await this.prisma.$transaction(async (tx) => {
@@ -147,7 +148,7 @@ export class OrderLifecycleService {
       });
       await this.onStatusChanged(tx, order, order.status, OrderStatus.CANCELLED);
     });
-    return this.orders.view(numberParam, token);
+    return this.orders.view(numberParam, access);
   }
 
   /**

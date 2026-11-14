@@ -1,0 +1,47 @@
+:host {
+  display: block;
+}
+
+.page {
+  display: grid;
+  gap: var(--space-5);
+  padding-block: var(--space-5) var(--space-7);
+  align-content: start;
+}
+
+.narrow {
+  inline-size: 100%;
+  max-inline-size: 520px;
+  margin-inline: auto;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.intro {
+  color: var(--color-text-secondary);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+}
+
+// The alert region stays rendered while empty (never display: none), so a message put in it is announced.
+.form-error {
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}

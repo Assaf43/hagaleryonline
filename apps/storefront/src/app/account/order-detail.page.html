@@ -1,0 +1,68 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="state" role="status">טוען…</p>
+    }
+    @case ('not_found') {
+      <h2>ההזמנה לא נמצאה</h2>
+      <a routerLink="/account/orders" class="btn btn-secondary">לכל ההזמנות</a>
+    }
+    @case ('error') {
+      <div class="state" role="alert">
+        <p>לא הצלחנו לטעון את ההזמנה.</p>
+        <button type="button" class="btn btn-secondary" (click)="reload()">נסו שוב</button>
+      </div>
+    }
+    @case ('ready') {
+      @if (order(); as o) {
+        <div class="stack">
+          <h2 aria-live="polite">{{ title() }}</h2>
+          @if (o.status === 'cancelled' && o.refundedTotal > 0) {
+            <p>
+              הוחזרו <bdi class="num">{{ price(o.refundedTotal) }}</bdi>
+            </p>
+          }
+          @if (o.canRetryPayment) {
+            <p class="notice">להשלמת התשלום אפשר להשתמש בקישור שנשלח במייל ההזמנה</p>
+          }
+          @if (o.canCancel) {
+            <div class="actions">
+              <button type="button" class="btn btn-secondary cancel-order" (click)="openCancel()">ביטול ההזמנה</button>
+            </div>
+          } @else if (contactSupport()) {
+            <p class="hint">
+              לביטול ההזמנה פנו לשירות הלקוחות:
+              <bdi dir="ltr"
+                ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
+              >
+              ·
+              <bdi dir="ltr"
+                ><a [href]="'mailto:' + support.email">{{ support.email }}</a></bdi
+              >
+            </p>
+          }
+          <p class="form-error" role="alert">{{ actionError() }}</p>
+        </div>
+        <hg-order-detail [order]="o" />
+        <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title">
+          <h2 id="cancel-title">לבטל את ההזמנה?</h2>
+          <div class="actions">
+            <button
+              type="button"
+              class="btn btn-primary confirm-cancel"
+              [disabled]="cancelling()"
+              (click)="confirmCancel()"
+            >
+              כן, לבטל
+            </button>
+            <!-- The safe choice is focused first (not the destructive one). -->
+            <button type="button" class="btn btn-secondary" autofocus (click)="closeCancel()">חזרה</button>
+          </div>
+        </dialog>
+      }
+    }
+  }
+</section>

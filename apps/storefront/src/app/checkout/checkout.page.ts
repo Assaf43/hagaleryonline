@@ -18,7 +18,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { Subject, catchError, debounceTime, map, of, startWith, switchMap } from 'rxjs';
-import type { LocalityOption, ShippingMethod, ShippingQuote } from '@hg/models';
+import type { CheckoutPrefill, CustomerAddressView, LocalityOption, ShippingMethod, ShippingQuote } from '@hg/models';
+import { CustomerStore } from '../account/customer.store';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
@@ -31,6 +32,7 @@ import {
 } from './checkout.api';
 import {
   FIELD_IDS,
+  MARKETING_ID,
   type CheckoutField,
   type CheckoutForm,
   type FieldErrors,
@@ -61,13 +63,38 @@ const EMPTY_FORM: CheckoutForm = {
   notes: '',
   method: null,
   acceptTerms: false,
+  marketingConsent: false,
 };
+
+/** The address part of the form, as "another address" leaves it. */
+const EMPTY_ADDRESS = {
+  locality: null,
+  street: '',
+  houseNumber: '',
+  apartment: '',
+  floor: '',
+  hasElevator: false,
+  notes: '',
+} satisfies Partial<CheckoutForm>;
+
+/** The radio value of "another address" (saved addresses use their id). */
+export const OTHER_ADDRESS = 'other';
+
+/** The banner without a welcome benefit. */
+const SIGN_IN_PLAIN = 'התחברו או הירשמו לחשבון';
+
+/** Who checks out: known only in the browser, after the session read (`unknown` on the server). */
+type Shopper = 'unknown' | 'guest' | 'customer';
 
 /**
  * Checkout `/checkout` (spec §5.1, CHK-01–03): details, address and delivery, shipping method (both methods with
  * their quote, refreshed 300 ms after the locality, floor or elevator change) and summary with the terms. The
  * cart belongs to a cookie, so the server renders only the heading; the form appears once the cart has loaded,
  * and an empty (or fully unavailable) cart goes back to /cart. Submitting opens the payment provider's page.
+ *
+ * The session (spec §6.4) is read in the browser after hydration, never on the server: a guest sees a banner inviting
+ * to sign in (with the active welcome benefit) or to continue as a guest, and the marketing checkbox (unchecked); a
+ * signed-in customer gets the contact and the default address filled in and can pick another saved address.
  */
 @Component({
   selector: 'hg-checkout-page',
@@ -78,6 +105,8 @@ const EMPTY_FORM: CheckoutForm = {
 })
 export class CheckoutPage {
   protected readonly cart = inject(CartStore);
+  private readonly customer = inject(CustomerStore);
+  private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly api = inject(CheckoutApi);
   private readonly router = inject(Router);
   private readonly external = inject(ExternalNavigation);
@@ -94,7 +123,17 @@ export class CheckoutPage {
   /** A message about the whole order (not one field); `cartLink` adds "לסל הקניות". */
   protected readonly formError = signal<{ message: string; cartLink: boolean } | null>(null);
 
+  protected readonly shopper = signal<Shopper>('unknown');
+  /** The banner's text, once the welcome benefit was read (empty until then). */
+  protected readonly bannerText = signal('');
+  protected readonly bannerClosed = signal(false);
+  protected readonly savedAddresses = signal<CustomerAddressView[]>([]);
+  /** The saved address in the form (its id), or `OTHER_ADDRESS`. */
+  protected readonly addressChoice = signal(OTHER_ADDRESS);
+  protected readonly otherAddress = OTHER_ADDRESS;
+
   protected readonly ids = FIELD_IDS;
+  protected readonly marketingId = MARKETING_ID;
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly price = formatPrice;
 
@@ -133,7 +172,10 @@ export class CheckoutPage {
       path: '/checkout',
       noindex: true,
     });
-    afterNextRender(() => void this.cart.load());
+    afterNextRender(() => {
+      void this.cart.load();
+      void this.readSession();
+    });
 
     effect(() => {
       if (this.cart.view() && !untracked(this.noticesReady))
@@ -152,7 +194,7 @@ export class CheckoutPage {
       untracked(() => this.requote$.next());
     });
 
-    if (isPlatformBrowser(inject(PLATFORM_ID))) {
+    if (this.browser) {
       this.requote$
         .pipe(
           debounceTime(QUOTE_DEBOUNCE_MS),
@@ -186,6 +228,98 @@ export class CheckoutPage {
     }
   }
 
+  /** Guest or customer: the banner (with the welcome benefit) or the prefill. Browser only (afterNextRender). */
+  private async readSession(): Promise<void> {
+    if (!this.browser) return;
+    await this.customer.load();
+    if (this.customer.me()) {
+      let prefill: CheckoutPrefill | null = null;
+      try {
+        prefill = await this.api.prefill();
+      } catch {
+        // The form stays empty: the customer types the details as a guest would.
+        this.shopper.set('customer');
+        return;
+      }
+      if (prefill) {
+        this.shopper.set('customer');
+        this.applyPrefill(prefill);
+        return;
+      }
+      // 204: the session ended meanwhile; the header and the cart follow (no navigation, the guest path below).
+      this.customer.sessionEnded();
+    }
+    this.shopper.set('guest');
+    let label: string | null = null;
+    try {
+      label = (await this.api.welcome())?.labelHe ?? null;
+    } catch {
+      // The plain invitation.
+    }
+    this.bannerText.set(label ? `התחברו או הירשמו וקבלו ${label}` : SIGN_IN_PLAIN);
+  }
+
+  /** The account's contact (fields the customer already typed stay) and its default address. */
+  private applyPrefill({ contact, addresses }: CheckoutPrefill): void {
+    this.form.update((f) => ({
+      ...f,
+      fullName: f.fullName || contact.fullName,
+      phone: f.phone || contact.phone,
+      email: f.email || contact.email,
+    }));
+    this.savedAddresses.set(addresses);
+    const first = addresses.find((a) => a.isDefault) ?? addresses[0];
+    const f = this.form();
+    const untouched = !f.locality && !f.street && !f.houseNumber && !f.apartment && !f.floor && !f.notes;
+    if (first && untouched) this.pickAddress(first.id);
+  }
+
+  /** A saved address fills the address fields; "another address" empties them. Either way the quote follows. */
+  protected pickAddress(id: string): void {
+    const a = this.savedAddresses().find((x) => x.id === id);
+    this.addressChoice.set(a ? a.id : OTHER_ADDRESS);
+    this.form.update((f) => ({
+      ...f,
+      ...(a
+        ? {
+            locality: { id: a.localityId, nameHe: a.localityNameHe },
+            street: a.street,
+            houseNumber: a.houseNumber,
+            apartment: a.apartment ?? '',
+            floor: String(a.floor),
+            hasElevator: a.hasElevator,
+            notes: a.notes ?? '',
+          }
+        : EMPTY_ADDRESS),
+    }));
+    this.errors.update((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !k.startsWith('address.'))));
+    this.requote$.next();
+  }
+
+  /** The address was changed by hand: it is no longer the saved one. */
+  private addressEdited(): void {
+    this.addressChoice.set(OTHER_ADDRESS);
+  }
+
+  /** "המשך כאורח": the banner goes and the focus moves to the first field (or the heading while the cart loads). */
+  protected continueAsGuest(): void {
+    this.bannerClosed.set(true);
+    afterNextRender(
+      () => {
+        const root = this.host.nativeElement;
+        (
+          root.querySelector<HTMLElement>(`#${FIELD_IDS['contact.fullName']}`) ?? root.querySelector<HTMLElement>('h1')
+        )?.focus();
+      },
+      { injector: this.injector },
+    );
+  }
+
+  protected setMarketing(event: Event) {
+    const marketingConsent = (event.target as HTMLInputElement).checked;
+    this.form.update((f) => ({ ...f, marketingConsent }));
+  }
+
   protected retryLoad(): void {
     void this.cart.load();
   }
@@ -201,13 +335,14 @@ export class CheckoutPage {
   ) {
     const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value;
     this.form.update((f) => ({ ...f, [field]: value }));
-    this.clearError(
-      `${field === 'fullName' || field === 'phone' || field === 'email' ? 'contact' : 'address'}.${field}` as CheckoutField,
-    );
+    const contact = field === 'fullName' || field === 'phone' || field === 'email';
+    if (!contact) this.addressEdited();
+    this.clearError(`${contact ? 'contact' : 'address'}.${field}` as CheckoutField);
   }
 
   protected setLocality(locality: LocalityOption | null) {
     this.form.update((f) => ({ ...f, locality }));
+    this.addressEdited();
     if (locality) this.clearError('address.localityId');
     this.requote$.next();
   }
@@ -215,6 +350,7 @@ export class CheckoutPage {
   protected setFloor(event: Event) {
     const floor = (event.target as HTMLInputElement).value;
     this.form.update((f) => ({ ...f, floor }));
+    this.addressEdited();
     this.clearError('address.floor');
     this.requote$.next();
   }
@@ -222,6 +358,7 @@ export class CheckoutPage {
   protected setElevator(event: Event) {
     const hasElevator = (event.target as HTMLInputElement).checked;
     this.form.update((f) => ({ ...f, hasElevator }));
+    this.addressEdited();
     this.clearError('address.hasElevator');
     this.requote$.next();
   }

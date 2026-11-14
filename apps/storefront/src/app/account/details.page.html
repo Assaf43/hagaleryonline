@@ -1,0 +1,136 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+  <h2>פרטים אישיים</h2>
+
+  @if (store.me(); as me) {
+    <div class="stack narrow-wide">
+      <p class="notice" role="status">{{ status() }}</p>
+      <p class="form-error" role="alert">{{ formError() }}</p>
+
+      <section class="stack" aria-labelledby="dt-name-title">
+        <h3 id="dt-name-title">שם</h3>
+        <form class="stack name-form" novalidate (submit)="saveName($event)">
+          <div class="field">
+            <label class="field-label" for="dt-name">שם מלא</label>
+            <input
+              class="input"
+              id="dt-name"
+              type="text"
+              autocomplete="name"
+              maxlength="80"
+              [value]="nameDraft() ?? me.fullName"
+              [attr.aria-invalid]="errors()['name'] ? true : null"
+              [attr.aria-describedby]="errors()['name'] ? 'dt-name-error' : null"
+              (input)="input(nameDraft, $event)"
+            />
+            @if (errors()['name']; as e) {
+              <p class="field-error" id="dt-name-error">{{ e }}</p>
+            }
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn btn-secondary" [disabled]="busy()">שמירת שם</button>
+          </div>
+        </form>
+      </section>
+
+      @for (c of contacts; track c.kind) {
+        <section class="stack" [attr.aria-labelledby]="'dt-' + c.kind + '-title'">
+          <h3 [id]="'dt-' + c.kind + '-title'">{{ c.title }}</h3>
+          <p>
+            <bdi dir="ltr">{{ c.kind === 'phone' ? me.phone : me.email }}</bdi>
+          </p>
+          @if (confirming() === c.kind) {
+            <div class="stack">
+              <p class="notice">{{ codeSent }}</p>
+              <hg-otp-field
+                [label]="c.kind === 'phone' ? 'הקוד שנשלח ב־SMS' : 'הקוד שנשלח למייל'"
+                [idPrefix]="'dt-otp-' + c.kind"
+                [error]="codeError()"
+                (completed)="confirm(c.kind, $event)"
+                (resend)="resend(c.kind)"
+              />
+              <div class="actions">
+                <button type="button" class="link-btn" (click)="cancelChange()">ביטול השינוי</button>
+              </div>
+            </div>
+          } @else {
+            <form [class]="'stack ' + c.kind + '-form'" novalidate (submit)="requestChange(c.kind, $event)">
+              <div class="field">
+                <label class="field-label" [for]="'dt-' + c.kind">{{ c.label }}</label>
+                <input
+                  class="input"
+                  [id]="'dt-' + c.kind"
+                  dir="ltr"
+                  maxlength="254"
+                  [attr.type]="c.kind === 'phone' ? 'tel' : 'email'"
+                  [attr.inputmode]="c.kind === 'phone' ? 'tel' : null"
+                  [attr.autocomplete]="c.kind === 'phone' ? 'tel' : 'email'"
+                  [value]="values[c.kind]()"
+                  [attr.aria-invalid]="errors()[c.kind] ? true : null"
+                  [attr.aria-describedby]="errors()[c.kind] ? 'dt-' + c.kind + '-error' : 'dt-' + c.kind + '-hint'"
+                  (input)="input(values[c.kind], $event)"
+                />
+                <p class="hint" [id]="'dt-' + c.kind + '-hint'">נשלח קוד לערך החדש כדי לאמת אותו</p>
+                @if (errors()[c.kind]; as e) {
+                  <p class="field-error" [id]="'dt-' + c.kind + '-error'">{{ e }}</p>
+                }
+              </div>
+              <div class="actions">
+                <button type="submit" class="btn btn-secondary" [disabled]="busy()">שליחת קוד</button>
+              </div>
+            </form>
+          }
+        </section>
+      }
+
+      <section class="stack" aria-labelledby="dt-password-title">
+        <h3 id="dt-password-title">{{ me.hasPassword ? 'שינוי סיסמה' : 'הגדרת סיסמה' }}</h3>
+        <form class="stack password-form" novalidate (submit)="savePassword($event)">
+          @if (me.hasPassword) {
+            <div class="field">
+              <label class="field-label" for="dt-current">הסיסמה הנוכחית</label>
+              <input
+                class="input"
+                id="dt-current"
+                type="password"
+                autocomplete="current-password"
+                maxlength="128"
+                [value]="values.current()"
+                [attr.aria-invalid]="errors()['current'] ? true : null"
+                [attr.aria-describedby]="errors()['current'] ? 'dt-current-error' : null"
+                (input)="input(values.current, $event)"
+              />
+              @if (errors()['current']; as e) {
+                <p class="field-error" id="dt-current-error">{{ e }}</p>
+              }
+            </div>
+          }
+          <div class="field">
+            <label class="field-label" for="dt-next">סיסמה חדשה</label>
+            <input
+              class="input"
+              id="dt-next"
+              type="password"
+              autocomplete="new-password"
+              maxlength="128"
+              [value]="values.next()"
+              [attr.aria-invalid]="errors()['next'] ? true : null"
+              [attr.aria-describedby]="errors()['next'] ? 'dt-next-error' : 'dt-next-hint'"
+              (input)="input(values.next, $event)"
+            />
+            <p class="hint" id="dt-next-hint">8 עד 128 תווים</p>
+            @if (errors()['next']; as e) {
+              <p class="field-error" id="dt-next-error">{{ e }}</p>
+            }
+          </div>
+          <div class="actions">
+            <button type="submit" class="btn btn-secondary" [disabled]="busy()">שמירת סיסמה</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  } @else {
+    <p class="state">טוען…</p>
+  }
+</section>

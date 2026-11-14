@@ -260,6 +260,24 @@
       </p>
     }
 
+    @if (!coupon()) {
+      <div class="welcome">
+        <span class="option">
+          <input
+            type="checkbox"
+            id="promo-welcome"
+            aria-describedby="promo-welcome-hint"
+            [checked]="form().isWelcome"
+            (change)="setWelcome($any($event.target).checked)"
+          />
+          <label for="promo-welcome">הטבת הצטרפות (חלה אוטומטית על ההזמנה הראשונה של לקוח רשום)</label>
+        </span>
+        <p class="muted" id="promo-welcome-hint">
+          רק מבצע אחד יכול להיות הטבת הצטרפות. סימון כאן מבטל את הסימון במבצע אחר. מבצע שהסימון הוסר ממנו מושבת.
+        </p>
+      </div>
+    }
+
     <label class="option active">
       <input type="checkbox" [checked]="form().active" (change)="setActive($any($event.target).checked)" />
       פעיל

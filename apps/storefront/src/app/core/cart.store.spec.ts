@@ -242,4 +242,18 @@ describe('CartStore', () => {
     http.verify();
     expect(store.view()).toBeNull();
   });
+
+  it('refresh() starts a new read even while an older one is in flight, and drops the older answer', async () => {
+    const { store, http } = setup();
+    const older = store.load();
+    const fresh = store.refresh();
+    const [first, second] = http.match('/api/cart');
+    expect(second).toBeDefined();
+    // The guest cart answers last; the account cart wins.
+    second.flush(cartView([cartLine(9, 1)]));
+    await fresh;
+    first.flush(cartView());
+    await older;
+    expect(store.count()).toBe(1);
+  });
 });

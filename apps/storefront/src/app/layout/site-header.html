@@ -12,6 +12,9 @@
 
     <div class="header-actions">
       <hg-theme-toggle />
+      <a [routerLink]="accountLink()" class="icon-btn account" [attr.aria-label]="accountLabel()">
+        <svg lucideUser aria-hidden="true"></svg>
+      </a>
       <a routerLink="/favorites" class="icon-btn favorites" [attr.aria-label]="favoritesLabel()">
         <svg lucideHeart aria-hidden="true"></svg>
         @if (favoritesCount() > 0) {

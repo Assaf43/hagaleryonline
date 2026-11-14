@@ -25,12 +25,17 @@ export interface CheckoutForm {
   notes: string;
   method: ShippingMethod | null;
   acceptTerms: boolean;
+  /** The guest's marketing checkbox: never pre-checked (CLAUDE.md §4.4). */
+  marketingConsent: boolean;
 }
 
 /** Field keys as the API names them in a 400 (`field`), in the order the form shows them. */
 export const FIELD_ORDER = CHECKOUT_FIELDS;
 export type { CheckoutField };
 export type FieldErrors = Partial<Record<CheckoutField, string>>;
+
+/** The marketing consent checkbox (no error of its own). */
+export const MARKETING_ID = 'chk-marketing';
 
 /** Element id of each field's control; its error is `<id>-error`. */
 export const FIELD_IDS: Record<CheckoutField, string> = {
@@ -98,6 +103,7 @@ export function toCheckoutRequest(f: CheckoutForm, expectedTotal: number): Check
     method: f.method!,
     acceptTerms: true,
     expectedTotal,
+    marketingConsent: f.marketingConsent,
   };
 }
 

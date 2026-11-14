@@ -1,0 +1,39 @@
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { CustomerStore } from './customer.store';
+
+/** The links between the account pages, and sign-out (which goes back to the home page). */
+@Component({
+  selector: 'hg-account-nav',
+  imports: [RouterLink, RouterLinkActive],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    @if (store.me()) {
+      <nav class="account-nav" aria-label="החשבון שלי">
+        <a routerLink="/account/orders" routerLinkActive="active" ariaCurrentWhenActive="page">ההזמנות שלי</a>
+        <a routerLink="/account/details" routerLinkActive="active" ariaCurrentWhenActive="page">פרטים אישיים</a>
+        <a routerLink="/account/addresses" routerLinkActive="active" ariaCurrentWhenActive="page">כתובות</a>
+        <a routerLink="/account/consent" routerLinkActive="active" ariaCurrentWhenActive="page">דיוור ועדכונים</a>
+        <button type="button" class="sign-out" (click)="signOut()">התנתקות</button>
+      </nav>
+      <p class="form-error" role="alert">{{ error() }}</p>
+    }
+  `,
+  styleUrl: './account.scss',
+})
+export class AccountNav {
+  protected readonly store = inject(CustomerStore);
+  private readonly router = inject(Router);
+  protected readonly error = signal('');
+
+  protected async signOut(): Promise<void> {
+    this.error.set('');
+    try {
+      await this.store.signOut();
+    } catch {
+      this.error.set('לא הצלחנו להתנתק. נסו שוב.');
+      return;
+    }
+    void this.router.navigateByUrl('/');
+  }
+}

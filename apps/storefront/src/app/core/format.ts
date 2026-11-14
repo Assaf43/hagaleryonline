@@ -43,3 +43,15 @@ export const DELIVERY_FILTER_LABELS: Record<FulfillmentMode, string> = {
 export function productCount(n: number): string {
   return n === 1 ? 'מוצר אחד' : `${ILS.format(n)} מוצרים`;
 }
+
+const DATE = new Intl.DateTimeFormat('he-IL', {
+  timeZone: 'Asia/Jerusalem',
+  day: 'numeric',
+  month: 'numeric',
+  year: 'numeric',
+});
+
+/** An ISO time as the Israel calendar date: "10.11.2026". */
+export function formatDate(iso: string): string {
+  return DATE.format(new Date(iso));
+}

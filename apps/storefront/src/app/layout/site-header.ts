@@ -19,9 +19,11 @@ import {
   LucideHeart,
   LucideMenu,
   LucideShoppingBag,
+  LucideUser,
   LucideX,
 } from '@lucide/angular';
 import { ThemeToggle } from '@hg/ui';
+import { CustomerStore } from '../account/customer.store';
 import { MiniCart } from '../cart/mini-cart';
 import { CartStore } from '../core/cart.store';
 import { FavoritesStore } from '../core/favorites.store';
@@ -30,7 +32,8 @@ import { SearchBox } from './search-box';
 
 /**
  * Sticky header (NAV-01, NAV-02, NAV-03): logo, "by room" menu, furniture types, search, theme switch and
- * favorites (CMP-01) and the cart (CRT-01), which opens the mini cart.
+ * favorites (CMP-01), the account (ACC-01: "התחברות", or "החשבון שלי" once the browser knows a customer is signed
+ * in) and the cart (CRT-01), which opens the mini cart.
  * Desktop opens a mega-menu (room → furniture types); phones get a full-screen drawer built on
  * <dialog>, which traps focus and closes with Escape.
  */
@@ -46,6 +49,7 @@ import { SearchBox } from './search-box';
     LucideHeart,
     LucideMenu,
     LucideShoppingBag,
+    LucideUser,
     LucideX,
     MiniCart,
   ],
@@ -75,10 +79,17 @@ export class SiteHeader {
   protected readonly cartCount = computed(() => (this.hydrated() ? this.cart.count() : 0));
   protected readonly cartLabel = computed(() => `סל הקניות (${this.cartCount()})`);
 
+  /** The session is an httpOnly cookie: the server render and the hydration pass show the signed-out icon. */
+  private readonly customer = inject(CustomerStore);
+  private readonly signedIn = computed(() => this.hydrated() && this.customer.me() !== null);
+  protected readonly accountLabel = computed(() => (this.signedIn() ? 'החשבון שלי' : 'התחברות'));
+  protected readonly accountLink = computed(() => (this.signedIn() ? '/account/orders' : '/account'));
+
   constructor() {
     afterNextRender(() => {
       this.hydrated.set(true);
       void this.cart.load();
+      void this.customer.load();
     });
     this.router.events
       .pipe(

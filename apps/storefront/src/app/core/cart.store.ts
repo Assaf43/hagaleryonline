@@ -43,6 +43,15 @@ export class CartStore {
     return flight.done;
   }
 
+  /**
+   * Reads the cart again whatever is in flight: after a sign-in or sign-out the server resolves another cart (the
+   * account's, or the guest's), so an older answer must never overwrite it.
+   */
+  refresh(): Promise<void> {
+    this.writes++;
+    return this.load();
+  }
+
   private async read(flight: { writes: number }): Promise<void> {
     this.failed.set(false);
     // Done in the same step as the state change, so a retry the new state offers starts a new read.

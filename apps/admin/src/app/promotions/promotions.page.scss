@@ -109,3 +109,13 @@ svg {
     grid-column: auto;
   }
 }
+
+// "הטבת הצטרפות" (decision 79): at most one active promotion carries it.
+.welcome-chip {
+  display: inline-block;
+  margin-inline-start: var(--space-2);
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  border-radius: var(--radius-pill);
+  background: var(--color-info-soft);
+  color: var(--color-text);
+}

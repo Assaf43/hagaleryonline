@@ -2,6 +2,7 @@
  * Checkout, orders and payment (Phase 4c, spec §5, CHK-01–04, CHK-06, CHK-09, CHK-10). Money is in agorot
  * (integer, VAT included) and every total is computed by the server.
  */
+import type { CustomerAddressView } from './account.js';
 import type { CartDiscount } from './cart.js';
 import type { FulfillmentMode } from './catalog.js';
 import type { ShippingMethod, ShippingQuoteLine } from './shipping.js';
@@ -91,7 +92,39 @@ export interface CheckoutRequest {
    * from the recomputed total the order is not placed (409 `price_changed`).
    */
   expectedTotal: number;
+  /**
+   * The marketing checkbox (never pre-checked, CLAUDE.md §4.4): stored on the order with its time (source
+   * `checkout`, Phase 7). Optional, false when missing; 400 `invalid_input` when not a boolean.
+   */
+  marketingConsent?: boolean;
 }
+
+/**
+ * `GET /api/checkout/prefill`: 204 for a guest; for a signed-in customer the account's contact and saved addresses
+ * (default first). Orders placed with a session store the account (`customerId`); guest orders never do (decision 77).
+ */
+export interface CheckoutPrefill {
+  contact: CheckoutContact;
+  addresses: CustomerAddressView[];
+}
+
+/**
+ * "My order status" (spec §6.5, SHP-05): `POST /api/orders/lookup` with the order number and the phone it was placed
+ * with (any typing: "050-…", "+972 50…"). A match answers the order page link (the order's own token); anything else,
+ * whether the number is unknown, the phone wrong or the input malformed, is the same 404 `not_found` with
+ * `ORDER_LOOKUP_MISS_HE`. Throttled per IP and per order number (429 `too_many_requests` with `Retry-After`).
+ */
+export interface OrderLookupRequest {
+  number: string;
+  phone: string;
+}
+
+export interface OrderLookupResponse {
+  /** `/order/{number}?t={token}` (storefront, relative). */
+  url: string;
+}
+
+export const ORDER_LOOKUP_MISS_HE = 'לא מצאנו הזמנה עם הפרטים האלה';
 
 /** Where to send the customer to pay (the provider's page). Also the answer of POST /api/orders/:number/retry-payment. */
 export interface CheckoutResponse {
@@ -112,7 +145,8 @@ export interface CheckoutResponse {
  * - `payment_unavailable` (502): the payment provider did not answer;
  * - `not_retryable` (409): the order is paid or still waiting for its payment;
  * - `promotion_ended` (409): retry refused — the order's promotion or coupon ended, is inactive or used up;
- *   `messageHe`;
+ *   `messageHe`. Also at checkout: the welcome benefit the customer saw is held by another live order of the
+ *   account (decision 79);
  * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
  * - `invalid_transition` (409): the move is not allowed from the order's status (or the customer cannot cancel it);
  * - `not_found` (404): unknown order or transaction, or the token does not match;

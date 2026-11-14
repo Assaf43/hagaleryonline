@@ -26,6 +26,9 @@ import { auditDiff, shekels, type AuditView } from '../shipping/shipping-audit.j
 import { toRule } from './promotions.service.js';
 
 type Meta = { actorId: number; ip?: string };
+
+/** The admin's name for the welcome benefit (spec §6.4), also its audit key. */
+const WELCOME_LABEL = 'הטבת הצטרפות';
 type Tx = Prisma.TransactionClient;
 type Db = Tx | PrismaService;
 
@@ -106,8 +109,9 @@ export class PromotionsAdminService {
 
   async create(input: AdminPromotionInput, meta: Meta): Promise<AdminPromotion> {
     return this.inTx(input, async (tx) => {
+      if (input.isWelcome) await this.takeWelcome(tx, null, meta);
       await this.check(tx, input, null);
-      const row = await tx.promotion.create({ data: toData(input) });
+      const row = await tx.promotion.create({ data: toData(input, input.isWelcome === true) });
       const view = (await this.views(tx, [row]))[0];
       await this.audit.record(
         { ...meta, action: 'promotion.create', entityType: 'promotion', entityId: row.id, after: auditView(view) },
@@ -119,10 +123,17 @@ export class PromotionsAdminService {
 
   async update(id: number, input: AdminPromotionInput, meta: Meta): Promise<AdminPromotion> {
     return this.inTx(input, async (tx) => {
+      if (input.isWelcome) await this.takeWelcome(tx, id, meta);
       const existing = await this.locked(tx, id);
       await this.check(tx, input, id);
       const before = (await this.views(tx, [existing]))[0];
-      const row = await tx.promotion.update({ where: { id }, data: toData(input) });
+      // A missing isWelcome keeps the current mark (an automatic promotion only).
+      const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'automatic');
+      // Losing the mark also turns it off: an active ex-welcome promotion would otherwise become an automatic
+      // discount for every shopper (staff turn it on again in a later save if that is what they want).
+      const data = toData(input, isWelcome);
+      if (existing.isWelcome && !isWelcome) data.active = false;
+      const row = await tx.promotion.update({ where: { id }, data });
       const view = (await this.views(tx, [row]))[0];
       const change = auditDiff(auditView(before), auditView(view));
       if (change)
@@ -153,6 +164,37 @@ export class PromotionsAdminService {
       );
       return (await this.views(tx, [row]))[0];
     });
+  }
+
+  /**
+   * Marking a promotion as the welcome benefit clears the mark on every other promotion first, so the partial unique
+   * index (one active welcome promotion) holds. A promotion that loses the mark is also turned off — kept on, it
+   * would become an automatic discount for every shopper — and each one is audited with both fields. Welcome saves
+   * run one at a time (an advisory lock), and the rows involved are locked in ascending id order, like a checkout's
+   * promotion locks (locks.ts).
+   */
+  private async takeWelcome(tx: Tx, id: number | null, meta: Meta): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('promotions:welcome'))`;
+    await tx.$queryRaw`SELECT id FROM promotions WHERE is_welcome OR id = ${id ?? 0} ORDER BY id FOR UPDATE`;
+    const others = await tx.promotion.findMany({
+      where: { isWelcome: true, ...(id === null ? {} : { id: { not: id } }) },
+      select: { id: true, active: true },
+      orderBy: { id: 'asc' },
+    });
+    for (const other of others) {
+      await tx.promotion.update({ where: { id: other.id }, data: { isWelcome: false, active: false } });
+      await this.audit.record(
+        {
+          ...meta,
+          action: 'promotion.update',
+          entityType: 'promotion',
+          entityId: other.id,
+          before: { [WELCOME_LABEL]: 'כן', פעיל: other.active ? 'כן' : 'לא' },
+          after: { [WELCOME_LABEL]: 'לא', פעיל: 'לא' },
+        },
+        tx,
+      );
+    }
   }
 
   /** The row, locked for this save (two saves of one promotion run one after the other). */
@@ -239,6 +281,7 @@ export class PromotionsAdminService {
         usageLimit: r.usageLimit,
         usedCount: r.usedCount,
         active: r.active,
+        isWelcome: r.isWelcome,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       };
@@ -246,7 +289,7 @@ export class PromotionsAdminService {
   }
 }
 
-function toData(input: AdminPromotionInput) {
+function toData(input: AdminPromotionInput, isWelcome: boolean) {
   return {
     name: input.name,
     kind: KIND_TO_DB[input.kind],
@@ -260,6 +303,7 @@ function toData(input: AdminPromotionInput) {
     endsAt: input.endsAt ? new Date(input.endsAt) : null,
     usageLimit: input.usageLimit,
     active: input.active,
+    isWelcome,
   };
 }
 
@@ -283,5 +327,6 @@ export function auditView(p: AdminPromotion): AuditView {
     סיום: israelTime(p.endsAt),
     'מגבלת שימוש': p.usageLimit === null ? 'ללא הגבלה' : String(p.usageLimit),
     פעיל: p.active ? 'כן' : 'לא',
+    [WELCOME_LABEL]: p.isWelcome ? 'כן' : 'לא',
   };
 }

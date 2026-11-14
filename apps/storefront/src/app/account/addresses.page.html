@@ -1,0 +1,209 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+  <h2 id="addresses-title">הכתובות שלי</h2>
+
+  @switch (state()) {
+    @case ('loading') {
+      <p class="state" role="status">טוען…</p>
+    }
+    @case ('error') {
+      <div class="state" role="alert">
+        <p>לא הצלחנו לטעון את הכתובות.</p>
+        <button type="button" class="btn btn-secondary" (click)="retry()">נסו שוב</button>
+      </div>
+    }
+    @case ('ready') {
+      <p class="form-error" role="alert">{{ listError() }}</p>
+      @if (addresses().length === 0 && editing() === null) {
+        <p class="state">עוד לא שמרתם כתובות</p>
+      }
+      @if (addresses().length) {
+        <ul class="list" aria-labelledby="addresses-title">
+          @for (a of addresses(); track a.id) {
+            <li class="card address">
+              <div class="card-head">
+                <p>{{ addressLine(a) }}</p>
+                @if (a.isDefault) {
+                  <span class="badge">ברירת מחדל</span>
+                }
+              </div>
+              <p class="hint">
+                קומה <bdi class="num">{{ a.floor }}</bdi> · {{ a.hasElevator ? 'יש מעלית' : 'אין מעלית' }}
+              </p>
+              @if (a.notes) {
+                <p class="hint">הערות לשליח: {{ a.notes }}</p>
+              }
+              @if (confirmingDelete() === a.id) {
+                <div class="actions" role="group" [attr.aria-label]="'מחיקת הכתובת ' + addressLine(a)">
+                  <span>למחוק את הכתובת?</span>
+                  <button
+                    type="button"
+                    class="btn btn-primary confirm-delete"
+                    [disabled]="busy()"
+                    (click)="confirmDelete(a)"
+                  >
+                    כן, למחוק
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    [id]="'ad-keep-' + a.id"
+                    (click)="confirmingDelete.set(null)"
+                  >
+                    חזרה
+                  </button>
+                </div>
+              } @else {
+                <div class="actions">
+                  <button type="button" class="btn btn-secondary edit" (click)="openEdit(a)">עריכה</button>
+                  @if (!a.isDefault) {
+                    <button
+                      type="button"
+                      class="btn btn-secondary make-default"
+                      [disabled]="busy()"
+                      (click)="makeDefault(a)"
+                    >
+                      קביעה כברירת מחדל
+                    </button>
+                  }
+                  <button type="button" class="btn btn-secondary delete" (click)="askDelete(a)">מחיקה</button>
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      }
+
+      @if (editing() === null) {
+        <div class="actions">
+          <button type="button" class="btn btn-primary add" (click)="openNew()">הוספת כתובת</button>
+        </div>
+      } @else {
+        <form class="stack address-form" novalidate aria-labelledby="ad-form-title" (submit)="save($event)">
+          <h3 id="ad-form-title">{{ editing() === 'new' ? 'כתובת חדשה' : 'עריכת כתובת' }}</h3>
+          <div class="grid">
+            <hg-locality-field
+              class="field wide"
+              [inputId]="ids['address.localityId']"
+              [error]="errors()['address.localityId'] ?? ''"
+              [value]="form().locality"
+              (valueChange)="setLocality($event)"
+            />
+            <div class="field">
+              <label class="field-label" [for]="ids['address.street']">רחוב</label>
+              <input
+                class="input"
+                type="text"
+                autocomplete="address-line1"
+                maxlength="80"
+                [id]="ids['address.street']"
+                [value]="form().street"
+                [attr.aria-invalid]="errors()['address.street'] ? true : null"
+                [attr.aria-describedby]="errors()['address.street'] ? ids['address.street'] + '-error' : null"
+                (input)="set('street', $event)"
+              />
+              @if (errors()['address.street']; as e) {
+                <p class="field-error" [id]="ids['address.street'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.houseNumber']">מספר בית</label>
+              <input
+                class="input"
+                type="text"
+                maxlength="10"
+                [id]="ids['address.houseNumber']"
+                [value]="form().houseNumber"
+                [attr.aria-invalid]="errors()['address.houseNumber'] ? true : null"
+                [attr.aria-describedby]="errors()['address.houseNumber'] ? ids['address.houseNumber'] + '-error' : null"
+                (input)="set('houseNumber', $event)"
+              />
+              @if (errors()['address.houseNumber']; as e) {
+                <p class="field-error" [id]="ids['address.houseNumber'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.apartment']">דירה (לא חובה)</label>
+              <input
+                class="input"
+                type="text"
+                maxlength="10"
+                [id]="ids['address.apartment']"
+                [value]="form().apartment"
+                [attr.aria-invalid]="errors()['address.apartment'] ? true : null"
+                [attr.aria-describedby]="errors()['address.apartment'] ? ids['address.apartment'] + '-error' : null"
+                (input)="set('apartment', $event)"
+              />
+              @if (errors()['address.apartment']; as e) {
+                <p class="field-error" [id]="ids['address.apartment'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field">
+              <label class="field-label" [for]="ids['address.floor']">קומה (קרקע = 0)</label>
+              <input
+                class="input"
+                type="text"
+                inputmode="numeric"
+                maxlength="2"
+                [id]="ids['address.floor']"
+                [value]="form().floor"
+                [attr.aria-invalid]="errors()['address.floor'] ? true : null"
+                [attr.aria-describedby]="errors()['address.floor'] ? ids['address.floor'] + '-error' : null"
+                (input)="set('floor', $event)"
+              />
+              @if (errors()['address.floor']; as e) {
+                <p class="field-error" [id]="ids['address.floor'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            <div class="field wide">
+              <label class="check">
+                <input
+                  type="checkbox"
+                  [id]="ids['address.hasElevator']"
+                  [checked]="form().hasElevator"
+                  (change)="setFlag('hasElevator', $event)"
+                />
+                יש מעלית בבניין
+              </label>
+            </div>
+            <div class="field wide">
+              <label class="field-label" [for]="ids['address.notes']">הערות לשליח (לא חובה)</label>
+              <textarea
+                class="input textarea"
+                rows="3"
+                maxlength="500"
+                [id]="ids['address.notes']"
+                [value]="form().notes"
+                [attr.aria-invalid]="errors()['address.notes'] ? true : null"
+                [attr.aria-describedby]="errors()['address.notes'] ? ids['address.notes'] + '-error' : null"
+                (input)="set('notes', $event)"
+              ></textarea>
+              @if (errors()['address.notes']; as e) {
+                <p class="field-error" [id]="ids['address.notes'] + '-error'">{{ e }}</p>
+              }
+            </div>
+            @if (!editingDefault()) {
+              <div class="field wide">
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    id="ad-isDefault"
+                    [checked]="form().isDefault"
+                    (change)="setFlag('isDefault', $event)"
+                  />
+                  כתובת ברירת מחדל
+                </label>
+              </div>
+            }
+          </div>
+          <p class="form-error" role="alert">{{ formError() }}</p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">שמירה</button>
+            <button type="button" class="btn btn-secondary" (click)="closeForm()">ביטול</button>
+          </div>
+        </form>
+      }
+    }
+  }
+</section>
