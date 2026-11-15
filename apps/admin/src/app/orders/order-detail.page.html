@@ -36,7 +36,7 @@
       @if (canManage()) {
         @for (to of o.nextStatuses; track to) {
           <button matButton="filled" type="button" class="advance" [disabled]="acting()" (click)="advance(o, to)">
-            קדם ל{{ statusLabels[to] }}
+            העברה לסטטוס: {{ statusLabels[to] }}
           </button>
         }
         @if (o.status === 'delivery_scheduled') {
