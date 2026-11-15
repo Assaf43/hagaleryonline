@@ -30,6 +30,6 @@ export class OrdersController {
   @Post(':number/retry-payment')
   @Throttled('retry')
   retry(@Param('number') number: string, @Query('t') token: unknown): Promise<CheckoutResponse> {
-    return this.orders.retryPayment(number, typeof token === 'string' ? token : undefined);
+    return this.orders.retryPayment(number, { token: typeof token === 'string' ? token : undefined });
   }
 }

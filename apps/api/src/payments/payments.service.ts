@@ -2,15 +2,22 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import type { SandboxCompleteRequest, SandboxCompleteResponse, SandboxPaymentView } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
-import { FulfillmentMode, OrderStatus, PaymentStatus, type Prisma } from '../generated/prisma/client.js';
+import {
+  CustomerOrigin,
+  FulfillmentMode,
+  OrderChannel,
+  OrderStatus,
+  PaymentStatus,
+  type Prisma,
+} from '../generated/prisma/client.js';
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
-import { confirmationPath } from '../orders/order-number.js';
+import { returnPathOf } from '../orders/order-number.js';
 import { PAID_OR_LATER } from '../orders/order-transitions.js';
 import { LATE_PAYMENT_MANUAL_NOTE } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { PromotionsService } from '../promotions/promotions.service.js';
+import { hasPaidOrder, PromotionsService } from '../promotions/promotions.service.js';
 import {
   PAYMENT_PROVIDER,
   WebhookPayloadError,
@@ -42,13 +49,25 @@ const VIEW_STATUS: Record<PaymentStatus, SandboxPaymentView['status']> = {
 /** What happened to a webhook: applied, or recognized as a repeat / out-of-order call and ignored. */
 export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored' | 'late_payment';
 
-/** The order fields needed to open a payment page. */
+/** The order fields needed to open a payment page (the channel and token decide where the provider returns). */
 export interface PayableOrder {
   id: string;
   number: number;
   total: number;
   contact: Prisma.JsonValue;
+  publicToken: string;
+  channel: OrderChannel;
 }
+
+/** The fields `select`ed for `PayableOrder`. */
+export const PAYABLE_ORDER = {
+  id: true,
+  number: true,
+  total: true,
+  contact: true,
+  publicToken: true,
+  channel: true,
+} as const satisfies Prisma.OrderSelect;
 
 /**
  * Payments (spec §5.3, §5.4): opening the provider's payment page for an order, and applying the provider's
@@ -85,6 +104,7 @@ export class PaymentsService {
         orderNumber: order.number,
         amount: order.total,
         customer: { fullName: contact.fullName, phone: contact.phone, email: contact.email },
+        returnPath: returnPathOf(order),
       });
     } catch (error) {
       this.logger.error(`Payment page for order ${order.number} failed`, error);
@@ -254,11 +274,13 @@ export class PaymentsService {
           // The coupon went with this order: the cart does not offer it again (after commit, see above).
           clearCouponOf = order.cartId;
         }
+        // Read before this order becomes paid: is it the account's first paid order (the store welcome, below)?
+        const welcomeTo = await this.storeWelcomeCandidate(tx, order);
         const stockShortage = await this.takeStock(tx, ordered);
         if (stockShortage)
           this.logger.warn(`Order ${order.number} was paid but an in-stock line no longer had enough stock`);
         await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.PAID, stockShortage } });
-        await this.onPaid(tx, order);
+        await this.onPaid(tx, order, welcomeTo);
         return 'paid';
       }
 
@@ -325,9 +347,35 @@ export class PaymentsService {
    * (spec §6, Review Focus 5). The atomic increment locks the promotion row last: payment → order → variants →
    * promotion.
    */
-  private async onPaid(tx: Prisma.TransactionClient, order: { id: string; promotionId: number | null }): Promise<void> {
+  private async onPaid(
+    tx: Prisma.TransactionClient,
+    order: { id: string; promotionId: number | null },
+    welcomeTo: string | null,
+  ): Promise<void> {
     await this.enqueuePaidJobs(tx, order.id);
+    // A quick account (decision 85) learns how to sign in once its first order is paid (spec §4.3). Once per account.
+    if (welcomeTo)
+      await this.outbox.enqueue(tx, {
+        type: 'email.store_welcome',
+        dedupeKey: `store_welcome:${welcomeTo}`,
+        payload: { customerId: welcomeTo, orderId: order.id },
+        orderId: order.id,
+      });
     if (order.promotionId !== null) await this.promotions.countUse(tx, order.promotionId);
+  }
+
+  /**
+   * The account to welcome when this order is paid: a store order of an account created at the store (a quick
+   * account) that has no paid order yet. Null otherwise — a website order never sends it.
+   */
+  private async storeWelcomeCandidate(
+    tx: Prisma.TransactionClient,
+    order: { channel: OrderChannel; customerId: string | null },
+  ): Promise<string | null> {
+    if (order.channel !== OrderChannel.STORE || !order.customerId) return null;
+    const customer = await tx.customer.findUnique({ where: { id: order.customerId }, select: { createdVia: true } });
+    if (customer?.createdVia !== CustomerOrigin.STORE) return null;
+    return (await hasPaidOrder(tx, order.customerId)) ? null : order.customerId;
   }
 
   private async enqueuePaidJobs(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
@@ -361,7 +409,8 @@ export class PaymentsService {
 
   /**
    * POST /api/payments/sandbox/:transactionId/complete: builds the webhook the provider would send, signs it and
-   * delivers it to our own webhook endpoint over HTTP, then returns the confirmation page.
+   * delivers it to our own webhook endpoint over HTTP, then returns where the page asked to return
+   * (`OrderSummary.returnPath`: the confirmation page, or `/pay/done` for a store order).
    */
   async completeSandbox(transactionId: string, body: unknown): Promise<SandboxCompleteResponse> {
     const sandbox = this.sandbox();
@@ -384,7 +433,7 @@ export class PaymentsService {
       this.logger.error(`Sandbox webhook answered ${status}`);
       throw paymentUnavailable();
     }
-    return { confirmationUrl: confirmationPath(payment.order.number, payment.order.publicToken) };
+    return { confirmationUrl: sandbox.returnPath(payment.transactionId) ?? returnPathOf(payment.order) };
   }
 
   /** 404 unless the active provider is the sandbox. */
@@ -397,7 +446,7 @@ export class PaymentsService {
     const sandbox = this.sandbox();
     const payment = await this.prisma.payment.findUnique({
       where: { transactionId },
-      include: { order: { select: { number: true, publicToken: true } } },
+      include: { order: { select: { number: true, publicToken: true, channel: true } } },
     });
     if (!payment || payment.provider !== sandbox.code) throw orderNotFound();
     return payment;

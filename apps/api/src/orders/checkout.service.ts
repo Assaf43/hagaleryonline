@@ -18,16 +18,16 @@ import {
 import type { ComputedLine } from '../cart/cart-lines.js';
 import { computeCartLines } from '../cart/cart-lines.js';
 import { deliveryEstimate } from '../cart/cart-rules.js';
-import { CartService } from '../cart/cart.service.js';
+import { CartService, type CartOwner } from '../cart/cart.service.js';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { OrderShippingMethod, OrderStatus } from '../generated/prisma/client.js';
-import { PaymentsService } from '../payments/payments.service.js';
+import { OrderChannel, OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { PAYABLE_ORDER, PaymentsService, type PayableOrder } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { couponProblemMessageHe } from '../promotions/discount-engine.js';
 import { discountInfo, discountLines, PromotionsService } from '../promotions/promotions.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
-import { lockCart, lockVariants, lockWelcome } from './locks.js';
+import { lockCart, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
 import {
   cartChanged,
   couponInvalid,
@@ -46,6 +46,27 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
   curbside: OrderShippingMethod.CURBSIDE,
   full_service: OrderShippingMethod.FULL_SERVICE,
 };
+
+/** How `placeOrder` is called: by the website checkout, or by the seller's store checkout (Phase 6, spec §4.4). */
+export interface PlaceOrderOptions {
+  /**
+   * The account the order is for: the session's on the website, the cart's confirmed `storeCustomerId` at the store.
+   * It takes the welcome lock, counts for the welcome benefit and is stored on the order.
+   */
+  customerId: string | null;
+  channel: 'web' | 'store';
+  /** Store orders only (both required there, DB CHECK `orders_store_channel_check`). */
+  sellerId?: number;
+  storeId?: number;
+  /**
+   * Store orders: runs in the transaction right after the cart lock (the seller's store-cart lock and the welcome lock
+   * are held too), before anything is changed, to re-check what the request read (the confirmed customer, no order on
+   * the cart yet). Throws to refuse.
+   */
+  verify?: (tx: Prisma.TransactionClient, cartId: string) => Promise<void>;
+  /** Runs in the same transaction after the order is created (the store saves the address, consent and audit). */
+  afterCreate?: (tx: Prisma.TransactionClient, order: { id: string; number: number }) => Promise<void>;
+}
 
 /**
  * Checkout (spec §5.2, CHK-01–04): turns the cart of the cookie into an order that holds its stock for 20 minutes,
@@ -94,10 +115,27 @@ export class CheckoutService {
     body: unknown,
     customerId: string | null = null,
   ): Promise<CheckoutResponse> {
-    // 1. Input, cart and locality.
     const input = parseCheckoutRequest(body);
     // Signed in: the account's cart (found by the session); a guest: the cookie's cart.
-    const cart = await this.cart.resolve({ token, customerId });
+    const order = await this.placeOrder({ token, customerId }, input, { customerId, channel: 'web' });
+    // 4. The provider call, outside the transaction.
+    return { redirectUrl: await this.payments.openPaymentPage(order) };
+  }
+
+  /**
+   * Steps 1–3 above for the owner's cart (the website's cookie or account cart, or a seller's store cart): the one
+   * code path that turns a cart into an order (decision 87). A store order (`channel: 'store'`) first takes the
+   * seller's store-cart lock — store-cart → welcome → cart → orders → variants → promotions (locks.ts) — so it never
+   * deadlocks with the store customer endpoints and a new sale cannot delete the cart meanwhile; `opts.verify` then
+   * re-checks the request under the cart lock. The caller opens the payment page after commit.
+   */
+  async placeOrder(owner: CartOwner, input: CheckoutRequest, opts: PlaceOrderOptions): Promise<PayableOrder> {
+    const { customerId } = opts;
+    const store = opts.channel === 'store';
+    if (store && (opts.sellerId === undefined || opts.storeId === undefined))
+      throw new Error('A store order needs its seller and store');
+    // 1. Cart and locality.
+    const cart = await this.cart.resolve(owner);
     if (!cart) throw emptyCart();
     const locality = await this.prisma.locality.findUnique({ where: { id: input.address.localityId } });
     if (!locality) throw fieldError('address.localityId', MESSAGES['address.localityId']);
@@ -111,9 +149,12 @@ export class CheckoutService {
     // 3. Lock, re-verify, create.
     const order = await this.prisma.$transaction(
       async (tx) => {
-        // The account's lock comes first (welcome → cart → orders → variants → promotions, locks.ts).
+        // The seller's lock, then the account's (store-cart → welcome → cart → orders → variants → promotions, locks.ts).
+        if (store) await lockStoreCart(tx, opts.sellerId!);
         if (customerId) await lockWelcome(tx, customerId);
         if (!(await lockCart(tx, cart.id))) throw emptyCart();
+        // Under the cart lock, before this cart's pending orders are expired below.
+        await opts.verify?.(tx, cart.id);
         const { couponCode } = await tx.cart.findUniqueOrThrow({
           where: { id: cart.id },
           select: { couponCode: true },
@@ -166,8 +207,11 @@ export class CheckoutService {
         // Another order of the account took the welcome benefit meanwhile (one at a time, decision 79).
         if (input.expectedTotal !== total && evaluated.welcomeHeld) throw promotionEndedError();
         if (input.expectedTotal !== total) throw priceChanged(total);
-        return tx.order.create({
+        const order = await tx.order.create({
           data: {
+            channel: store ? OrderChannel.STORE : OrderChannel.WEB,
+            sellerId: store ? opts.sellerId : null,
+            storeId: store ? opts.storeId : null,
             publicToken: randomBytes(32).toString('base64url'),
             status: OrderStatus.PENDING_PAYMENT,
             contact: { ...input.contact },
@@ -201,14 +245,14 @@ export class CheckoutService {
               })),
             },
           },
-          select: { id: true, number: true, total: true, contact: true },
+          select: PAYABLE_ORDER,
         });
+        await opts.afterCreate?.(tx, order);
+        return order;
       },
       { timeout: 15_000 },
     );
-
-    // 4. The provider call, outside the transaction.
-    return { redirectUrl: await this.payments.openPaymentPage(order) };
+    return order;
   }
 
   /** GET /api/checkout/prefill: the account's contact and saved addresses, default first (spec §6.4). */
@@ -268,7 +312,6 @@ const METHODS: readonly ShippingMethod[] = ['curbside', 'full_service'];
 export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   const root = record(body);
   const contact = record(root.contact);
-  const address = record(root.address);
   const fail = (field: CheckoutField) => fieldError(field, MESSAGES[field]);
 
   const fullName = text(contact.fullName);
@@ -278,13 +321,23 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   if (phone === null || !CHECKOUT_PHONE_PATTERN.test(phone)) throw fail('contact.phone');
   const email = text(contact.email);
   if (email === null || email.length > L.emailMax || !CHECKOUT_EMAIL_PATTERN.test(email)) throw fail('contact.email');
+  const checkedContact: CheckoutContact = { fullName, phone, email };
+  return { contact: checkedContact, ...parseOrderFields(root) };
+}
 
-  const checkedAddress = parseCheckoutAddress(address);
+/**
+ * The checkout's fields after the contact, in the same order and with the same errors: the address, the method, the
+ * terms, then `expectedTotal` and `marketingConsent`. The store checkout (Phase 6) uses it alone: its contact is the
+ * confirmed account's.
+ */
+export function parseOrderFields(body: unknown): Omit<CheckoutRequest, 'contact'> {
+  const root = record(body);
+  const fail = (field: CheckoutField) => fieldError(field, MESSAGES[field]);
+  const checkedAddress = parseCheckoutAddress(record(root.address));
 
   if (typeof root.method !== 'string' || !METHODS.includes(root.method as ShippingMethod)) throw fail('method');
   if (root.acceptTerms !== true) throw fail('acceptTerms');
 
-  const checkedContact: CheckoutContact = { fullName, phone, email };
   // Required: an order is never charged at a total the customer did not see (checked after the form fields, so a
   // form error still names its field).
   const expectedTotal = root.expectedTotal;
@@ -293,7 +346,6 @@ export function parseCheckoutRequest(body: unknown): CheckoutRequest {
   const marketingConsent = root.marketingConsent ?? false;
   if (typeof marketingConsent !== 'boolean') throw invalidInput();
   return {
-    contact: checkedContact,
     address: checkedAddress,
     method: root.method as ShippingMethod,
     acceptTerms: true,

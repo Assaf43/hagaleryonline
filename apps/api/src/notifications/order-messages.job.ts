@@ -3,6 +3,7 @@ import { OrderStatus } from '../generated/prisma/client.js';
 import { LATE_PAYMENT_REASON } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { maskPhone } from './masking.js';
 import { NotificationsService } from './notifications.service.js';
 
 interface OrderJob {
@@ -14,11 +15,15 @@ interface StatusJob extends OrderJob {
 interface RefundJob extends OrderJob {
   refundId: string;
 }
+interface StoreWelcomeJob extends OrderJob {
+  customerId: string;
+}
 
 /**
  * Handlers of the outbox e-mail jobs of an order (spec §5.3, decision 83): `email.order_paid`, `email.status`
  * (shipped, delivered), `email.cancelled` and `email.refund`. Each mails the order contact e-mail with the link
- * `/order/{number}?t={publicToken}`. A provider error throws, so the outbox retries; a job may run twice after a
+ * `/order/{number}?t={publicToken}`. Also `email.store_welcome` (Phase 6): how a quick account signs in, after its
+ * first paid order. A provider error throws, so the outbox retries; a job may run twice after a
  * crash, which at worst sends the same e-mail twice.
  */
 @Injectable()
@@ -36,6 +41,7 @@ export class OrderMessagesJob implements OnModuleInit {
     this.outbox.register<StatusJob>('email.status', (p) => this.status(p));
     this.outbox.register<OrderJob>('email.cancelled', (p) => this.cancelled(p));
     this.outbox.register<RefundJob>('email.refund', (p) => this.refund(p));
+    this.outbox.register<StoreWelcomeJob>('email.store_welcome', (p) => this.storeWelcome(p));
   }
 
   private async load(orderId: string) {
@@ -124,6 +130,34 @@ export class OrderMessagesJob implements OnModuleInit {
       loaded.to,
       { ...loaded.base, amount: refund.amount, creditNote },
       loaded.order.id,
+    );
+  }
+
+  /**
+   * The quick account's welcome (spec §4.3): to the account's e-mail (the order's contact when the account has none
+   * any more), with the sign-in page. No order data and nothing about where the order was placed.
+   */
+  async storeWelcome({ customerId, orderId }: StoreWelcomeJob): Promise<void> {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { fullName: true, phone: true, email: true },
+    });
+    if (!customer) {
+      this.logger.warn(`Customer ${customerId} no longer exists: the welcome e-mail is skipped`);
+      return;
+    }
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { id: true, contact: true } });
+    const to = customer.email ?? (order?.contact as { email?: string } | undefined)?.email;
+    if (!to) throw new Error(`Customer ${customerId} has no e-mail address`);
+    await this.notifications.email(
+      'store_welcome',
+      to,
+      {
+        customerName: customer.fullName,
+        phoneMasked: maskPhone(customer.phone),
+        link: `${this.notifications.siteUrl()}/account`,
+      },
+      order?.id,
     );
   }
 }

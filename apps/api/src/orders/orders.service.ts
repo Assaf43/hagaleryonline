@@ -13,15 +13,21 @@ import { availableStock } from '../cart/available-stock.js';
 import { availability } from '../cart/cart-lines.js';
 import type { CatalogSnapshot } from '../catalog/catalog-snapshot.js';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { DeliverySlotState, OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import {
+  DeliverySlotState,
+  OrderChannel,
+  OrderShippingMethod,
+  OrderStatus,
+  type Prisma,
+} from '../generated/prisma/client.js';
 import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
-import { PaymentsService } from '../payments/payments.service.js';
+import { PAYABLE_ORDER, PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import { DEFAULT_RETURN_WINDOW_DAYS, returnUntil } from '../support/support-input.js';
 import { currentSlotView } from './delivery-slot.js';
-import { lockCart, lockOrder, lockVariants, lockWelcome } from './locks.js';
+import { lockCart, lockOrder, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 import { canCancel } from './order-transitions.js';
@@ -52,16 +58,17 @@ export function effectiveStatus(order: { status: OrderStatus; reservedUntil: Dat
 }
 
 /** Only failed or expired orders get a new payment page; a paid one never, a pending one while its page is open. */
-function retryable(order: { status: OrderStatus; reservedUntil: Date }, now = new Date()): boolean {
+export function retryable(order: { status: OrderStatus; reservedUntil: Date }, now = new Date()): boolean {
   const status = effectiveStatus(order, now);
   return status === OrderStatus.PAYMENT_FAILED || status === OrderStatus.EXPIRED;
 }
 
 /**
- * Who may read or cancel an order: the bearer of its URL token (`/order/:number?t=`), or the signed-in account that
- * placed it (`/api/account/orders/:number`; only orders with that `customerId`, decision 77).
+ * Who may read or cancel an order: the bearer of its URL token (`/order/:number?t=`), the signed-in account that
+ * placed it (`/api/account/orders/:number`; only orders with that `customerId`, decision 77), or the seller of a store
+ * order (`/api/admin/store-orders/:number`; only store orders with that `sellerId`, spec §8).
  */
-export type OrderAccess = { token: string | undefined } | { customerId: string };
+export type OrderAccess = { token: string | undefined } | { customerId: string } | { sellerId: number };
 
 /** Constant-time comparison of the URL token with the order's (both hashed to equal length first). */
 export function tokenMatches(given: string, expected: string): boolean {
@@ -151,12 +158,14 @@ export class OrdersService {
    * `promotion_ended` when the order's promotion or coupon is no longer active, out of its dates or used up by other
    * orders — the order's discounted total would no longer be honored (spec §6).
    */
-  async retryPayment(numberParam: string, token: string | undefined): Promise<CheckoutResponse> {
-    const found = await this.find(numberParam, { token });
+  async retryPayment(numberParam: string, access: OrderAccess): Promise<CheckoutResponse> {
+    const found = await this.find(numberParam, access);
     const snapshot = await this.catalog.snapshot();
     const order = await this.prisma.$transaction(
       async (tx) => {
-        // Same order as checkout: welcome → cart → order → variants → promotion.
+        // Same order as checkout: store-cart → welcome → cart → order → variants → promotion. A store order's cart may
+        // be gone (store carts are deleted after 30 days, orders or not): the order alone is enough.
+        if (found.channel === OrderChannel.STORE && found.sellerId !== null) await lockStoreCart(tx, found.sellerId);
         if (found.customerId) await lockWelcome(tx, found.customerId);
         if (found.cartId) await lockCart(tx, found.cartId);
         await lockOrder(tx, found.id);
@@ -178,7 +187,7 @@ export class OrdersService {
         return tx.order.update({
           where: { id: current.id },
           data: { status: OrderStatus.PENDING_PAYMENT, reservedUntil: reservedUntil() },
-          select: { id: true, number: true, total: true, contact: true },
+          select: PAYABLE_ORDER,
         });
       },
       { timeout: 15_000 },
@@ -202,7 +211,9 @@ export class OrdersService {
     const allowed =
       token !== null
         ? tokenMatches(token, order.publicToken)
-        : 'customerId' in access && order.customerId === access.customerId;
+        : 'customerId' in access
+          ? order.customerId === access.customerId
+          : 'sellerId' in access && order.channel === OrderChannel.STORE && order.sellerId === access.sellerId;
     if (!allowed) throw orderNotFound();
     return order;
   }

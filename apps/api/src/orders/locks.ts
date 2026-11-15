@@ -2,7 +2,7 @@ import { Prisma } from '../generated/prisma/client.js';
 
 /**
  * Row locks of the order flow. To stay free of deadlocks every transaction takes them in this order:
- * welcome → cart → orders → variants (variants always by ascending id) → promotions (by ascending id).
+ * store-cart → welcome → cart → orders → variants (variants always by ascending id) → promotions (by ascending id).
  *  - welcome (Phase 5c): a transaction-scoped advisory lock per account (`lockWelcome`), taken FIRST, before any
  *    row lock, by a checkout with a customer session and by the retry of an order that holds the welcome benefit.
  *    Nothing else takes it, and whoever waits for it holds no lock yet, so it cannot close a cycle with the row
@@ -12,13 +12,17 @@ import { Prisma } from '../generated/prisma/client.js';
  *    first add of a signed-in customer (so two first adds make one cart) and by the cart merge on sign-in
  *    (CartService.attachToCustomer), which then locks every cart involved by ascending id. Only these take it, and a
  *    waiter holds no row lock yet;
- *  - store cart (Phase 6): a transaction-scoped advisory lock per seller (`lockStoreCart`), taken first by every
+ *  - store cart (Phase 6): a transaction-scoped advisory lock per seller (`lockStoreCart`), taken FIRST by every
  *    transaction that creates or reuses the seller's open cart (StoreCartService.start / openOrStartInTx and the
- *    store customer confirmation), so a seller never ends up with two open carts. Only these take it, and a waiter
- *    holds no row lock yet;
+ *    store customer confirmation), so a seller never ends up with two open carts, by the store checkout
+ *    (CheckoutService.placeOrder with `channel: 'store'`: then the welcome lock and the cart row, so it never waits
+ *    for a row a customer endpoint holds while that endpoint waits for this lock, and a new sale cannot delete the
+ *    cart mid-checkout) and by the retry of a store order. A waiter holds no row lock yet;
  *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
  *    limited promotions it may use and, signed in, the active welcome promotion (PromotionsService.lockLimited), so
- *    their usage counts hold until commit and the account's paid orders are read only after it;
+ *    their usage counts hold until commit and the account's paid orders are read only after it. A store checkout
+ *    then saves the delivery address under the customer row (FOR NO KEY UPDATE, last; the account's address writes
+ *    take only that row);
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
  *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);

@@ -64,12 +64,18 @@ describe('SandboxPaymentProvider (spec §5.3, CHK-10)', () => {
       orderNumber: 100_001,
       amount: 5,
       customer: { fullName: 'a', phone: 'b', email: 'c' },
+      returnPath: '/pay/done',
     };
-    const a = await sandbox().createPaymentPage(order);
-    const b = await sandbox().createPaymentPage(order);
+    const provider = sandbox();
+    const a = await provider.createPaymentPage(order);
+    const b = await provider.createPaymentPage({ ...order, returnPath: '/order/100001?t=tok' });
     expect(a.transactionId).toMatch(/^sbx_[0-9a-f]{32}$/);
     expect(a.transactionId).not.toBe(b.transactionId);
     expect(a.redirectUrl).toBe(`https://x.test/pay/sandbox/${a.transactionId}`);
+    // Each page returns where its order asked (spec §4.7); an unknown transaction has no return path here.
+    expect(provider.returnPath(a.transactionId)).toBe('/pay/done');
+    expect(provider.returnPath(b.transactionId)).toBe('/order/100001?t=tok');
+    expect(provider.returnPath('sbx_unknown')).toBeNull();
   });
 
   it('verifies its own signed webhook and reads the result', async () => {

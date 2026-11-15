@@ -120,6 +120,23 @@ export class OrderLifecycleService {
    * payment cancelled.
    */
   async cancelByCustomer(numberParam: string, access: OrderAccess): Promise<OrderView> {
+    return this.cancelUnpaid(numberParam, access, null);
+  }
+
+  /**
+   * POST /api/admin/store-orders/:number/cancel (Phase 6): the seller cancels their own unpaid store order — the
+   * customer's cancel (same rule and locks), recorded with the seller as the actor (`ADMIN`) and audited
+   * (`store_order.cancel`). 404 for an order that is not this seller's store order.
+   */
+  cancelStoreOrder(numberParam: string, actor: LifecycleActor): Promise<OrderView> {
+    return this.cancelUnpaid(numberParam, { sellerId: actor.adminId }, actor);
+  }
+
+  private async cancelUnpaid(
+    numberParam: string,
+    access: OrderAccess,
+    seller: LifecycleActor | null,
+  ): Promise<OrderView> {
     // The 404 for an unknown number, a wrong token or another account's order is the view's.
     await this.orders.view(numberParam, access);
     const number = parseOrderNumber(numberParam)!;
@@ -143,9 +160,24 @@ export class OrderLifecycleService {
           orderId: order.id,
           fromStatus: order.status,
           toStatus: OrderStatus.CANCELLED,
-          actorType: OrderActorType.CUSTOMER,
+          ...(seller
+            ? { actorType: OrderActorType.ADMIN, actorAdminId: seller.adminId }
+            : { actorType: OrderActorType.CUSTOMER }),
         },
       });
+      if (seller)
+        await this.audit.record(
+          {
+            actorId: seller.adminId,
+            action: 'store_order.cancel',
+            entityType: 'order',
+            entityId: order.number,
+            before: { status: STATUS_VIEW[order.status] },
+            after: { status: STATUS_VIEW[OrderStatus.CANCELLED] },
+            ip: seller.ip,
+          },
+          tx,
+        );
       await this.onStatusChanged(tx, order, order.status, OrderStatus.CANCELLED);
     });
     return this.orders.view(numberParam, access);

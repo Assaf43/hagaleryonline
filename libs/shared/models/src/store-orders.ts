@@ -1,5 +1,7 @@
 /** Seller-assisted store orders (Phase 6, ADM-18, spec §4.4–§4.6). */
 import type { CartView } from './cart.js';
+import type { CheckoutAddress, OrderStatus } from './orders.js';
+import type { ShippingMethod } from './shipping.js';
 
 /** The one physical store: shown only in the admin (decision 43). */
 export interface StoreInfo {
@@ -53,4 +55,53 @@ export interface StoreCodeRequest {
 /** `POST /api/admin/store-cart/customer/verify` → `StoreCartView` with the confirmed customer. */
 export interface StoreVerifyRequest extends StoreCodeRequest {
   code: string;
+}
+
+/**
+ * `POST /api/admin/store-orders` (spec §4.4): the seller's open cart becomes an order on the website's checkout path,
+ * for the confirmed customer (the contact is the account's). `saveAddress` (default true) adds the address to the
+ * account when it is not there yet. Errors are the checkout's plus `customer_not_confirmed`,
+ * `customer_email_required` and `order_pending` (`{ number }`).
+ */
+export interface StoreOrderRequest {
+  address: CheckoutAddress;
+  method: ShippingMethod;
+  acceptTerms: true;
+  /** Agorot: the total on the seller screen (the store cart view plus the chosen shipping method). */
+  expectedTotal: number;
+  /** Ticked by the customer, never pre-checked. */
+  marketingConsent?: boolean;
+  saveAddress?: boolean;
+}
+
+/** The order number and the provider's payment page, opened on the tablet. */
+export interface StoreOrderCreated {
+  number: number;
+  redirectUrl: string;
+}
+
+/** `GET /api/admin/store-orders/:number` — the seller's own store order (404 for any other). */
+export interface StoreOrderStatus {
+  number: number;
+  status: OrderStatus;
+  /** Agorot. */
+  total: number;
+}
+
+/**
+ * `GET /api/admin/store-orders/pending` — the seller's store orders not paid yet: waiting for the payment within the
+ * reservation, or failed (retry). Newest first.
+ */
+export interface StorePendingOrder {
+  number: number;
+  fullName: string;
+  /** Agorot. */
+  total: number;
+  status: 'pending_payment' | 'payment_failed';
+  reservedUntil: string;
+}
+
+/** `POST /api/admin/store-orders/:number/retry` → a new payment page. */
+export interface StoreOrderRetry {
+  redirectUrl: string;
 }

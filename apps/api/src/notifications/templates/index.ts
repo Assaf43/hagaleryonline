@@ -1,3 +1,4 @@
+import { storeWelcome, type StoreWelcomeData } from './account.js';
 import { deliverySlotSms, type DeliverySlotSmsData } from './sms.js';
 import {
   orderCancelled,
@@ -13,6 +14,7 @@ import { otpEmail, otpText, type OtpData } from './otp.js';
 import { ticketAlert, ticketReceived, type TicketAlertData, type TicketReceivedData } from './support.js';
 import type { RenderedEmail } from './layout.js';
 
+export type { StoreWelcomeData } from './account.js';
 export type { RenderedEmail } from './layout.js';
 export type { OrderLinkData, OrderPaidData, OrderPaidLine, RefundData } from './order-messages.js';
 export type { OtpData } from './otp.js';
@@ -29,6 +31,7 @@ export interface EmailTemplateData {
   otp: OtpData;
   ticket_received: TicketReceivedData;
   ticket_alert: TicketAlertData;
+  store_welcome: StoreWelcomeData;
 }
 export type EmailTemplate = keyof EmailTemplateData;
 
@@ -47,6 +50,7 @@ const EMAIL: { [T in EmailTemplate]: (data: EmailTemplateData[T]) => RenderedEma
   otp: otpEmail,
   ticket_received: ticketReceived,
   ticket_alert: ticketAlert,
+  store_welcome: storeWelcome,
 };
 
 const SMS: { [T in SmsTemplate]: (data: SmsTemplateData[T]) => string } = {
