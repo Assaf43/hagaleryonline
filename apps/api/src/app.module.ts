@@ -16,6 +16,7 @@ import { OutboxModule } from './outbox/outbox.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ShippingModule } from './shipping/shipping.module.js';
 import { SupportModule } from './support/support.module.js';
+import { StoreOrdersModule } from './store-orders/store-orders.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SupportModule } from './support/support.module.js';
     OrdersModule,
     CustomersModule,
     SupportModule,
+    StoreOrdersModule,
   ],
 })
 export class AppModule {}

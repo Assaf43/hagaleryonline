@@ -59,16 +59,18 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
   /** A customer with a password (created directly; sign-in goes through the API). */
   const newCustomer = async () => {
     const id = unique();
-    return prisma.customer.create({
+    const email = `user${id}${DOMAIN}`;
+    const customer = await prisma.customer.create({
       data: {
         fullName: 'דנה לוי',
         phone: `05${id}`,
-        email: `user${id}${DOMAIN}`,
+        email,
         passwordHash,
         phoneVerifiedAt: new Date(),
         emailVerifiedAt: new Date(),
       },
     });
+    return { ...customer, email };
   };
 
   /** A storefront browser: keeps cookies and sends the storefront's Origin on writes. */

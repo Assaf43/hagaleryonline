@@ -215,7 +215,7 @@ export class CheckoutService {
   async prefill(customerId: string): Promise<CheckoutPrefill> {
     const customer = await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
     return {
-      contact: { fullName: customer.fullName, phone: customer.phone, email: customer.email },
+      contact: { fullName: customer.fullName, phone: customer.phone, email: customer.email ?? '' },
       addresses: await listAddresses(this.prisma, customerId),
     };
   }

@@ -28,6 +28,7 @@ const SOURCE_VIEW: Record<MarketingConsentSource, ConsentSourceView> = {
   SIGNUP: 'signup',
   CHECKOUT: 'checkout',
   ACCOUNT: 'account',
+  STORE: 'store',
 };
 
 /**

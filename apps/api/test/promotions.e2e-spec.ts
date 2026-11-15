@@ -149,17 +149,18 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   /** A signed-in browser of a new account (created directly; the sign-in goes through the API). */
   const customerBrowser = async () => {
     const id = String(++customerSeq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+    const email = `user${id}${CUSTOMER_DOMAIN}`;
     const customer = await prisma.customer.create({
       data: {
         fullName: 'דנה לוי',
         phone: `05${id}`,
-        email: `user${id}${CUSTOMER_DOMAIN}`,
+        email,
         passwordHash: await hashPassword(CUSTOMER_PASSWORD),
         phoneVerifiedAt: new Date(),
         emailVerifiedAt: new Date(),
       },
     });
-    return { customer, b: await signedIn(customer.email) };
+    return { customer: { ...customer, email }, b: await signedIn(email) };
   };
   /** A browser signed in to the account of this e-mail. */
   const signedIn = async (email: string) => {

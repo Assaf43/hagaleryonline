@@ -62,7 +62,7 @@ export function toMe(c: Customer): CustomerMe {
     id: c.id,
     fullName: c.fullName,
     phone: c.phone,
-    email: c.email,
+    email: c.email ?? '',
     phoneVerified: c.phoneVerifiedAt !== null,
     emailVerified: c.emailVerifiedAt !== null,
     hasPassword: c.passwordHash !== null,
@@ -184,12 +184,12 @@ export class CustomerAuthService {
     next: string,
   ): Promise<CustomerMe> {
     if (customer.passwordHash) {
-      this.assertNotDelayed(customer.email);
+      this.assertNotDelayed(customer.email ?? customer.id);
       if (current === undefined || !(await verifyPassword(customer.passwordHash, current))) {
-        this.registerFailure(customer.email);
+        this.registerFailure(customer.email ?? customer.id);
         throw wrongPassword();
       }
-      this.failures.reset(customer.email);
+      this.failures.reset(customer.email ?? customer.id);
     }
     const updated = await this.prisma.customer.update({
       where: { id: customer.id },

@@ -344,11 +344,14 @@ model AdminUser {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
 
-  sessions      AdminSession[]
-  tokens        AdminToken[]
-  recoveryCodes AdminRecoveryCode[]
-  auditEntries  AuditLog[]
-  ticketNotes   TicketNote[]
+  sessions         AdminSession[]
+  tokens           AdminToken[]
+  recoveryCodes    AdminRecoveryCode[]
+  auditEntries     AuditLog[]
+  ticketNotes      TicketNote[]
+  sellerCarts      Cart[]
+  sellerOrders     Order[]
+  createdCustomers Customer[]
 
   @@map("admin_users")
 }
@@ -428,21 +431,30 @@ model AuditLog {
 /// Server-side cart (decision 68), identified by the httpOnly `hg_cart` cookie. Only the token's SHA-256 is stored.
 /// Carts unused for 30 days are deleted (on access and by the daily cleanup in the cart module).
 model Cart {
-  id         String   @id @default(uuid()) @db.Uuid
-  tokenHash  String   @unique @map("token_hash")
+  id               String    @id @default(uuid()) @db.Uuid
+  tokenHash        String    @unique @map("token_hash")
   /// Entered coupon code (Phase 4d).
-  couponCode String?  @map("coupon_code")
+  couponCode       String?   @map("coupon_code")
   /// The signed-in customer's cart (Phase 5c, spec §6.4); null for a guest cart.
-  customerId String?  @map("customer_id") @db.Uuid
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  customerId       String?   @map("customer_id") @db.Uuid
+  /// A store cart (Phase 6): the seller who works on it; null for a web cart.
+  sellerId         Int?      @map("seller_id")
+  /// The customer a seller attached to this store cart (nothing is stored on the customer until the order).
+  storeCustomerId  String?   @map("store_customer_id") @db.Uuid
+  /// When the customer confirmed the cart with a one-time code.
+  storeConfirmedAt DateTime? @map("store_confirmed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  items    CartItem[]
-  orders   Order[]
-  customer Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items         CartItem[]
+  orders        Order[]
+  customer      Customer?  @relation("CartCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  seller        AdminUser? @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  storeCustomer Customer?  @relation("CartStoreCustomer", fields: [storeCustomerId], references: [id], onDelete: SetNull)
 
   @@index([updatedAt])
   @@index([customerId])
+  @@index([sellerId])
   @@map("carts")
 }
 
@@ -629,6 +641,9 @@ model Order {
   attentionNote      String?             @map("attention_note")
   /// The account that placed the order (Phase 5c); null for a guest order, which is never linked (decision 77).
   customerId         String?             @map("customer_id") @db.Uuid
+  /// Store orders (Phase 6): the seller and the store; both set exactly when `channel` is `store` (SQL CHECK).
+  sellerId           Int?                @map("seller_id")
+  storeId            Int?                @map("store_id")
   /// The checkout's marketing checkbox (unchecked by default, CLAUDE.md §4.4), with its time; source `checkout`.
   marketingConsent   Boolean             @default(false) @map("marketing_consent")
   marketingConsentAt DateTime?           @map("marketing_consent_at")
@@ -647,6 +662,8 @@ model Order {
   notifications NotificationLog[]
   invoices      Invoice[]
   tickets       SupportTicket[]
+  seller        AdminUser?         @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  store         Store?             @relation(fields: [storeId], references: [id], onDelete: Restrict)
 
   @@index([status, reservedUntil])
   @@index([cartId])
@@ -985,8 +1002,16 @@ enum MarketingConsentSource {
   SIGNUP   @map("signup")
   CHECKOUT @map("checkout")
   ACCOUNT  @map("account")
+  STORE    @map("store")
 
   @@map("marketing_consent_source")
+}
+
+enum CustomerOrigin {
+  WEB   @map("web")
+  STORE @map("store")
+
+  @@map("customer_origin")
 }
 
 /// A storefront customer. Phone (05XXXXXXXX) and e-mail (lower-case) are stored normalized and are unique; each counts
@@ -995,7 +1020,8 @@ model Customer {
   id                     String                  @id @default(uuid()) @db.Uuid
   fullName               String                  @map("full_name")
   phone                  String                  @unique
-  email                  String                  @unique
+  /// Null for a customer a seller created without an e-mail (Phase 6); still unique when set.
+  email                  String?                 @unique
   phoneVerifiedAt        DateTime?               @map("phone_verified_at")
   emailVerifiedAt        DateTime?               @map("email_verified_at")
   passwordHash           String?                 @map("password_hash")
@@ -1003,15 +1029,19 @@ model Customer {
   marketingConsentAt     DateTime?               @map("marketing_consent_at")
   marketingConsentSource MarketingConsentSource? @map("marketing_consent_source")
   marketingWithdrawnAt   DateTime?               @map("marketing_withdrawn_at")
+  createdVia             CustomerOrigin          @default(WEB) @map("created_via")
+  createdBySellerId      Int?                    @map("created_by_seller_id")
   createdAt              DateTime                @default(now()) @map("created_at")
   updatedAt              DateTime                @updatedAt @map("updated_at")
 
-  addresses CustomerAddress[]
-  sessions  CustomerSession[]
-  otpCodes  OtpCode[]
-  orders    Order[]
-  carts     Cart[]
-  tickets   SupportTicket[]
+  addresses       CustomerAddress[]
+  sessions        CustomerSession[]
+  otpCodes        OtpCode[]
+  orders          Order[]
+  carts           Cart[]            @relation("CartCustomer")
+  storeCarts      Cart[]            @relation("CartStoreCustomer")
+  tickets         SupportTicket[]
+  createdBySeller AdminUser?        @relation(fields: [createdBySellerId], references: [id], onDelete: Restrict)
 
   @@map("customers")
 }
@@ -1189,4 +1219,21 @@ model StoreSettings {
   returnWindowDays Int @default(14) @map("return_window_days")
 
   @@map("store_settings")
+}
+
+/// The physical store (Phase 6, spec §4.4): the place of store orders, shown only in the admin (decision 43).
+/// One row from the migration; the Super Admin edits it.
+model Store {
+  id        Int      @id @default(autoincrement())
+  nameHe    String   @map("name_he")
+  address   String
+  hoursHe   String   @map("hours_he")
+  phone     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@map("stores")
 }
