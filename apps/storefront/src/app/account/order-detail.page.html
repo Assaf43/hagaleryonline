@@ -46,6 +46,16 @@
           }
           <p class="form-error" role="alert">{{ actionError() }}</p>
         </div>
+        @if (o.status === 'delivered') {
+          <div class="actions">
+            @if (returnOpen(o)) {
+              <a class="btn btn-secondary" routerLink="/returns" [queryParams]="{ order: o.number }">החזרה או החלפה</a>
+            }
+            <a class="btn btn-secondary" routerLink="/returns/damaged" [queryParams]="{ order: o.number }"
+              >דיווח על מוצר פגום</a
+            >
+          </div>
+        }
         <hg-order-detail [order]="o" />
         <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title">
           <h2 id="cancel-title">לבטל את ההזמנה?</h2>

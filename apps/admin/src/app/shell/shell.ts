@@ -10,9 +10,11 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { map } from 'rxjs';
 import {
   LucideBadgePercent,
+  LucideCalendarClock,
   LucideFileSpreadsheet,
   LucideFileText,
   LucideFolderTree,
+  LucideInbox,
   LucideKeyRound,
   LucideLayoutDashboard,
   LucideListX,
@@ -33,6 +35,7 @@ import type { Permission } from '@hg/models';
 import { ThemeToggle } from '@hg/ui';
 import { AuthService } from '../core/auth.service';
 import { SentMessagesApi } from '../core/sent-messages.api';
+import { NewCountBadge } from '../support/new-count-badge';
 import { ChangePasswordDialog } from './change-password.dialog';
 
 /** Signed-in layout: toolbar, side navigation (a drawer on phones), and the page (ADM-15). */
@@ -47,10 +50,13 @@ import { ChangePasswordDialog } from './change-password.dialog';
     MatSidenavModule,
     MatToolbarModule,
     ThemeToggle,
+    NewCountBadge,
     LucideBadgePercent,
+    LucideCalendarClock,
     LucideFileSpreadsheet,
     LucideFileText,
     LucideFolderTree,
+    LucideInbox,
     LucideKeyRound,
     LucideLayoutDashboard,
     LucideListX,

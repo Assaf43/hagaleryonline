@@ -69,3 +69,10 @@ h2 {
   flex-wrap: wrap;
   gap: var(--space-3);
 }
+
+.support-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+}

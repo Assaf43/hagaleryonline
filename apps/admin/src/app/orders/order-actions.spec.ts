@@ -346,13 +346,13 @@ describe('order detail actions', () => {
     ...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>(selector),
   ];
 
-  it('shows one "קדם ל…" button per next status, only with orders.manage', async () => {
+  it('shows one "העברה לסטטוס: …" button per next status (readable for every status), only with orders.manage', async () => {
     const manager = await mount(['orders.manage']);
     expect(buttons(manager, 'button.advance').map((b) => b.textContent!.trim())).toEqual([
-      'קדם לבהכנה',
-      'קדם לאספקה מתואמת',
-      'קדם לבמשלוח',
-      'קדם לסופקה',
+      'העברה לסטטוס: בהכנה',
+      'העברה לסטטוס: אספקה מתואמת',
+      'העברה לסטטוס: במשלוח',
+      'העברה לסטטוס: סופקה',
     ]);
     TestBed.resetTestingModule();
     const viewer = await mount([]);
@@ -382,7 +382,7 @@ describe('order detail actions', () => {
       .expectOne('/api/admin/orders/100002/status')
       .flush({ ...DETAIL, status: 'processing', nextStatuses: ['shipped'] });
     await settle(fixture);
-    expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['קדם לבמשלוח']);
+    expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['העברה לסטטוס: במשלוח']);
 
     TestBed.resetTestingModule();
     const second = await mount(['orders.manage'], {
@@ -408,11 +408,11 @@ describe('order detail actions', () => {
     buttons(fixture, 'button.advance')[3].click(); // delivered
     expect(open).toHaveBeenCalledTimes(1);
     expect(open.mock.calls[0][0]).toBe(ConfirmDialog);
-    expect(open.mock.calls[0][1]?.data).toEqual({ message: 'לסמן את ההזמנה כסופקה? אי אפשר לחזור אחורה.' });
+    expect(open.mock.calls[0][1]?.data).toEqual({ message: 'להעביר את ההזמנה לסטטוס "סופקה"? אי אפשר לחזור אחורה.' });
     http.expectNone('/api/admin/orders/100002/status');
 
     buttons(fixture, 'button.advance')[2].click(); // shipped: skips two steps
-    expect(open.mock.calls[1][1]?.data).toEqual({ message: 'לסמן את ההזמנה כבמשלוח? אי אפשר לחזור אחורה.' });
+    expect(open.mock.calls[1][1]?.data).toEqual({ message: 'להעביר את ההזמנה לסטטוס "במשלוח"? אי אפשר לחזור אחורה.' });
     http.expectNone('/api/admin/orders/100002/status');
 
     answer.value = true;
@@ -444,7 +444,7 @@ describe('order detail actions', () => {
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('[role=alert]')?.textContent).toContain('אי אפשר לעבור לסטטוס הזה');
-    expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['קדם לסופקה']);
+    expect(buttons(fixture, 'button.advance').map((b) => b.textContent!.trim())).toEqual(['העברה לסטטוס: סופקה']);
   });
 
   it('cancel and refund buttons need orders.cancel; refund also needs a refundable amount', async () => {

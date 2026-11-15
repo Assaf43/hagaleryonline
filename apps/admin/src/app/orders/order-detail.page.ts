@@ -106,7 +106,7 @@ export class OrderDetailPage {
     if (to !== 'delivered' && o.nextStatuses.indexOf(to) <= 0) return go();
     this.dialog
       .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
-        data: { message: `לסמן את ההזמנה כ${this.statusLabels[to]}? אי אפשר לחזור אחורה.` },
+        data: { message: `להעביר את ההזמנה לסטטוס "${this.statusLabels[to]}"? אי אפשר לחזור אחורה.` },
         width: '28rem',
         maxWidth: '95vw',
       })

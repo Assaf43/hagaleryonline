@@ -1,0 +1,100 @@
+<h1>פניות</h1>
+<p class="page-intro">בקשות החזרה והחלפה, מוצרים פגומים ופניות מהאתר, מהחדשה לישנה.</p>
+
+<div class="filters" role="group" aria-label="סינון לפי סוג" data-filter="type">
+  @for (f of typeFilters; track f.label) {
+    <button
+      type="button"
+      class="filter"
+      [class.active]="type() === f.value"
+      [attr.aria-pressed]="type() === f.value"
+      (click)="filterType(f.value)"
+    >
+      {{ f.label }}
+    </button>
+  }
+</div>
+<div class="filters" role="group" aria-label="סינון לפי סטטוס" data-filter="status">
+  @for (f of statusFilters; track f.label) {
+    <button
+      type="button"
+      class="filter"
+      [class.active]="status() === f.value"
+      [attr.aria-pressed]="status() === f.value"
+      (click)="filterStatus(f.value)"
+    >
+      {{ f.label }}
+    </button>
+  }
+</div>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    <button matButton="outlined" type="button" (click)="retry()">נסו שוב</button>
+  </div>
+}
+
+@if (data(); as d) {
+  <ul class="tickets" [attr.aria-busy]="loading()">
+    @for (t of d.items; track t.number) {
+      <li class="ticket">
+        <a class="ticket-link" [routerLink]="['/support', t.number]">
+          <span class="number"
+            >פנייה <bdi>{{ t.number }}</bdi></span
+          >
+          <span class="date"
+            ><bdi>{{ dateTime(t.createdAt) }}</bdi></span
+          >
+          <span class="chips">
+            <span class="type">{{ typeLabels[t.type] }}</span>
+            <span class="status" [attr.data-status]="t.status">{{ statusLabels[t.status] }}</span>
+          </span>
+          <span class="sender">
+            {{ t.fullName }}
+            <bdi dir="ltr" class="phone">{{ t.phone }}</bdi>
+          </span>
+          <span class="about">
+            @if (t.orderNumber) {
+              <span
+                >הזמנה <bdi>{{ t.orderNumber }}</bdi></span
+              >
+            }
+            @if (t.subject) {
+              <span class="subject">{{ t.subject }}</span>
+            }
+            @if (t.attachmentCount > 0) {
+              <span class="photos">
+                @if (t.attachmentCount === 1) {
+                  תמונה אחת
+                } @else {
+                  <bdi>{{ t.attachmentCount }}</bdi> תמונות
+                }
+              </span>
+            }
+          </span>
+        </a>
+      </li>
+    } @empty {
+      <li class="empty">אין פניות להצגה.</li>
+    }
+  </ul>
+  @if (d.total > d.pageSize) {
+    <div class="pager">
+      <button matButton="outlined" type="button" [disabled]="d.page === 1 || loading()" (click)="goTo(d.page - 1)">
+        הקודם
+      </button>
+      <span class="muted"
+        >עמוד <bdi>{{ d.page }}</bdi> מתוך <bdi>{{ pages(d) }}</bdi></span
+      >
+      <button
+        matButton="outlined"
+        type="button"
+        [disabled]="d.page >= pages(d) || loading()"
+        (click)="goTo(d.page + 1)"
+      >
+        הבא
+      </button>
+    </div>
+  }
+}

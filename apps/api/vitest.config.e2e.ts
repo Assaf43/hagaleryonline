@@ -43,12 +43,17 @@ export default defineConfig({
       THROTTLE_ACCOUNT_LIMIT: '100000',
       THROTTLE_LOOKUP_LIMIT: '100000',
       THROTTLE_LOOKUP_NUMBER_LIMIT: '100000',
+      // Support requests (Phase 5d): per IP and per order number; the 429 tests lower them themselves.
+      THROTTLE_SUPPORT_LIMIT: '100000',
+      THROTTLE_SUPPORT_ORDER_LIMIT: '100000',
       OTP_PEPPER: 'e2e-otp-pepper-not-for-production',
       PAYMENT_PROVIDER: 'sandbox',
       // Notifications (Phase 5b): the mock adapters send nothing and log the full message.
       EMAIL_PROVIDER: 'mock',
       SMS_PROVIDER: 'mock',
       EMAIL_FROM: 'NESTO <no-reply@example.test>',
+      // The business inbox of the new-ticket alert (Phase 5d).
+      SUPPORT_EMAIL: 'support@example.test',
       // Invoices (Phase 5b): the mock numbers documents MOCK-INV-… / MOCK-CN-… and keeps them under MEDIA_DIR/private.
       INVOICE_PROVIDER: 'mock',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',

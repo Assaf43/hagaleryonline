@@ -1,0 +1,60 @@
+@if (!store.ready()) {
+  <p class="hint" role="status">טוען…</p>
+} @else if (current(); as c) {
+  <p class="order-summary" tabindex="-1" [id]="idPrefix() + '-summary'">
+    <span class="order-ref"
+      >הזמנה מספר <bdi>{{ c.order.number }}</bdi></span
+    >
+    <button type="button" class="link-btn" (click)="change()">שינוי הזמנה</button>
+  </p>
+} @else {
+  <form class="stack" novalidate (submit)="submit($event)">
+    <div class="field">
+      <label class="field-label" [for]="id('number')">מספר הזמנה</label>
+      <input
+        class="input"
+        type="text"
+        dir="ltr"
+        inputmode="numeric"
+        autocomplete="off"
+        [attr.maxlength]="numberMax"
+        [id]="id('number')"
+        [value]="number()"
+        [attr.aria-invalid]="errors().number ? true : null"
+        [attr.aria-describedby]="errors().number ? id('number') + '-error' : null"
+        (input)="input('number', $event)"
+      />
+      @if (errors().number; as e) {
+        <p class="field-error" [id]="id('number') + '-error'">{{ e }}</p>
+      }
+    </div>
+    @if (askPhone()) {
+      <div class="field">
+        <label class="field-label" [for]="id('phone')">טלפון נייד</label>
+        <input
+          class="input"
+          type="tel"
+          dir="ltr"
+          inputmode="tel"
+          autocomplete="tel"
+          [attr.maxlength]="phoneMax"
+          [id]="id('phone')"
+          [value]="phone()"
+          [attr.aria-invalid]="errors().phone ? true : null"
+          [attr.aria-describedby]="errors().phone ? id('phone') + '-error' : null"
+          (input)="input('phone', $event)"
+        />
+        @if (errors().phone; as e) {
+          <p class="field-error" [id]="id('phone') + '-error'">{{ e }}</p>
+        }
+      </div>
+    }
+    <p class="form-error" role="alert">{{ formError() }}</p>
+    <div class="actions">
+      <button type="submit" class="btn btn-primary" [disabled]="busy()">המשך</button>
+      @if (!askPhone()) {
+        <button type="button" class="link-btn" (click)="asGuest()">הזמנה שביצעתי כאורח?</button>
+      }
+    </div>
+  </form>
+}

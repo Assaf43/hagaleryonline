@@ -12,6 +12,7 @@ import { SandboxPaymentProvider } from '../payments/sandbox-payment.provider.js'
 import { HttpWebhookDispatcher, WebhookDispatcher } from '../payments/webhook-dispatcher.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
+import { SupportModule } from '../support/support.module.js';
 import { DeliverySlotController } from './delivery-slot.controller.js';
 import { DeliverySlotService } from './delivery-slot.service.js';
 import { CheckoutController } from './checkout.controller.js';
@@ -42,6 +43,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     ShippingModule,
     WriteThrottleModule,
     OutboxModule,
+    SupportModule,
   ],
   controllers: [
     DeliverySlotController,

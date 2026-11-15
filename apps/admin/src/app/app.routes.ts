@@ -94,6 +94,18 @@ export const routes: Routes = [
         title: 'הזמנה',
       },
       {
+        path: 'support',
+        canMatch: [hasPermission('support.manage')],
+        loadComponent: () => import('./support/inbox.page').then((m) => m.InboxPage),
+        title: 'פניות',
+      },
+      {
+        path: 'support/:number',
+        canMatch: [hasPermission('support.manage')],
+        loadComponent: () => import('./support/ticket.page').then((m) => m.TicketPage),
+        title: 'פנייה',
+      },
+      {
         path: 'invoices',
         canMatch: [hasPermission('invoices.export')],
         loadComponent: () => import('./invoices/invoices.page').then((m) => m.InvoicesPage),
@@ -110,6 +122,12 @@ export const routes: Routes = [
         canMatch: [hasPermission('orders.manage')],
         loadComponent: () => import('./settings/providers.page').then((m) => m.ProvidersPage),
         title: 'ספקים',
+      },
+      {
+        path: 'settings/store',
+        canMatch: [hasPermission('orders.manage')],
+        loadComponent: () => import('./settings/return-window.page').then((m) => m.ReturnWindowPage),
+        title: 'ימי החזרה',
       },
       {
         path: 'settings/failed-jobs',

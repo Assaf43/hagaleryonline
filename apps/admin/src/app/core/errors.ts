@@ -153,6 +153,12 @@ export function catalogIssueText(code: CatalogErrorCode): string {
 /** 400 `rate` of the VAT setting; the VAT page shows it for a bad percent before sending. */
 export const VAT_RATE_MESSAGE = 'שיעור המע"מ חייב להיות גדול מ־0% וקטן מ־100%, עד 2 ספרות אחרי הנקודה.';
 
+/** 400 `returnWindowDays` of the store settings; the page shows it for a bad number before sending. */
+export const RETURN_WINDOW_MESSAGE = 'מספר ימי ההחזרה צריך להיות מספר שלם בין 1 ל־60.';
+
+/** 400 `body` of a ticket note; the ticket page shows it for an empty note before sending. */
+export const NOTE_MESSAGE = 'יש לכתוב הערה (עד 2000 תווים).';
+
 /** Order actions (Phase 5): 409 codes, and the field a 400 `invalid_input` names. */
 const ORDER_CODES: Record<string, string> = {
   invalid_transition: 'אי אפשר לעבור לסטטוס הזה',
@@ -171,6 +177,10 @@ const ORDER_FIELDS: Record<string, string> = {
   rate: VAT_RATE_MESSAGE,
   effectiveFrom: 'התאריך חייב להיות אחרי היום ואחרי תאריך ההתחלה של כל שיעור קיים.',
   refund: 'בחירת ההחזר לא תקינה להזמנה הזו.',
+  // Support inbox (Phase 5d).
+  body: NOTE_MESSAGE,
+  status: 'הסטטוס לא תקין.',
+  returnWindowDays: RETURN_WINDOW_MESSAGE,
 };
 
 /** 400 `invalid` of the promotions API on a field the form has no input of its own for. */

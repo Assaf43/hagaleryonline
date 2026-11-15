@@ -22,6 +22,7 @@ import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { SUPPORT_CONTACT } from '../core/support-contact';
 import { CheckoutApi, ExternalNavigation, apiErrorCode, checkoutErrorMessage } from '../checkout/checkout.api';
+import { returnOpen } from './return-window';
 
 const POLL_MS = 3000;
 /** A pending order is polled for at most this long; then the customer can check again by hand. */
@@ -52,6 +53,8 @@ export class OrderPage {
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
 
   protected readonly order = signal<OrderView | null>(null);
+  /** "החזרה או החלפה" only until the return deadline; the damaged-product link stays. */
+  protected readonly returnOpen = (o: OrderView): boolean => returnOpen(o);
   protected readonly state = signal<'loading' | 'ready' | 'not_found' | 'error'>('loading');
   /** Polling stopped while still pending. */
   protected readonly pollingStopped = signal(false);

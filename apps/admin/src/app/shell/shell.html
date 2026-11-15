@@ -85,6 +85,13 @@
           הזמנות
         </a>
       }
+      @if (can('support.manage')) {
+        <a class="nav-link" routerLink="/support" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideInbox></svg>
+          פניות
+          <hga-new-count-badge />
+        </a>
+      }
       @if (can('invoices.export')) {
         <a class="nav-link" routerLink="/invoices" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideFileText></svg>
@@ -100,6 +107,15 @@
         >
           <svg lucidePlugZap></svg>
           ספקים
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/settings/store"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideCalendarClock></svg>
+          ימי החזרה
         </a>
         <a
           class="nav-link"

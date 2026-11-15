@@ -68,6 +68,17 @@
           <p class="retry-error" role="alert">{{ retryError() }}</p>
         </div>
 
+        @if (o.status === 'delivered') {
+          <p class="support-links">
+            @if (returnOpen(o)) {
+              <a class="btn btn-secondary" routerLink="/returns" [queryParams]="{ order: o.number }">החזרה או החלפה</a>
+            }
+            <a class="btn btn-secondary" routerLink="/returns/damaged" [queryParams]="{ order: o.number }"
+              >דיווח על מוצר פגום</a
+            >
+          </p>
+        }
+
         <hg-order-detail [order]="o" [documentUrl]="documentUrl" />
 
         <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title" (close)="cancelling.set(false)">

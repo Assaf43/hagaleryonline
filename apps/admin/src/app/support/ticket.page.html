@@ -1,0 +1,184 @@
+<a class="back" routerLink="/support">› לכל הפניות</a>
+
+<div [attr.aria-busy]="loading()">
+  @if (loading()) {
+    <p class="muted" role="status">טוען את הפנייה…</p>
+  }
+</div>
+
+@if (error()) {
+  <p class="form-error" role="alert">{{ error() }}</p>
+}
+
+@if (ticket(); as t) {
+  <header class="head">
+    <h1>
+      פנייה <bdi>{{ t.number }}</bdi>
+    </h1>
+    <span class="type">{{ typeLabels[t.type] }}</span>
+    <span class="status" [attr.data-status]="t.status">{{ statusLabels[t.status] }}</span>
+  </header>
+  <p class="page-intro">
+    התקבלה ב-<bdi>{{ dateTime(t.createdAt) }}</bdi
+    >. מענה ללקוח נעשה בטלפון או בדוא״ל רגיל, מחוץ למערכת.
+  </p>
+
+  <div class="status-row">
+    <label for="ticket-status">סטטוס</label>
+    <!-- The select only holds a choice; the button commits it (arrow keys fire "change" on a closed select). -->
+    <select
+      id="ticket-status"
+      name="status"
+      [value]="chosenStatus()"
+      (change)="chooseStatus($any($event.target).value)"
+    >
+      @for (s of statuses; track s) {
+        <option [value]="s" [selected]="s === chosenStatus()">{{ statusLabels[s] }}</option>
+      }
+    </select>
+    <!-- disabledInteractive: aria-disabled, not the native attribute, so the focused button keeps focus. -->
+    <button
+      matButton="outlined"
+      type="button"
+      class="apply-status"
+      disabledInteractive
+      [disabled]="!canApplyStatus()"
+      (click)="applyStatus(t)"
+    >
+      עדכון סטטוס
+    </button>
+    <p class="visually-hidden" role="status">{{ statusMessage() }}</p>
+    @if (statusError()) {
+      <p class="error" role="alert">{{ statusError() }}</p>
+    }
+  </div>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="request-title">
+      <h2 id="request-title">הבקשה</h2>
+      @if (t.subject) {
+        <p><strong>נושא:</strong> {{ t.subject }}</p>
+      }
+      @if (t.reasonCode) {
+        <p><strong>סיבה:</strong> {{ reasonLabels[t.reasonCode] }}</p>
+      }
+      @if (t.message) {
+        <p class="message">{{ t.message }}</p>
+      }
+      @if (t.items.length) {
+        <ul class="lines">
+          @for (line of t.items; track line.orderItemId) {
+            <li class="line">
+              @if (line.sku) {
+                <strong
+                  ><bdi dir="ltr">{{ line.modelName }}</bdi></strong
+                >
+                {{ line.nameHe }}
+                @if (line.optionLabels.length) {
+                  <span class="muted">{{ line.optionLabels.join(' · ') }}</span>
+                }
+                <span class="muted"
+                  >מק״ט <bdi dir="ltr">{{ line.sku }}</bdi></span
+                >
+              } @else {
+                <span class="muted">פריט שאינו זמין עוד בהזמנה</span>
+              }
+              @if (line.quantity !== null) {
+                <span class="muted"
+                  >כמות: <bdi>{{ line.quantity }}</bdi>
+                  @if (line.orderedQuantity !== null) {
+                    מתוך <bdi>{{ line.orderedQuantity }}</bdi>
+                  }
+                </span>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <section class="panel contact" aria-labelledby="contact-title">
+      <h2 id="contact-title">פרטי הפונה</h2>
+      <p>
+        {{ t.contact.fullName }}<br />
+        <bdi dir="ltr">{{ t.contact.phone }}</bdi
+        ><br />
+        <bdi dir="ltr">{{ t.contact.email }}</bdi>
+      </p>
+      @if (t.hasAccount) {
+        <p class="muted">לקוח/ה עם חשבון באתר</p>
+      }
+      <div class="order">
+        @if (t.orderNumber) {
+          @if (canSeeOrders()) {
+            <a class="order-link" [routerLink]="['/orders', t.orderNumber]"
+              >הזמנה <bdi>{{ t.orderNumber }}</bdi></a
+            >
+          } @else {
+            <span
+              >הזמנה <bdi>{{ t.orderNumber }}</bdi></span
+            >
+          }
+          @if (t.type === 'contact') {
+            <p class="muted">מספר ההזמנה הוקלד בטופס הפנייה ולא אומת מול פרטי ההזמנה.</p>
+          } @else {
+            <p class="muted">החזר כספי, אם יוחלט עליו, מתבצע מעמוד ההזמנה.</p>
+          }
+        } @else {
+          <p class="muted">הפנייה לא קשורה להזמנה.</p>
+        }
+      </div>
+    </section>
+  </div>
+
+  @if (t.attachments.length) {
+    <section class="panel" aria-labelledby="photos-title">
+      <h2 id="photos-title">תמונות</h2>
+      <ul class="photos">
+        @for (a of t.attachments; track a.id; let i = $index) {
+          <li>
+            <a
+              [href]="photoUrl(t, a.id)"
+              target="_blank"
+              rel="noopener"
+              [attr.aria-label]="photoAlt(i, t.attachments.length) + ', פתיחה בגודל מלא בלשונית חדשה'"
+            >
+              <img [src]="photoUrl(t, a.id)" [alt]="photoAlt(i, t.attachments.length)" loading="lazy" />
+            </a>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  <section class="panel" aria-labelledby="notes-title">
+    <h2 id="notes-title">הערות פנימיות</h2>
+    <ol class="notes">
+      @for (n of t.notes; track n.id) {
+        <li class="note">
+          <p class="note-body">{{ n.body }}</p>
+          <span class="muted"
+            >{{ n.author.name }} · <bdi>{{ dateTime(n.createdAt) }}</bdi></span
+          >
+        </li>
+      } @empty {
+        <li class="muted">אין הערות עדיין.</li>
+      }
+    </ol>
+    <form class="note-form" (submit)="addNote(t, $event)">
+      <label for="ticket-note">הערה פנימית (לא נשלחת ללקוח)</label>
+      <textarea
+        id="ticket-note"
+        name="note"
+        rows="3"
+        [attr.maxlength]="noteMax"
+        [value]="noteText()"
+        (input)="noteText.set($any($event.target).value)"
+      ></textarea>
+      @if (noteError()) {
+        <p class="error" role="alert">{{ noteError() }}</p>
+      }
+      <button matButton="filled" type="submit" [disabled]="noteBusy()">הוספת הערה</button>
+    </form>
+  </section>
+}

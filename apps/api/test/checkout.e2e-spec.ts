@@ -321,6 +321,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     });
     expect(view.lines).toEqual([
       {
+        orderItemId: expect.any(Number),
         variantId: plenty,
         sku: 'ZZCHK-PLENTY',
         modelName: 'ZZCHK',

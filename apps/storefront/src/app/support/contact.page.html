@@ -1,0 +1,155 @@
+<section class="container page narrow">
+  <h1>צור קשר</h1>
+
+  <div class="stack">
+    <p class="intro">
+      אפשר להתקשר אל
+      <bdi dir="ltr"
+        ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
+      >
+      או לכתוב לנו בוואטסאפ, ואפשר גם למלא את הטופס.
+    </p>
+    <div class="actions">
+      <a class="btn btn-secondary" [href]="whatsapp" target="_blank" rel="noopener">שליחת הודעה בוואטסאפ</a>
+    </div>
+  </div>
+
+  <!-- Always rendered, so the confirmation is announced; focus moves here after sending. -->
+  <p id="ct-success" class="success" role="status" tabindex="-1">{{ done() }}</p>
+
+  @if (!done()) {
+    <form class="stack" novalidate (submit)="submit($event)">
+      <div class="field">
+        <label class="field-label" [for]="id('fullName')">שם מלא</label>
+        <input
+          class="input"
+          type="text"
+          autocomplete="name"
+          [attr.maxlength]="limits.name"
+          [id]="id('fullName')"
+          [value]="values().fullName"
+          [attr.aria-invalid]="errors().fullName ? true : null"
+          [attr.aria-describedby]="errors().fullName ? id('fullName') + '-error' : null"
+          (input)="set('fullName', $event)"
+        />
+        @if (errors().fullName; as e) {
+          <p class="field-error" [id]="id('fullName') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="field-label" [for]="id('phone')">טלפון נייד</label>
+        <input
+          class="input"
+          type="tel"
+          dir="ltr"
+          inputmode="tel"
+          autocomplete="tel"
+          [attr.maxlength]="limits.phone"
+          [id]="id('phone')"
+          [value]="values().phone"
+          [attr.aria-invalid]="errors().phone ? true : null"
+          [attr.aria-describedby]="errors().phone ? id('phone') + '-error' : null"
+          (input)="set('phone', $event)"
+        />
+        @if (errors().phone; as e) {
+          <p class="field-error" [id]="id('phone') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="field-label" [for]="id('email')">דוא״ל</label>
+        <input
+          class="input"
+          type="email"
+          dir="ltr"
+          inputmode="email"
+          autocomplete="email"
+          [attr.maxlength]="limits.email"
+          [id]="id('email')"
+          [value]="values().email"
+          [attr.aria-invalid]="errors().email ? true : null"
+          [attr.aria-describedby]="errors().email ? id('email') + '-error' : null"
+          (input)="set('email', $event)"
+        />
+        @if (errors().email; as e) {
+          <p class="field-error" [id]="id('email') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="field-label" [for]="id('subject')">נושא</label>
+        <input
+          class="input"
+          type="text"
+          autocomplete="off"
+          [attr.maxlength]="limits.subjectMax"
+          [id]="id('subject')"
+          [value]="values().subject"
+          [attr.aria-invalid]="errors().subject ? true : null"
+          [attr.aria-describedby]="errors().subject ? id('subject') + '-error' : null"
+          (input)="set('subject', $event)"
+        />
+        @if (errors().subject; as e) {
+          <p class="field-error" [id]="id('subject') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="field-label" [for]="id('message')">הודעה</label>
+        <textarea
+          class="input textarea"
+          rows="5"
+          [attr.maxlength]="limits.messageMax"
+          [id]="id('message')"
+          [value]="values().message"
+          [attr.aria-invalid]="errors().message ? true : null"
+          [attr.aria-describedby]="errors().message ? id('message') + '-error' : null"
+          (input)="set('message', $event)"
+        ></textarea>
+        @if (errors().message; as e) {
+          <p class="field-error" [id]="id('message') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label class="field-label" [for]="id('orderNumber')">מספר הזמנה (לא חובה)</label>
+        <input
+          class="input"
+          type="text"
+          dir="ltr"
+          inputmode="numeric"
+          autocomplete="off"
+          [attr.maxlength]="limits.orderNumber"
+          [id]="id('orderNumber')"
+          [value]="values().orderNumber"
+          [attr.aria-invalid]="errors().orderNumber ? true : null"
+          [attr.aria-describedby]="errors().orderNumber ? id('orderNumber') + '-error' : null"
+          (input)="set('orderNumber', $event)"
+        />
+        @if (errors().orderNumber; as e) {
+          <p class="field-error" [id]="id('orderNumber') + '-error'">{{ e }}</p>
+        }
+      </div>
+
+      <!-- Honeypot: people never see or reach it; a bot that fills it gets a silent 202. -->
+      <div class="hp" aria-hidden="true">
+        <label for="ct-website">אתר אינטרנט</label>
+        <input
+          id="ct-website"
+          name="website"
+          type="text"
+          tabindex="-1"
+          autocomplete="off"
+          [value]="website()"
+          (input)="setWebsite($event)"
+        />
+      </div>
+
+      <p class="form-error" role="alert">{{ formError() }}</p>
+      <div class="actions">
+        <button type="submit" class="btn btn-primary" [disabled]="busy()">שליחה</button>
+      </div>
+    </form>
+  }
+</section>

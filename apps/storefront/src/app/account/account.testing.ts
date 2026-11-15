@@ -89,8 +89,11 @@ export function orderView(status: OrderStatus = 'paid', extra: Partial<OrderView
     status,
     createdAt: '2026-11-10T10:00:00.000Z',
     reservedUntil: '2026-11-10T10:20:00.000Z',
+    deliveredAt: null,
+    returnUntil: null,
     lines: [
       {
+        orderItemId: 11,
         variantId: 1,
         sku: 'ALBA-1',
         modelName: 'ALBA',

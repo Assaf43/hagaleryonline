@@ -134,3 +134,9 @@ export function shiftMonth(month: string, delta: number): string {
   const index = y * 12 + (m - 1) + delta;
   return `${Math.floor(index / 12)}-${pad((index % 12) + 1)}`;
 }
+
+/** The Israel wall-clock date and time of an instant, "6.11.2026 14:05" (independent of the machine's zone). */
+export function israelDateTime(iso: string): string {
+  const { wall, time } = fields(iso);
+  return `${wall.day}.${wall.month}.${wall.year} ${time}`;
+}

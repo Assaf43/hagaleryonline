@@ -63,6 +63,27 @@ describe('OrderDetailPage (account)', () => {
     expect(text()).toContain('שולמה');
   });
 
+  it('links to the return and damaged forms (order number only) only for a delivered order', async () => {
+    await setup(orderView('delivered'));
+    const hrefs = [...el().querySelectorAll<HTMLAnchorElement>('a[href^="/returns"]')].map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(hrefs).toEqual(['/returns?order=100001', '/returns/damaged?order=100001']);
+  });
+
+  it('after the return deadline only the damaged-product link stays', async () => {
+    await setup(orderView('delivered', { returnUntil: '2020-01-01T21:59:59.999Z' }));
+    const hrefs = [...el().querySelectorAll<HTMLAnchorElement>('a[href^="/returns"]')].map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(hrefs).toEqual(['/returns/damaged?order=100001']);
+  });
+
+  it('has no return or damaged links before delivery', async () => {
+    await setup(orderView('shipped'));
+    expect(el().querySelector('a[href^="/returns"]')).toBeNull();
+  });
+
   it('does not list documents (they open only with the order token, which the account does not have)', async () => {
     await setup(orderView('paid', { invoices: [{ id: 'inv1', type: 'tax_invoice', number: '1001' } as never] }));
     expect(el().querySelector('.document-list')).toBeNull();

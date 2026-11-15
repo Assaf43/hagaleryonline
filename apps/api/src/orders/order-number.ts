@@ -1,3 +1,4 @@
+import { ORDER_NUMBER_PATTERN } from '@hg/models';
 /** Order numbers come from the `orders_number_seq` sequence, which starts here (migration orders, spec §5.2). */
 export const FIRST_ORDER_NUMBER = 100_001;
 
@@ -22,7 +23,7 @@ export const MAX_ORDER_NUMBER = 2_147_483_647;
  * A larger number would make the database query fail (500) instead of the endpoint's normal 404.
  */
 export function parseOrderNumber(value: string): number | null {
-  if (!/^\d{6,12}$/.test(value)) return null;
+  if (!ORDER_NUMBER_PATTERN.test(value)) return null;
   const number = Number(value);
   return number >= FIRST_ORDER_NUMBER && number <= MAX_ORDER_NUMBER ? number : null;
 }

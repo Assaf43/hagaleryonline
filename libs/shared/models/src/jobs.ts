@@ -12,6 +12,8 @@ export const OUTBOX_JOB_TYPES = [
   'invoice.issue',
   'invoice.credit_note',
   'refund.late_payment',
+  'email.ticket_received',
+  'email.ticket_alert',
 ] as const;
 
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPES)[number];
@@ -26,6 +28,8 @@ export const OUTBOX_JOB_LABELS_HE: Record<OutboxJobType, string> = {
   'invoice.issue': 'הפקת חשבונית',
   'invoice.credit_note': 'הפקת חשבונית זיכוי',
   'refund.late_payment': 'החזר תשלום מאוחר',
+  'email.ticket_received': 'אישור פנייה במייל',
+  'email.ticket_alert': 'התראה על פנייה חדשה',
 };
 
 /** One row of GET /api/admin/jobs/failed (permission orders.manage). */

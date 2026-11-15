@@ -112,3 +112,24 @@ describe('masking', () => {
     expect(maskPhone('123')).toBe('***');
   });
 });
+
+describe('support e-mail templates (spec §7.1)', () => {
+  it('ticket_received: the quoted subject with the ticket number, escaped name, plain text', () => {
+    const m = renderEmail('ticket_received', { ticketNumber: 5001, customerName: 'דנה <b>כהן</b>' });
+    expect(m.subject).toBe('קיבלנו את פנייתך, מספר פנייה 5001');
+    expect(m.html).toContain('dir="rtl"');
+    expect(m.html).toContain('<bdi>5001</bdi>');
+    expect(m.html).not.toContain('<b>כהן</b>');
+    expect(m.text).toContain('קיבלנו את פנייתך, מספר פנייה 5001');
+  });
+
+  it('ticket_alert: number, type label and order number, with or without an order', () => {
+    const withOrder = renderEmail('ticket_alert', { ticketNumber: 5002, type: 'damaged', orderNumber: 100123 });
+    expect(withOrder.subject).toBe('פנייה חדשה 5002: מוצר פגום');
+    expect(withOrder.html).toContain('<bdi>100123</bdi>');
+    expect(withOrder.text).toContain('הזמנה 100123');
+    const contact = renderEmail('ticket_alert', { ticketNumber: 5003, type: 'contact', orderNumber: null });
+    expect(contact.subject).toBe('פנייה חדשה 5003: פנייה כללית');
+    expect(contact.text).not.toContain('הזמנה');
+  });
+});
