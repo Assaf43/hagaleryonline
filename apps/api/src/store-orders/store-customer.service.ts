@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { CartError } from '../cart/cart.service.js';
 import {
   AccountError,
+  accountNotFound,
   badField,
   emailTaken,
   invalidCode,
@@ -31,18 +32,21 @@ export const STORE_CUSTOMER_CLEARED = 'store.customer_cleared';
  */
 const STORE_OTP_PURPOSE = 'store_confirm';
 
-/** A code request or check from the seller screen, validated and normalized. */
-export interface StoreCodeInput {
-  phone: string;
+/**
+ * A code request or check from the seller screen, validated and normalized. Exactly one key: the customer's `phone`,
+ * or `accountEmail` — the verified e-mail of an existing account (channel `email`, no new-customer details).
+ */
+export type StoreCodeInput = StoreCodeFields &
+  ({ phone: string; accountEmail?: never } | { phone?: never; accountEmail: string });
+
+interface StoreCodeFields {
   channel: StoreCodeChannel;
   /** Trimmed, single-spaced; present only when the seller typed it. */
   fullName?: string;
   email?: string;
 }
 
-export interface StoreVerifyInput extends StoreCodeInput {
-  code: string;
-}
+export type StoreVerifyInput = StoreCodeInput & { code: string };
 
 /** Who acts: the signed-in seller (the audit actor) and the request's IP (audit only, never a throttle key). */
 export interface SellerActor {
@@ -54,9 +58,21 @@ type BodyRecord = Record<string, unknown>;
 const record = (body: unknown): BodyRecord =>
   body && typeof body === 'object' && !Array.isArray(body) ? (body as BodyRecord) : {};
 
-/** 400 for a malformed phone, channel, `newCustomer` or code; the checks that need the database come later. */
+/**
+ * 400 for a malformed phone / e-mail key (exactly one of the two), channel, `newCustomer` or code; the checks that
+ * need the database come later.
+ */
 export function parseStoreCodeInput(body: unknown): StoreCodeInput {
   const b = record(body);
+  const given = (v: unknown) => v !== undefined && v !== null;
+  if (given(b.email)) {
+    if (given(b.phone)) throw badField('email');
+    const accountEmail = normalizeEmail(b.email);
+    if (!accountEmail) throw badField('email');
+    if (b.channel !== 'email') throw badField('channel');
+    if (given(b.newCustomer)) throw badField('newCustomer');
+    return { accountEmail, channel: 'email' };
+  }
   const phone = normalizePhone(b.phone);
   if (!phone) throw badField('phone');
   if (b.channel !== 'sms' && b.channel !== 'email') throw badField('channel');
@@ -90,11 +106,13 @@ const notFound = () => new CartError(HttpStatus.NOT_FOUND, 'not_found');
 /** Where a code goes and with which purpose, decided from the account the phone has now. */
 type Plan =
   | { kind: 'existing'; customer: Customer; target: string; addEmail: string | null }
-  | { kind: 'new'; fullName: string; email: string };
+  | { kind: 'new'; phone: string; fullName: string; email: string };
 
 /**
  * The customer at the store tablet proves who they are with a one-time code (spec §4.1 step 2, §4.3, decision 85).
- * An existing account: a code to its phone or its verified e-mail. A new phone: one SMS code, then a quick account
+ * An existing account: a code to its phone or its verified e-mail — found by the phone, or by that verified e-mail
+ * itself (the `email` key: a new phone whose e-mail is the customer's own older account). A new phone: one SMS code,
+ * then a quick account
  * (phone verified, e-mail not). Every code has the purpose `store_confirm`. A confirmed customer is held on the seller's open cart
  * (`storeCustomerId`); no customer session is created and no cookie is set.
  *
@@ -138,7 +156,7 @@ export class StoreCustomerService {
     await this.ensureCart(actor);
     const plan = await this.plan(input, false);
     // No IP: the store's one address must not count against the website's per-IP code limit.
-    const target = plan.kind === 'existing' ? plan.target : input.phone;
+    const target = plan.kind === 'existing' ? plan.target : plan.phone;
     await this.otp.request(target, input.channel, STORE_OTP_PURPOSE, undefined, { ipChecked: true });
   }
 
@@ -153,7 +171,7 @@ export class StoreCustomerService {
     if (!this.throttle.allow('store_verify', `seller:${actor.sellerId}`))
       throw tooManyRequests(THROTTLE_RETRY_AFTER_SECONDS);
     const plan = await this.plan(input, true);
-    const target = plan.kind === 'existing' ? plan.target : input.phone;
+    const target = plan.kind === 'existing' ? plan.target : plan.phone;
     const row = await this.otp.check(target, STORE_OTP_PURPOSE, input.code);
     if (!row) throw invalidCode();
     try {
@@ -163,7 +181,7 @@ export class StoreCustomerService {
         const customerId =
           plan.kind === 'existing'
             ? await this.confirmExisting(tx, actor, plan, input.channel)
-            : await this.createQuickAccount(tx, actor, input.phone, plan);
+            : await this.createQuickAccount(tx, actor, plan);
         await tx.cart.update({
           where: { id: cart.id },
           data: { storeCustomerId: customerId, storeConfirmedAt: new Date() },
@@ -184,7 +202,7 @@ export class StoreCustomerService {
     } catch (error) {
       if (isUniqueViolation(error)) {
         // Taken between the check and the write: say which.
-        if (plan.kind === 'new' && (await this.prisma.customer.count({ where: { phone: input.phone } })) > 0)
+        if (plan.kind === 'new' && (await this.prisma.customer.count({ where: { phone: plan.phone } })) > 0)
           throw phoneTaken();
         throw emailTaken();
       }
@@ -250,13 +268,22 @@ export class StoreCustomerService {
   }
 
   /**
-   * Decides from the account the phone has now (it may have changed since the lookup):
+   * Decides from the account the phone (or the `email` key) has now (it may have changed since the lookup):
+   *  - the `email` key: the account whose e-mail it is, only while that e-mail is verified; an unknown and an
+   *    unverified e-mail both answer 404 `not_found`, by one query (no `email_not_verified` through this key);
    *  - existing: the e-mail channel needs a verified e-mail (409 `email_not_verified`); an account without an e-mail
    *    must get one at the check (`newCustomer.email`, free, saved unverified; optional, but checked, at the request);
    *  - new: `newCustomer` with name and e-mail, SMS only, and an e-mail no other account holds. An e-mail held only
    *    unverified is not released here (only a verified website sign-up releases one): 409 `email_taken`.
    */
   private async plan(input: StoreCodeInput, checking: boolean): Promise<Plan> {
+    if (input.accountEmail !== undefined) {
+      const holder = await this.prisma.customer.findUnique({
+        where: { email: input.accountEmail, emailVerifiedAt: { not: null } },
+      });
+      if (!holder?.email) throw accountNotFound();
+      return { kind: 'existing', customer: holder, target: holder.email, addEmail: null };
+    }
     const customer = await this.prisma.customer.findUnique({ where: { phone: input.phone } });
     if (customer) {
       let target = input.phone;
@@ -275,7 +302,7 @@ export class StoreCustomerService {
     if (!input.fullName || !input.email) throw badField(input.email ? 'newCustomer.fullName' : 'newCustomer');
     if (input.channel !== 'sms') throw badField('channel');
     await this.assertEmailFree(input.email);
-    return { kind: 'new', fullName: input.fullName, email: input.email };
+    return { kind: 'new', phone: input.phone, fullName: input.fullName, email: input.email };
   }
 
   /** Marks the channel verified (as sign-in does) and saves a missing e-mail, unverified. */
@@ -315,13 +342,12 @@ export class StoreCustomerService {
   private async createQuickAccount(
     tx: Prisma.TransactionClient,
     actor: SellerActor,
-    phone: string,
     plan: Extract<Plan, { kind: 'new' }>,
   ): Promise<string> {
     const created = await tx.customer.create({
       data: {
         fullName: plan.fullName,
-        phone,
+        phone: plan.phone,
         phoneVerifiedAt: new Date(),
         email: plan.email,
         emailVerifiedAt: null,

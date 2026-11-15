@@ -45,17 +45,18 @@ export interface StoreNewCustomer {
   email: string;
 }
 
-/** `POST /api/admin/store-cart/customer/code` → 204. */
-export interface StoreCodeRequest {
-  phone: string;
-  channel: StoreCodeChannel;
-  newCustomer?: StoreNewCustomer;
-}
+/**
+ * `POST /api/admin/store-cart/customer/code` → 204. Exactly one key: `phone`, or `email` — the verified e-mail of an
+ * existing account (spec §4.1 step 2: a new phone whose e-mail is the customer's own older account → 409
+ * `email_taken`, then that account by an e-mail code). With `email` the channel is `email` and there is no
+ * `newCustomer`; an unknown or unverified e-mail answers 404 `not_found`.
+ */
+export type StoreCodeRequest =
+  | { phone: string; email?: never; channel: StoreCodeChannel; newCustomer?: StoreNewCustomer }
+  | { email: string; phone?: never; channel: 'email'; newCustomer?: never };
 
 /** `POST /api/admin/store-cart/customer/verify` → `StoreCartView` with the confirmed customer. */
-export interface StoreVerifyRequest extends StoreCodeRequest {
-  code: string;
-}
+export type StoreVerifyRequest = StoreCodeRequest & { code: string };
 
 /**
  * `POST /api/admin/store-orders` (spec §4.4): the seller's open cart becomes an order on the website's checkout path,

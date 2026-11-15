@@ -236,6 +236,89 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
     await seller.post('/store-cart/customer/code', { phone: customer.phone, channel: 'sms' }).expect(204);
   });
 
+  it('a new phone with the e-mail of an own older account: 409 email_taken, then that account by its e-mail', async () => {
+    const older = await account();
+    const phone = newPhone();
+    const taken = await seller
+      .post('/store-cart/customer/code', {
+        phone,
+        channel: 'sms',
+        newCustomer: { fullName: 'ZZ חדש', email: older.email },
+      })
+      .expect(409);
+    expect(taken.body).toMatchObject({ code: 'email_taken' });
+
+    // Exactly one of phone / e-mail; the e-mail key takes the e-mail channel and no new-customer details.
+    await seller.post('/store-cart/customer/code', { phone, email: older.email, channel: 'email' }).expect(400);
+    await seller.post('/store-cart/customer/code', { channel: 'email' }).expect(400);
+    await seller.post('/store-cart/customer/code', { email: older.email, channel: 'sms' }).expect(400);
+    await seller.post('/store-cart/customer/code', { email: 'not-an-email', channel: 'email' }).expect(400);
+    await seller
+      .post('/store-cart/customer/code', { email: older.email, channel: 'email', newCustomer: { email: newEmail() } })
+      .expect(400);
+    expect(emailsTo(older.email!)).toBe(0);
+
+    const sent = await seller
+      .post('/store-cart/customer/code', { email: ` ${older.email!.toUpperCase()} `, channel: 'email' })
+      .expect(204);
+    noCookie(sent);
+    expect(emailsTo(older.email!)).toBe(1);
+    expect(smsTo(phone) + smsTo(older.phone)).toBe(0);
+    const res = await seller
+      .post('/store-cart/customer/verify', { email: older.email, channel: 'email', code: emailCode(older.email!) })
+      .expect(200);
+    noCookie(res);
+    // That account is the customer, with its own phone and e-mail; the new phone got no account.
+    expect(view(res).customer).toMatchObject({
+      id: older.id,
+      phone: older.phone,
+      email: older.email,
+      emailVerified: true,
+      isNew: false,
+    });
+    expect(await prisma.customer.count({ where: { phone } })).toBe(0);
+    expect((await prisma.cart.findFirstOrThrow({ where: { sellerId } })).storeCustomerId).toBe(older.id);
+    expect(await prisma.customerSession.count({ where: { customerId: older.id } })).toBe(0);
+    expect(
+      await prisma.auditLog.findFirst({
+        where: { action: CONFIRMED, after: { path: ['customerId'], equals: older.id } },
+      }),
+    ).toMatchObject({ actorId: sellerId, after: { customerId: older.id, channel: 'email' } });
+  });
+
+  it('the e-mail key: an unknown or unverified e-mail answers as an unknown account; the limits apply', async () => {
+    const unverified = await account({ emailVerified: false });
+    for (const email of [newEmail(), unverified.email!]) {
+      const code = await seller.post('/store-cart/customer/code', { email, channel: 'email' }).expect(404);
+      expect(code.body).toMatchObject({ code: 'not_found' });
+      const check = await seller
+        .post('/store-cart/customer/verify', { email, channel: 'email', code: '123456' })
+        .expect(404);
+      expect(check.body).toEqual(code.body);
+      expect(emailsTo(email)).toBe(0);
+    }
+    expect((await prisma.cart.findFirstOrThrow({ where: { sellerId } })).storeCustomerId).toBeNull();
+
+    // The per-target limit: a fourth code to the same e-mail within 10 minutes is dropped silently.
+    const known = await account();
+    for (let i = 0; i < 4; i++)
+      await seller.post('/store-cart/customer/code', { email: known.email, channel: 'email' }).expect(204);
+    expect(emailsTo(known.email!)).toBe(3);
+
+    // The per-seller limits count the e-mail key too, before any answer tells anything.
+    throttle.setLimit('store_otp', 1);
+    throttle.setLimit('store_verify', 1);
+    await seller.post('/store-cart/customer/code', { email: newEmail(), channel: 'email' }).expect(404);
+    for (const email of [newEmail(), known.email]) {
+      const over = await seller.post('/store-cart/customer/code', { email, channel: 'email' }).expect(429);
+      expect(over.body).toMatchObject({ code: 'too_many_requests' });
+    }
+    await seller.post('/store-cart/customer/verify', { email: newEmail(), channel: 'email', code: '1' }).expect(404);
+    for (const email of [newEmail(), known.email])
+      await seller.post('/store-cart/customer/verify', { email, channel: 'email', code: '123456' }).expect(429);
+    await owner.post('/store-cart/customer/code', { email: known.email, channel: 'email' }).expect(204);
+  });
+
   it('an account without an e-mail must get one at confirmation (saved unverified)', async () => {
     const customer = await account({ email: null, emailVerified: false });
     const lookup = await seller.post('/store-cart/customer/lookup', { phone: customer.phone }).expect(200);
