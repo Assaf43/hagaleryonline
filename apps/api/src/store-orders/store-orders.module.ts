@@ -4,6 +4,7 @@ import { CartModule } from '../cart/cart.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { WriteThrottleModule } from '../orders/write-throttle.module.js';
+import { ShippingModule } from '../shipping/shipping.module.js';
 import { StoreAdminController } from './store-admin.controller.js';
 import { StoreCartController } from './store-cart.controller.js';
 import { StoreCartService } from './store-cart.service.js';
@@ -17,7 +18,7 @@ import { StoreService } from './store.service.js';
  * confirmation by code, and the store order on the website's checkout path.
  */
 @Module({
-  imports: [AuthModule, CartModule, CustomersModule, OrdersModule, WriteThrottleModule],
+  imports: [AuthModule, CartModule, CustomersModule, OrdersModule, ShippingModule, WriteThrottleModule],
   controllers: [StoreAdminController, StoreCartController, StoreOrdersController],
   providers: [StoreService, StoreCartService, StoreCustomerService, StoreOrdersService],
   exports: [StoreService, StoreCartService],

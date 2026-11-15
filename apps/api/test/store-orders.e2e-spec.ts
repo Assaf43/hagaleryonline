@@ -7,6 +7,7 @@ import { App } from 'supertest/types.js';
 import type {
   CartView,
   CheckoutResponse,
+  CustomerAddressView,
   OneTimeLink,
   SandboxCompleteResponse,
   ShippingQuote,
@@ -582,6 +583,65 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
         VALUES (gen_random_uuid(), ${`zz-${unique()}`}, '{"fullName":"ZZ"}', '{}', 'curbside', 0, '[]', 0, 0, '{}',
         'sandbox', 'manual', now(), 'store', ${storeId}, now())`,
     ).rejects.toThrow(/orders_store_channel_check/);
+  });
+
+  it("quotes the seller's open cart like the website quotes the same lines; never another seller's cart", async () => {
+    const quoteBody = { localityId: LOCALITY, floor: address.floor, hasElevator: address.hasElevator };
+    // No open cart: the storefront's empty-cart answer; a bad body: the storefront's 400.
+    expect((await sellerB.post('/store-cart/shipping-quote', quoteBody).expect(409)).body).toMatchObject({
+      code: 'empty_cart',
+    });
+    await sellerA.post('/store-cart/shipping-quote', { ...quoteBody, floor: -1 }).expect(400);
+
+    await newSale(sellerA, [
+      [plenty, 2],
+      [last, 1],
+    ]);
+    const store = (await sellerA.post('/store-cart/shipping-quote', quoteBody).expect(200)).body as ShippingQuote;
+    const guest = request.agent(app.getHttpServer() as App);
+    await guest.post('/api/cart/items').set('Origin', STOREFRONT).send({ variantId: plenty, quantity: 2 }).expect(200);
+    await guest.post('/api/cart/items').set('Origin', STOREFRONT).send({ variantId: last, quantity: 1 }).expect(200);
+    const web = (await guest.post('/api/shipping/quote').set('Origin', STOREFRONT).send(quoteBody).expect(200))
+      .body as ShippingQuote;
+    expect(store).toEqual(web);
+    expect(store.methods.length).toBeGreaterThan(0);
+
+    // Seller B's (empty) cart is quoted, never seller A's lines.
+    await sellerB.post('/store-cart').expect(201);
+    expect((await sellerB.post('/store-cart/shipping-quote', quoteBody).expect(409)).body).toMatchObject({
+      code: 'empty_cart',
+    });
+  });
+
+  it("returns the confirmed customer's saved addresses, default first; 409 once the confirmation lapsed", async () => {
+    await newSale(sellerA, [[plenty, 1]]);
+    expect((await sellerA.get('/store-cart/customer/addresses').expect(409)).body).toMatchObject({
+      code: 'customer_not_confirmed',
+    });
+    const customer = await existingAccount();
+    await prisma.customerAddress.create({ data: { customerId: customer.id, ...address, street: 'אלנבי' } });
+    await prisma.customerAddress.create({ data: { customerId: customer.id, ...address, isDefault: true } });
+    await confirm(sellerA, customer.phone);
+
+    const res = await sellerA.get('/store-cart/customer/addresses').expect(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
+    const list = res.body as CustomerAddressView[];
+    expect(list.map((a) => [a.street, a.isDefault])).toEqual([
+      ['הרצל', true],
+      ['אלנבי', false],
+    ]);
+    // The account's own address view (GET /api/account/addresses).
+    expect(list[0]).toMatchObject({ ...address, id: expect.any(String), isDefault: true });
+    // Seller B has no confirmed customer: nothing of seller A's customer.
+    await sellerB.get('/store-cart/customer/addresses').expect(409);
+
+    await prisma.cart.updateMany({
+      where: { sellerId: sellerAId },
+      data: { storeConfirmedAt: new Date(Date.now() - 3 * HOUR_MS) },
+    });
+    expect((await sellerA.get('/store-cart/customer/addresses').expect(409)).body).toMatchObject({
+      code: 'customer_not_confirmed',
+    });
   });
 
   it('refuses the store-order endpoints without the orders.store permission', async () => {

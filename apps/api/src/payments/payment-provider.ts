@@ -11,7 +11,8 @@ export interface OrderSummary {
   /**
    * Relative storefront path the provider returns the customer to after paying: the confirmation page
    * `/order/{number}?t={token}` for a website order, `/pay/done` (no personal data) for a store order paid on the shared
-   * tablet (Phase 6, spec §4.7). Every adapter must honour it.
+   * tablet (Phase 6, spec §4.7). Every adapter must honour it. It is site-relative (starts with `/`): a real adapter
+   * must prefix `SITE_URL` to build the absolute return URL its provider needs.
    */
   returnPath: string;
 }

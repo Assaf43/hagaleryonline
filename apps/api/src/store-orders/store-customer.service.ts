@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { CHECKOUT_LIMITS, type StoreCodeChannel, type StoreCustomerLookup } from '@hg/models';
+import { CHECKOUT_LIMITS, type CustomerAddressView, type StoreCodeChannel, type StoreCustomerLookup } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import { CartError } from '../cart/cart.service.js';
 import {
@@ -10,13 +10,16 @@ import {
   phoneTaken,
   tooManyRequests,
 } from '../customers/account-errors.js';
+import { listAddresses } from '../customers/address-view.js';
 import { normalizeEmail, normalizePhone } from '../customers/contact-normalize.js';
 import { OtpService } from '../customers/otp.service.js';
 import { CustomerOrigin, Prisma, type Customer } from '../generated/prisma/client.js';
 import { maskEmail } from '../notifications/masking.js';
+import { customerNotConfirmed } from '../orders/order-errors.js';
 import { THROTTLE_RETRY_AFTER_SECONDS, WriteThrottle } from '../orders/write-throttle.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StoreCartService } from './store-cart.service.js';
+import { isConfirmationLive } from './store-confirmation.js';
 
 export const STORE_CUSTOMER_CONFIRMED = 'store.customer_confirmed';
 export const STORE_CUSTOMER_CREATED = 'customer.created_in_store';
@@ -213,6 +216,22 @@ export class StoreCustomerService {
       );
       return cart.id;
     });
+  }
+
+  /**
+   * The saved addresses of the customer confirmed on the seller's open cart (the delivery step's prefill), default
+   * first; 409 `customer_not_confirmed` when there is no open cart or no live confirmation.
+   */
+  async addresses(sellerId: number): Promise<CustomerAddressView[]> {
+    const open = await this.storeCarts.open(sellerId);
+    const cart =
+      open &&
+      (await this.prisma.cart.findUnique({
+        where: { id: open.id },
+        select: { storeCustomerId: true, storeConfirmedAt: true, updatedAt: true },
+      }));
+    if (!cart?.storeCustomerId || !isConfirmationLive(cart)) throw customerNotConfirmed();
+    return listAddresses(this.prisma, cart.storeCustomerId);
   }
 
   // ---------- Helpers ----------

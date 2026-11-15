@@ -14,7 +14,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { MAX_COUPON_CODE_LENGTH, type CartView, type StoreCartView, type StoreCustomerLookup } from '@hg/models';
+import {
+  MAX_COUPON_CODE_LENGTH,
+  type CartView,
+  type CustomerAddressView,
+  type ShippingQuote,
+  type StoreCartView,
+  type StoreCustomerLookup,
+} from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import type { RequestMeta } from '../auth/auth.service.js';
 import {
@@ -29,6 +36,8 @@ import { CartError, CartService, type CartResult } from '../cart/cart.service.js
 import { badField } from '../customers/account-errors.js';
 import { normalizePhone } from '../customers/contact-normalize.js';
 import { AccountErrorFilter } from '../customers/customer-auth.controller.js';
+import { parseQuoteRequest, quoteItems } from '../shipping/shipping.controller.js';
+import { ShippingService } from '../shipping/shipping.service.js';
 import { StoreCartService } from './store-cart.service.js';
 import { parseStoreCodeInput, parseStoreVerifyInput, StoreCustomerService } from './store-customer.service.js';
 
@@ -69,6 +78,7 @@ export class StoreCartController {
     private readonly storeCarts: StoreCartService,
     private readonly storeCustomers: StoreCustomerService,
     private readonly audit: AuditService,
+    private readonly shipping: ShippingService,
   ) {}
 
   /** The open cart; 204 when there is none. */
@@ -141,6 +151,28 @@ export class StoreCartController {
   @HttpCode(HttpStatus.OK)
   async removeCoupon(@Admin() admin: AdminContext): Promise<StoreCartView> {
     return this.change(admin, (owner) => this.carts.removeCoupon(owner));
+  }
+
+  /**
+   * Both shipping methods for the open cart's lines and the address (spec §4.1 step 3): the storefront quote's body
+   * and answer, on the same code path. No open cart, or no lines → 409 `empty_cart`.
+   */
+  @Header('Cache-Control', 'no-store')
+  @Post('shipping-quote')
+  @HttpCode(HttpStatus.OK)
+  async quote(@Body() body: unknown, @Admin() admin: AdminContext): Promise<ShippingQuote> {
+    const request = parseQuoteRequest(body);
+    const cart = await this.storeCarts.open(admin.user.id);
+    // No open cart has no lines: the storefront's empty-cart answer.
+    const items = cart ? await this.carts.shippableItems(this.storeCarts.ownerOf(admin.user.id, cart.id)) : [];
+    return quoteItems(this.shipping, items, request);
+  }
+
+  /** The confirmed customer's saved addresses, default first; 409 `customer_not_confirmed` without a live one. */
+  @Header('Cache-Control', 'no-store')
+  @Get('customer/addresses')
+  addresses(@Admin() admin: AdminContext): Promise<CustomerAddressView[]> {
+    return this.storeCustomers.addresses(admin.user.id);
   }
 
   /** Whether the phone has an account (opens the seller's cart when there is none). */

@@ -25,7 +25,7 @@ import { effectiveStatus, OrdersService, STATUS_VIEW } from '../orders/orders.se
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StoreCartService } from './store-cart.service.js';
-import { STORE_CONFIRMATION_TTL_MS } from './store-confirmation.js';
+import { isConfirmationLive } from './store-confirmation.js';
 import { StoreService } from './store.service.js';
 
 /** The seller's store-order request, validated: the checkout's fields without the contact (it is the account's). */
@@ -54,10 +54,6 @@ const LISTED = (now: Date): Prisma.OrderWhereInput => ({
 });
 const listed = (o: { status: OrderStatus; reservedUntil: Date }, now: Date) =>
   (o.status === OrderStatus.PENDING_PAYMENT || o.status === OrderStatus.PAYMENT_FAILED) && o.reservedUntil > now;
-
-/** A confirmation is live for two hours (spec §4.2, `lapseStoreConfirmation`). */
-const confirmedNow = (at: Date | null, now = new Date()) =>
-  at !== null && at.getTime() >= now.getTime() - STORE_CONFIRMATION_TTL_MS;
 
 const sameAddress = (a: CheckoutAddress, b: CheckoutAddress) =>
   a.localityId === b.localityId &&
@@ -108,10 +104,10 @@ export class StoreOrdersService {
     }
     const cart = await this.prisma.cart.findUniqueOrThrow({
       where: { id: open.id },
-      select: { createdAt: true, storeConfirmedAt: true, storeCustomer: true },
+      select: { createdAt: true, updatedAt: true, storeConfirmedAt: true, storeCustomer: true },
     });
     const customer = cart.storeCustomer;
-    if (!customer || !confirmedNow(cart.storeConfirmedAt)) throw customerNotConfirmed();
+    if (!customer || !isConfirmationLive(cart)) throw customerNotConfirmed();
     if (!customer.email) throw customerEmailRequired();
     const contact = { fullName: customer.fullName, phone: customer.phone, email: customer.email };
     // A quick account opened in this sale gives its marketing consent here (source `store`); an existing account's
@@ -136,6 +132,7 @@ export class StoreOrdersService {
               sellerId: true,
               storeCustomerId: true,
               storeConfirmedAt: true,
+              updatedAt: true,
               orders: { select: { number: true, status: true, reservedUntil: true }, orderBy: { number: 'desc' } },
             },
           });
@@ -145,8 +142,7 @@ export class StoreOrdersService {
           if (live) throw orderPending(live.number);
           // One order per sale: a cart whose order was paid, cancelled or expired is no longer the open one.
           if (now.orders.length > 0) throw emptyCart();
-          if (now.storeCustomerId !== customer.id || !confirmedNow(now.storeConfirmedAt, at))
-            throw customerNotConfirmed();
+          if (now.storeCustomerId !== customer.id || !isConfirmationLive(now, at)) throw customerNotConfirmed();
           const still = await tx.customer.findUnique({ where: { id: customer.id }, select: { email: true } });
           if (!still?.email) throw customerEmailRequired();
         },
