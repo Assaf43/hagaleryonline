@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CustomerMe, OtpChannel } from '@hg/models';
 import { MarketingConsentSource, Prisma, type Customer } from '../generated/prisma/client.js';
+import { AuditService } from '../audit/audit.service.js';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from '../auth/passwords.js';
 import { CartService } from '../cart/cart.service.js';
 import { maskEmail } from '../notifications/masking.js';
@@ -62,7 +63,7 @@ export function toMe(c: Customer): CustomerMe {
     id: c.id,
     fullName: c.fullName,
     phone: c.phone,
-    email: c.email ?? '',
+    email: c.email,
     phoneVerified: c.phoneVerifiedAt !== null,
     emailVerified: c.emailVerifiedAt !== null,
     hasPassword: c.passwordHash !== null,
@@ -71,9 +72,16 @@ export function toMe(c: Customer): CustomerMe {
   };
 }
 
+/** The audit action when a verified website sign-up takes an e-mail held unverified by another account (decision 85). */
+export const EMAIL_RELEASED_ACTION = 'customer.email_released';
+
 /**
- * Customer sign-up and sign-in (spec §6.1, decision 80, NFR-12). Customers are not admins: nothing here goes to the
- * audit log; security events (delays) are logged without codes, tokens or passwords.
+ * Customer sign-up and sign-in (spec §6.1, decision 80, NFR-12). Customers are not admins: the only audit entry is the
+ * system's release of an unverified e-mail; security events (delays) are logged without codes, tokens or passwords.
+ *
+ * An unverified e-mail (a store quick account, decision 85) is no key to the account: every sign-in path finds an
+ * account by e-mail only through `findByVerifiedEmail`, so such an address answers exactly as an unknown one (same
+ * status, body and work). Only the phone signs that account in.
  */
 @Injectable()
 export class CustomerAuthService {
@@ -85,6 +93,7 @@ export class CustomerAuthService {
     private readonly sessions: CustomerSessionService,
     private readonly otp: OtpService,
     private readonly cart: CartService,
+    private readonly audit: AuditService,
   ) {}
 
   // ---------- Codes ----------
@@ -95,7 +104,8 @@ export class CustomerAuthService {
   }
 
   /**
-   * Checks a code. Purpose `sign_in`: signs in the account of that phone or e-mail (and marks it verified). Otherwise
+   * Checks a code. Purpose `sign_in`: signs in the account of that phone or verified e-mail (an unverified e-mail is
+   * treated as unknown, decision 85; the phone is marked verified). Otherwise
    * (no account, or purpose `sign_up`) answers a sign-up ticket for the verified contact; with `signUpToken` the
    * earlier ticket is extended, so one ticket can cover both the phone and the e-mail (decision 80).
    */
@@ -112,9 +122,10 @@ export class CustomerAuthService {
     const row = await this.otp.check(target, purpose, code);
     if (!row) throw invalidCode();
     if (purpose === 'sign_in') {
-      const customer = await this.prisma.customer.findUnique({
-        where: channel === 'email' ? { email: target } : { phone: target },
-      });
+      const customer =
+        channel === 'email'
+          ? await this.findByVerifiedEmail(target)
+          : await this.prisma.customer.findUnique({ where: { phone: target } });
       if (customer) return this.signedIn(await this.markVerified(customer, channel), client);
     }
     const part = await this.otp.issueSignUpTicket(row.id);
@@ -152,14 +163,17 @@ export class CustomerAuthService {
 
   // ---------- Password sign-in ----------
 
-  /** One 401 for an unknown e-mail, an account without a password and a wrong password, with the same argon2 cost. */
+  /**
+   * One 401 for an unknown or unverified e-mail, an account without a password and a wrong password, with the same
+   * argon2 cost.
+   */
   async signIn(email: string | null, password: string, client: ClientInfo): Promise<SignedIn> {
     if (!email) {
       await verifyAgainstDummy(password);
       throw invalidCredentials();
     }
     this.assertNotDelayed(email);
-    const customer = await this.prisma.customer.findUnique({ where: { email } });
+    const customer = await this.findByVerifiedEmail(email);
     const ok = customer?.passwordHash
       ? await verifyPassword(customer.passwordHash, password)
       : await verifyAgainstDummy(password);
@@ -199,7 +213,11 @@ export class CustomerAuthService {
     return toMe(updated);
   }
 
-  /** A code to the new phone or e-mail; nothing changes until it is entered. */
+  /**
+   * A code to the new phone or e-mail; nothing changes until it is entered. The account's own current e-mail is
+   * accepted too (only another account makes a value taken): that is how a quick account verifies its e-mail later,
+   * and an account without one adds it through the same pair (decision 85).
+   */
   async requestContactChange(customer: Customer, kind: 'phone' | 'email', value: string, ip?: string): Promise<void> {
     this.otp.checkIp(ip);
     const other = await this.prisma.customer.findFirst({
@@ -213,7 +231,7 @@ export class CustomerAuthService {
     });
   }
 
-  /** Saves the new phone or e-mail as verified and signs out every other session. */
+  /** Saves the new (or the own unverified) phone or e-mail as verified and signs out every other session. */
   async confirmContactChange(
     { customer, session }: ResolvedCustomer,
     kind: 'phone' | 'email',
@@ -238,22 +256,22 @@ export class CustomerAuthService {
   // ---------- Forgotten password ----------
 
   /**
-   * The same work whether or not an account has the e-mail (IP count, target limit, a stored code); the e-mail is sent
-   * only to an account, in the background, so neither the answer nor its time tells them apart.
+   * The same work whether or not an account has the e-mail verified (IP count, target limit, a stored code); the
+   * e-mail is sent only to such an account, in the background, so neither the answer nor its time tells them apart.
    */
   async requestPasswordReset(email: string, ip?: string): Promise<void> {
-    const customer = await this.prisma.customer.findUnique({ where: { email }, select: { id: true } });
+    const customer = await this.findByVerifiedEmail(email);
     await this.otp.request(email, 'email', 'reset_password', ip, { deliver: customer !== null, background: true });
   }
 
-  /** Sets the new password, marks the e-mail verified, signs out every session and signs this browser in. */
+  /** Sets the new password (verified e-mails only), signs out every session and signs this browser in. */
   async resetPassword(email: string, code: string, next: string, client: ClientInfo): Promise<SignedIn> {
     if (!(await this.otp.check(email, 'reset_password', code))) throw invalidCode();
-    const customer = await this.prisma.customer.findUnique({ where: { email } });
+    const customer = await this.findByVerifiedEmail(email);
     if (!customer) throw invalidCode();
     const updated = await this.prisma.customer.update({
       where: { id: customer.id },
-      data: { passwordHash: await hashPassword(next), emailVerifiedAt: customer.emailVerifiedAt ?? new Date() },
+      data: { passwordHash: await hashPassword(next) },
     });
     await this.sessions.endAll(customer.id);
     this.failures.reset(email);
@@ -262,22 +280,51 @@ export class CustomerAuthService {
 
   // ---------- Helpers ----------
 
-  /** Both contacts were verified by the ticket (decision 80). */
+  /**
+   * Both contacts were verified by the ticket (decision 80). An account that holds the e-mail unverified (a store quick
+   * account) loses it in the same transaction, audited (decision 85); it still signs in by its phone. The release
+   * matches only a still-unverified holder, so one verified meanwhile makes the create fail on the unique e-mail
+   * (then `assertFree` answers `email_taken`).
+   */
   private async create(details: NewCustomer, client: ClientInfo): Promise<SignedIn> {
     const now = new Date();
+    const passwordHash = details.password ? await hashPassword(details.password) : null;
     try {
-      const customer = await this.prisma.customer.create({
-        data: {
-          fullName: details.fullName,
-          phone: details.phone,
-          email: details.email,
-          passwordHash: details.password ? await hashPassword(details.password) : null,
-          phoneVerifiedAt: now,
-          emailVerifiedAt: now,
-          marketingConsent: details.marketingConsent,
-          marketingConsentAt: details.marketingConsent ? now : null,
-          marketingConsentSource: details.marketingConsent ? MarketingConsentSource.SIGNUP : null,
-        },
+      const customer = await this.prisma.$transaction(async (tx) => {
+        const holder = await tx.customer.findFirst({
+          where: { email: details.email, emailVerifiedAt: null },
+          select: { id: true },
+        });
+        if (holder) {
+          const released = await tx.customer.updateMany({
+            where: { id: holder.id, email: details.email, emailVerifiedAt: null },
+            data: { email: null },
+          });
+          if (released.count === 1)
+            await this.audit.record(
+              {
+                actorId: null,
+                action: EMAIL_RELEASED_ACTION,
+                entityType: 'customer',
+                entityId: holder.id,
+                after: { customerId: holder.id },
+              },
+              tx,
+            );
+        }
+        return tx.customer.create({
+          data: {
+            fullName: details.fullName,
+            phone: details.phone,
+            email: details.email,
+            passwordHash,
+            phoneVerifiedAt: now,
+            emailVerifiedAt: now,
+            marketingConsent: details.marketingConsent,
+            marketingConsentAt: details.marketingConsent ? now : null,
+            marketingConsentSource: details.marketingConsent ? MarketingConsentSource.SIGNUP : null,
+          },
+        });
       });
       return await this.signedIn(customer, client);
     } catch (error) {
@@ -286,14 +333,25 @@ export class CustomerAuthService {
     }
   }
 
-  /** 409 `phone_taken` / `email_taken` (sign-up only: accepted by the plan). */
+  /**
+   * 409 `phone_taken` / `email_taken` (sign-up only: accepted by the plan). A phone held by any account is taken; an
+   * e-mail only when its holder verified it — an unverified holder gives it up in `create` (decision 85).
+   */
   private async assertFree(phone: string, email: string): Promise<void> {
     const taken = await this.prisma.customer.findMany({
-      where: { OR: [{ phone }, { email }] },
+      where: { OR: [{ phone }, { email, emailVerifiedAt: { not: null } }] },
       select: { phone: true, email: true },
     });
     if (taken.some((c) => c.phone === phone)) throw phoneTaken();
     if (taken.some((c) => c.email === email)) throw emailTaken();
+  }
+
+  /**
+   * The account of a verified e-mail, or null — for an unknown and an unverified e-mail alike, by the same single
+   * query, so both take the same path and time in every caller (decision 85).
+   */
+  private findByVerifiedEmail(email: string): Promise<Customer | null> {
+    return this.prisma.customer.findUnique({ where: { email, emailVerifiedAt: { not: null } } });
   }
 
   private async markVerified(customer: Customer, channel: OtpChannel): Promise<Customer> {
