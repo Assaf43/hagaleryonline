@@ -17,6 +17,7 @@ import {
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { CustomerCleanupService } from './../src/customers/customer-cleanup.service.js';
+import { uniqueIds } from './unique-ids.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc.e2e.test';
@@ -31,9 +32,8 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
   let throttle: WriteThrottle;
   let smsSpy: MockInstance<SmsProvider['sendSms']>;
   let emailSpy: MockInstance<EmailProvider['sendEmail']>;
-  let seq = 0;
 
-  const unique = () => String(++seq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+  const unique = uniqueIds(2);
   const newPhone = () => `05${unique()}`;
   const newEmail = () => `user${unique()}${DOMAIN}`;
 

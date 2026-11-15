@@ -16,6 +16,7 @@ import {
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { uniqueIds } from './unique-ids.js';
 
 const DOMAIN = '@store-customer.e2e.test';
 const STOREFRONT = 'http://localhost:4200';
@@ -33,11 +34,10 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
   let owner: AdminBrowser;
   let seller: AdminBrowser;
   let sellerId: number;
-  let seq = 0;
   const phones: string[] = [];
   const sentCodes: string[] = [];
 
-  const unique = () => String(++seq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+  const unique = uniqueIds(5);
   const newPhone = () => {
     const phone = `05${unique()}`;
     phones.push(phone);

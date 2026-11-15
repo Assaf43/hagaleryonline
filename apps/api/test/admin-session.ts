@@ -14,6 +14,10 @@ export const ORIGIN = 'http://localhost:4300';
  */
 export async function resetAdminData(prisma: PrismaService) {
   await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZ' } } });
+  // CASCADE follows every foreign key to admin_users: since Phase 6 that also wipes ALL orders, carts and customers
+  // (store orders and carts reference their seller, quick accounts their creating seller, and each of those cascades
+  // further — order items, payments, refunds, invoices, outbox jobs, addresses, sessions…), not only admin rows. Call
+  // it before creating a file's fixtures, never in the middle of a test that needs them.
   await prisma.$executeRaw`TRUNCATE admin_users, audit_log RESTART IDENTITY CASCADE`;
 }
 

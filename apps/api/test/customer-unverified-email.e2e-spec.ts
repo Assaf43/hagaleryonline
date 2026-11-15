@@ -13,6 +13,7 @@ import {
   type SmsProvider,
 } from './../src/notifications/notification-provider.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { uniqueIds } from './unique-ids.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@unverified.e2e.test';
@@ -26,10 +27,9 @@ describe('Unverified e-mail (e2e, decision 85)', () => {
   let prisma: PrismaService;
   let smsSpy: MockInstance<SmsProvider['sendSms']>;
   let emailSpy: MockInstance<EmailProvider['sendEmail']>;
-  let seq = 0;
   const phones: string[] = [];
 
-  const unique = () => String(++seq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+  const unique = uniqueIds(3);
   const newPhone = () => {
     const phone = `05${unique()}`;
     phones.push(phone);

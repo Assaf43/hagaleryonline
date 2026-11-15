@@ -17,7 +17,9 @@ import { Prisma } from '../generated/prisma/client.js';
  *    store customer confirmation), so a seller never ends up with two open carts, by the store checkout
  *    (CheckoutService.placeOrder with `channel: 'store'`: then the welcome lock and the cart row, so it never waits
  *    for a row a customer endpoint holds while that endpoint waits for this lock, and a new sale cannot delete the
- *    cart mid-checkout) and by the retry of a store order. A waiter holds no row lock yet;
+ *    cart mid-checkout), by the retry of a store order, and by the seller's line and coupon changes
+ *    (StoreCartService.changeOpen: held while the website cart code changes the cart on other connections — that code
+ *    takes no store-cart lock). A waiter holds no row lock yet;
  *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
  *    limited promotions it may use and, signed in, the active welcome promotion (PromotionsService.lockLimited), so
  *    their usage counts hold until commit and the account's paid orders are read only after it. A store checkout

@@ -30,6 +30,7 @@ import { SMS_PROVIDER, type SmsProvider } from './../src/notifications/notificat
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { deleteOrders } from './test-orders.js';
+import { uniqueIds } from './unique-ids.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc12.e2e.test';
@@ -52,9 +53,8 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
   let sofa: number;
   /** 50,000 a unit, 100 in stock. */
   let lamp: number;
-  let seq = 0;
 
-  const unique = () => String(++seq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+  const unique = uniqueIds(1);
 
   /** A customer with a password (created directly; sign-in goes through the API). */
   const newCustomer = async () => {

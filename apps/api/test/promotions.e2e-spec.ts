@@ -19,6 +19,7 @@ import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { deleteOrders } from './test-orders.js';
+import { uniqueIds } from './unique-ids.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -43,7 +44,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
   let lamp: number;
   let parentCategoryId: number;
   let savedSettings: { additionalItemPercent: number; floorSurcharge: number; floorSurchargeFrom: number } | null;
-  let customerSeq = 0;
+  const uniqueCustomerId = uniqueIds(4);
 
   const browser = () => {
     const agent = request.agent(app.getHttpServer() as App);
@@ -148,7 +149,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
 
   /** A signed-in browser of a new account (created directly; the sign-in goes through the API). */
   const customerBrowser = async () => {
-    const id = String(++customerSeq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+    const id = uniqueCustomerId();
     const email = `user${id}${CUSTOMER_DOMAIN}`;
     const customer = await prisma.customer.create({
       data: {

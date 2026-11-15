@@ -39,6 +39,7 @@ import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteOrders } from './test-orders.js';
+import { uniqueIds } from './unique-ids.js';
 
 const STOREFRONT = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -65,9 +66,8 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
   let last: number;
   /** Plenty in stock. */
   let plenty: number;
-  let seq = 0;
 
-  const unique = () => String(++seq).padStart(4, '0') + String(Date.now() % 10_000).padStart(4, '0');
+  const unique = uniqueIds(6);
   const newPhone = () => `05${unique()}`;
   const newEmail = () => `user${unique()}${DOMAIN}`;
   const http = () => request(app.getHttpServer() as App);
