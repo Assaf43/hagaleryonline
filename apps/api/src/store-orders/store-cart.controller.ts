@@ -221,14 +221,21 @@ export class StoreCartController {
     return this.respond(cartId, await this.carts.read(this.storeCarts.ownerOf(admin.user.id, cartId)));
   }
 
-  /** Runs a cart change on the seller's open cart; 404 when there is none. */
+  /**
+   * Runs a line or coupon change on the seller's open cart, under the seller's store-cart lock (`changeOpen`); 404
+   * when there is none, or when it got its order or was replaced by a new sale meanwhile.
+   */
   private async change(
     admin: AdminContext,
     run: (owner: ReturnType<StoreCartService['ownerOf']>) => Promise<CartResult>,
   ): Promise<StoreCartView> {
-    const cart = await this.storeCarts.open(admin.user.id);
-    if (!cart) throw notFound();
-    return this.respond(cart.id, await run(this.storeCarts.ownerOf(admin.user.id, cart.id)));
+    const sellerId = admin.user.id;
+    const done = await this.storeCarts.changeOpen(sellerId, async (cartId) => ({
+      cartId,
+      result: await run(this.storeCarts.ownerOf(sellerId, cartId)),
+    }));
+    if (!done) throw notFound();
+    return this.respond(done.cartId, done.result);
   }
 
   private respond(cartId: string, result: CartResult): Promise<StoreCartView> {

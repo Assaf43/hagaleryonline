@@ -14,6 +14,7 @@ import {
   PromotionKind,
   PromotionTarget,
 } from './../src/generated/prisma/client.js';
+import { lockStoreCart } from './../src/orders/locks.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteOrders } from './test-orders.js';
@@ -305,6 +306,65 @@ describe('Store cart (e2e, ADM-18)', () => {
     const row = await prisma.cart.findFirstOrThrow({ where: { sellerId: sellerAId } });
     expect(row.storeCustomerId).toBeNull();
     expect(row.storeConfirmedAt).toBeNull();
+  });
+
+  it('a line or coupon change waits for a store checkout in progress, then refuses the cart that got its order', async () => {
+    await sellerA.post('/store-cart').expect(201);
+    const cart = await prisma.cart.findFirstOrThrow({ where: { sellerId: sellerAId } });
+    // A store checkout holding the seller's store-cart lock while it creates the cart's order.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let holding!: () => void;
+    const held = new Promise<void>((resolve) => (holding = resolve));
+    const checkout = prisma.$transaction(
+      async (tx) => {
+        await lockStoreCart(tx, sellerAId);
+        holding();
+        await gate;
+        await tx.order.create({
+          data: {
+            publicToken: 'zz-store-cart-lock',
+            contact: { fullName: 'ZZ הזמנה', phone: '0501112233', email: null },
+            address: {},
+            method: OrderShippingMethod.CURBSIDE,
+            shippingTotal: 0,
+            shippingLines: [],
+            subtotal: 0,
+            total: 0,
+            deliveryEstimate: {},
+            paymentProvider: 'sandbox',
+            shippingProvider: 'manual',
+            reservedUntil: new Date(Date.now() + 20 * 60_000),
+            cartId: cart.id,
+          },
+        });
+      },
+      { timeout: 15_000 },
+    );
+    await held;
+    const add = sellerA.post('/store-cart/items', { variantId: variantA, quantity: 1 }).then((r) => r);
+    const removeCoupon = sellerA.delete('/store-cart/coupon').then((r) => r);
+    // Long enough for both requests to reach the lock (without it they would finish on the cart meanwhile).
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    release();
+    await checkout;
+    expect((await add).status).toBe(404);
+    expect((await removeCoupon).status).toBe(404);
+    expect(await prisma.cartItem.count({ where: { cartId: cart.id } })).toBe(0);
+  });
+
+  it('a new sale racing line changes never fails with a server error', async () => {
+    await sellerA.post('/store-cart').expect(201);
+    for (let round = 0; round < 5; round++) {
+      const answers = await Promise.all([
+        sellerA.post('/store-cart/items', { variantId: variantA, quantity: 1 }),
+        sellerA.post('/store-cart'),
+        sellerA.post('/store-cart/items', { variantId: variantB, quantity: 1 }),
+        sellerA.patch(`/store-cart/items/${variantA}`, { quantity: 2 }),
+      ]);
+      for (const res of answers) expect([200, 201, 404], JSON.stringify(res.body)).toContain(res.status);
+    }
+    expect(await prisma.cart.count({ where: { sellerId: sellerAId, orders: { none: {} } } })).toBe(1);
   });
 
   it('concurrent new sales leave the seller exactly one open cart', async () => {

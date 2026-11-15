@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { CartView, StoreCartView, StoreCustomer } from '@hg/models';
 import { CART_TTL_MS, hashToken } from '../cart/cart-token.js';
 import type { CartOwner } from '../cart/cart.service.js';
-import { CustomerOrigin, type Prisma } from '../generated/prisma/client.js';
+import { CustomerOrigin, Prisma } from '../generated/prisma/client.js';
 import { lockStoreCart } from '../orders/locks.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hasPaidOrder } from '../promotions/promotions.service.js';
@@ -55,6 +55,29 @@ export class StoreCartService {
   async openIfAnyInTx(tx: Prisma.TransactionClient, sellerId: number): Promise<{ id: string } | null> {
     await lockStoreCart(tx, sellerId);
     return findOpen(tx, sellerId);
+  }
+
+  /**
+   * Runs a line or coupon change on the seller's open cart while holding the seller's store-cart lock, re-checking
+   * under it that the cart is still open (no order): a store checkout or a new sale of the same seller waits for the
+   * change, and a change that waited for them finds the cart gone or ordered — null (the caller's 404), never a line
+   * added to a cart that has its order or a foreign-key error on a deleted one. The change itself runs on its own
+   * connections (the website cart code); it takes no store-cart lock, so it cannot wait for this one.
+   */
+  async changeOpen<T>(sellerId: number, run: (cartId: string) => Promise<T>): Promise<T | null> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const open = await this.openIfAnyInTx(tx, sellerId);
+          return open ? run(open.id) : null;
+        },
+        { timeout: 15_000 },
+      );
+    } catch (error) {
+      // The cart was deleted under the change all the same (it is no longer this seller's open cart).
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') return null;
+      throw error;
+    }
   }
 
   /** The attached customer lapses after two hours (see `lapseStoreConfirmation`). */
