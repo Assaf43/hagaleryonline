@@ -14,6 +14,7 @@ import { CART_TTL_MS, hashToken, newToken } from './cart-token.js';
 import type { CatalogSnapshot } from '../catalog/catalog-snapshot.js';
 import { OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { lockAccountCart, lockCart } from '../orders/locks.js';
+import { lapseStoreConfirmation } from '../store-orders/store-confirmation.js';
 
 const CLEANUP_EVERY_MS = 24 * 60 * 60_000;
 
@@ -30,15 +31,20 @@ export interface CartResult {
 export interface CartOwner {
   token: string | undefined;
   customerId: string | null;
+  /**
+   * A seller's store cart (Phase 6, spec §4.2): found by its id and seller, never by cookie or account; `token` and
+   * `customerId` are ignored. It is priced for the customer the seller attached (`storeCustomerId`).
+   */
+  store?: { sellerId: number; cartId: string };
 }
 
-const cookieOf = (owner: CartOwner): string | undefined => (owner.customerId ? undefined : owner.token);
-const noCart = (owner: CartOwner): null | undefined => (owner.customerId ? undefined : null);
+const cookieOf = (owner: CartOwner): string | undefined => (owner.customerId || owner.store ? undefined : owner.token);
+const noCart = (owner: CartOwner): null | undefined => (owner.customerId || owner.store ? undefined : null);
 
 /** The account's live carts, newest first (normally one: sign-in merges them). */
 function liveAccountCarts(db: Prisma.TransactionClient | PrismaService, customerId: string) {
   return db.cart.findMany({
-    where: { customerId, updatedAt: { gte: staleBefore(new Date()) } },
+    where: { customerId, sellerId: null, updatedAt: { gte: staleBefore(new Date()) } },
     orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
     select: { id: true },
   });
@@ -117,7 +123,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   async read(owner: CartOwner): Promise<CartResult> {
     const cart = await this.resolve(owner);
     if (!cart) return { view: emptyView(), token: noCart(owner) };
-    return { view: await this.buildView(cart.id, [], owner.customerId), token: cookieOf(owner) };
+    return { view: await this.buildView(cart.id, [], owner), token: cookieOf(owner) };
   }
 
   /**
@@ -126,6 +132,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
    */
   async add(owner: CartOwner, variantId: number, quantity: number): Promise<CartResult> {
     const existing = await this.resolve(owner);
+    // A store cart is only ever started by its seller (StoreCartService.start), never created by an add.
+    if (owner.store && !existing) throw notFound();
     const orderable = await this.orderable(variantId, existing?.id);
     if (!orderable) throw notFound();
     const { price, limit, fulfillment } = orderable;
@@ -141,7 +149,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
         await lockAccountCart(tx, customerId);
         cartId = (await liveAccountCarts(tx, customerId))[0]?.id;
       }
-      if (!cartId || (!customerId && !liveToken)) {
+      if (!cartId || (!customerId && !liveToken && !owner.store)) {
         // An account cart's token is never handed out: the account's cart is found by the session.
         liveToken = newToken();
         cartId = (await tx.cart.create({ data: { tokenHash: hashToken(liveToken), customerId }, select: { id: true } }))
@@ -161,8 +169,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     });
     const notices = wanted > limit ? [clampedNotice(variantId, fulfillment, limit)] : [];
     return {
-      view: await this.buildView(cartId, notices, customerId),
-      token: customerId ? undefined : (liveToken ?? null),
+      view: await this.buildView(cartId, notices, owner),
+      token: customerId || owner.store ? undefined : (liveToken ?? null),
     };
   }
 
@@ -182,7 +190,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       data: { quantity: next },
     });
     const notices = next < quantity ? [clampedNotice(variantId, fulfillment, limit)] : [];
-    return { view: await this.buildView(cart.id, notices, owner.customerId), token: cookieOf(owner) };
+    return { view: await this.buildView(cart.id, notices, owner), token: cookieOf(owner) };
   }
 
   /** Removes a line; removing a line that is not there is not an error. */
@@ -190,7 +198,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     const cart = await this.resolve(owner);
     if (!cart) return { view: emptyView(), token: noCart(owner) };
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id, variantId } });
-    return { view: await this.buildView(cart.id, [], owner.customerId), token: cookieOf(owner) };
+    return { view: await this.buildView(cart.id, [], owner), token: cookieOf(owner) };
   }
 
   /**
@@ -210,7 +218,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     if (message) throw new CouponRefused(message);
     // A valid coupon has eligible lines, so there is a cart.
     await this.prisma.cart.update({ where: { id: cart!.id }, data: { couponCode: code } });
-    return { view: await this.buildView(cart!.id, [], owner.customerId), token: cookieOf(owner) };
+    return { view: await this.buildView(cart!.id, [], owner), token: cookieOf(owner) };
   }
 
   /** Removes the cart's coupon; without a cart, the empty view. */
@@ -218,7 +226,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     const cart = await this.resolve(owner);
     if (!cart) return { view: emptyView(), token: noCart(owner) };
     await this.prisma.cart.update({ where: { id: cart.id }, data: { couponCode: null } });
-    return { view: await this.buildView(cart.id, [], owner.customerId), token: cookieOf(owner) };
+    return { view: await this.buildView(cart.id, [], owner), token: cookieOf(owner) };
   }
 
   /**
@@ -317,6 +325,17 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
    */
   async resolve(owner: CartOwner): Promise<{ id: string } | null> {
     const now = new Date();
+    if (owner.store) {
+      const { sellerId, cartId } = owner.store;
+      await lapseStoreConfirmation(this.prisma, cartId, now);
+      const cart = await this.prisma.cart.findFirst({
+        where: { id: cartId, sellerId, updatedAt: { gte: staleBefore(now) } },
+        select: { id: true },
+      });
+      if (!cart) return null;
+      await this.prisma.cart.update({ where: { id: cart.id }, data: { updatedAt: now } });
+      return cart;
+    }
     if (owner.customerId) {
       const cart = (await liveAccountCarts(this.prisma, owner.customerId))[0];
       if (!cart) return null;
@@ -326,9 +345,9 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     if (!owner.token) return null;
     const cart = await this.prisma.cart.findUnique({
       where: { tokenHash: hashToken(owner.token) },
-      select: { id: true, updatedAt: true, customerId: true },
+      select: { id: true, updatedAt: true, customerId: true, sellerId: true },
     });
-    if (!cart || cart.customerId !== null) return null;
+    if (!cart || cart.customerId !== null || cart.sellerId !== null) return null;
     if (cart.updatedAt < staleBefore(now)) {
       await this.prisma.cart.deleteMany({ where: { id: cart.id } });
       return null;
@@ -356,7 +375,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Recomputes every line (spec §3.1): price changes, limits (clamped and saved) and visibility. */
-  private async buildView(cartId: string, requestNotices: CartNotice[], customerId: string | null): Promise<CartView> {
+  private async buildView(cartId: string, requestNotices: CartNotice[], owner: CartOwner): Promise<CartView> {
     const computed = await computeCartLines(this.prisma, cartId, await this.catalog.snapshot());
 
     const lines: CartLine[] = [];
@@ -410,10 +429,12 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
 
     // The one discount (spec §6), on the available lines at the quantities shown. A coupon that does not apply now
     // gets a notice; one that never will again (unknown, expired, used up) is also removed, so its notice shows once.
-    const { couponCode } = await this.prisma.cart.findUniqueOrThrow({
+    const { couponCode, storeCustomerId } = await this.prisma.cart.findUniqueOrThrow({
       where: { id: cartId },
-      select: { couponCode: true },
+      select: { couponCode: true, storeCustomerId: true },
     });
+    // A store cart is priced for the customer the seller attached; otherwise the signed-in account.
+    const customerId = owner.store ? storeCustomerId : owner.customerId;
     const discount = await this.promotions.evaluate(
       this.prisma,
       discountLines(computed, (l) => l.quantity),
