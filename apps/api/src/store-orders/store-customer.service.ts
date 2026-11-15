@@ -22,6 +22,11 @@ export const STORE_CUSTOMER_CONFIRMED = 'store.customer_confirmed';
 export const STORE_CUSTOMER_CREATED = 'customer.created_in_store';
 export const STORE_CUSTOMER_EMAIL_ADDED = 'store.customer_email_added';
 export const STORE_CUSTOMER_CLEARED = 'store.customer_cleared';
+/**
+ * Every store-tablet code, for an existing account or a new phone: a purpose no website endpoint accepts, so a code
+ * heard at the store never signs in or starts a sign-up on the website, and a website code never confirms here.
+ */
+const STORE_OTP_PURPOSE = 'store_confirm';
 
 /** A code request or check from the seller screen, validated and normalized. */
 export interface StoreCodeInput {
@@ -86,11 +91,11 @@ type Plan =
 
 /**
  * The customer at the store tablet proves who they are with a one-time code (spec §4.1 step 2, §4.3, decision 85).
- * An existing account: a `sign_in` code to its phone or its verified e-mail. A new phone: one `sign_up` SMS code, then
- * a quick account (phone verified, e-mail not). A confirmed customer is held on the seller's open cart
+ * An existing account: a code to its phone or its verified e-mail. A new phone: one SMS code, then a quick account
+ * (phone verified, e-mail not). Every code has the purpose `store_confirm`. A confirmed customer is held on the seller's open cart
  * (`storeCustomerId`); no customer session is created and no cookie is set.
  *
- * Code requests count per seller (`store_otp`, `seller:<id>`), never per IP: the store has one public IP. The
+ * Code requests and lookups count per seller (`store_otp` / `store_lookup`, `seller:<id>`), never per IP: the store has one public IP. The
  * per-target limit of `OtpService` (3 codes / 10 minutes) and its 5 attempts per code stay. Audit entries carry ids
  * and the channel only, never a code or a hash.
  */
@@ -104,8 +109,10 @@ export class StoreCustomerService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Whether the phone has an account, and the masked e-mail the seller may offer as a channel. */
+  /** Whether the phone has an account, and the masked e-mail the seller may offer (per-seller limit `store_lookup`). */
   async lookup(actor: SellerActor, phone: string): Promise<StoreCustomerLookup> {
+    if (!this.throttle.allow('store_lookup', `seller:${actor.sellerId}`))
+      throw tooManyRequests(THROTTLE_RETRY_AFTER_SECONDS);
     await this.ensureCart(actor);
     const customer = await this.prisma.customer.findUnique({ where: { phone } });
     if (!customer) return { exists: false };
@@ -127,9 +134,8 @@ export class StoreCustomerService {
     await this.ensureCart(actor);
     const plan = await this.plan(input, false);
     // No IP: the store's one address must not count against the website's per-IP code limit.
-    if (plan.kind === 'existing')
-      await this.otp.request(plan.target, input.channel, 'sign_in', undefined, { ipChecked: true });
-    else await this.otp.request(input.phone, 'sms', 'sign_up', undefined, { ipChecked: true });
+    const target = plan.kind === 'existing' ? plan.target : input.phone;
+    await this.otp.request(target, input.channel, STORE_OTP_PURPOSE, undefined, { ipChecked: true });
   }
 
   /**
@@ -140,7 +146,7 @@ export class StoreCustomerService {
   async verify(actor: SellerActor, input: StoreVerifyInput): Promise<string> {
     const plan = await this.plan(input, true);
     const target = plan.kind === 'existing' ? plan.target : input.phone;
-    const row = await this.otp.check(target, plan.kind === 'existing' ? 'sign_in' : 'sign_up', input.code);
+    const row = await this.otp.check(target, STORE_OTP_PURPOSE, input.code);
     if (!row) throw invalidCode();
     try {
       return await this.prisma.$transaction(async (tx) => {

@@ -8,6 +8,7 @@ const PURPOSES: Record<OtpPurposeCode, OtpPurpose> = {
   sign_up: OtpPurpose.SIGN_UP,
   verify_contact: OtpPurpose.VERIFY_CONTACT,
   reset_password: OtpPurpose.RESET_PASSWORD,
+  store_confirm: OtpPurpose.STORE_CONFIRM,
 };
 const PURPOSE_CODES = Object.fromEntries(Object.entries(PURPOSES).map(([k, v]) => [v, k])) as Record<
   OtpPurpose,

@@ -1,7 +1,8 @@
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import type request from 'supertest';
+import request from 'supertest';
+import { App } from 'supertest/types.js';
 import type { StoreCartView, StoreCustomerLookup } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
@@ -17,6 +18,7 @@ import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
 const DOMAIN = '@store-customer.e2e.test';
+const STOREFRONT = 'http://localhost:4200';
 const CONFIRMED = 'store.customer_confirmed';
 const CREATED = 'customer.created_in_store';
 
@@ -97,7 +99,17 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
     sellerId = (await prisma.adminUser.findUniqueOrThrow({ where: { email: 'store_seller@example.test' } })).id;
   });
 
-  beforeEach(() => throttle.setLimit('store_otp', 30));
+  beforeEach(() => {
+    throttle.setLimit('store_otp', 30);
+    throttle.setLimit('store_lookup', 60);
+  });
+
+  /** The website's account API, as a browser on the storefront would call it. */
+  const website = (path: string, body: object) =>
+    request(app.getHttpServer() as App)
+      .post(`/api/account/${path}`)
+      .set('Origin', STOREFRONT)
+      .send(body);
 
   afterEach(cleanup);
 
@@ -333,6 +345,52 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
     expect(sentCodes.length).toBeGreaterThan(0);
     for (const code of sentCodes) expect(rows).not.toContain(code);
     expect(rows).not.toMatch(/hash|code"/i);
+  });
+
+  it('a store code is no website code: it neither signs in nor starts a sign-up, and still confirms here', async () => {
+    const customer = await account();
+    await seller.post('/store-cart/customer/code', { phone: customer.phone, channel: 'sms' }).expect(204);
+    const code = smsCode(customer.phone)!;
+    const signIn = await website('otp/verify', { target: customer.phone, code, purpose: 'sign_in' }).expect(401);
+    expect(signIn.body).toMatchObject({ code: 'invalid_code' });
+    expect(signIn.headers['set-cookie']).toBeUndefined();
+    await website('otp/verify', { target: customer.phone, code, purpose: 'sign_up' }).expect(401);
+    expect(await prisma.customerSession.count({ where: { customerId: customer.id } })).toBe(0);
+    await seller.post('/store-cart/customer/verify', { phone: customer.phone, channel: 'sms', code }).expect(200);
+
+    // A new phone's store code does not give a website sign-up ticket either.
+    const phone = newPhone();
+    const newCustomer = { fullName: 'ZZ חדש', email: newEmail() };
+    await seller.post('/store-cart/customer/code', { phone, channel: 'sms', newCustomer }).expect(204);
+    const ticket = await website('otp/verify', { target: phone, code: smsCode(phone), purpose: 'sign_up' }).expect(401);
+    expect(ticket.body.signUpToken).toBeUndefined();
+    expect((await prisma.otpCode.findFirstOrThrow({ where: { target: phone } })).purpose).toBe('STORE_CONFIRM');
+  });
+
+  it('a website sign-in code does not confirm a customer at the store', async () => {
+    const customer = await account();
+    await website('otp/request', { target: customer.phone, channel: 'sms', purpose: 'sign_in' }).expect(202);
+    const code = smsCode(customer.phone)!;
+    await seller.post('/store-cart/customer/verify', { phone: customer.phone, channel: 'sms', code }).expect(401);
+    expect(await prisma.cart.count({ where: { storeCustomerId: customer.id } })).toBe(0);
+  });
+
+  it('keeps the per-target limit: a fourth store code within 10 minutes is dropped silently', async () => {
+    const customer = await account();
+    for (let i = 0; i < 4; i++)
+      await seller.post('/store-cart/customer/code', { phone: customer.phone, channel: 'sms' }).expect(204);
+    expect(smsTo(customer.phone)).toBe(3);
+    expect(await prisma.otpCode.count({ where: { target: customer.phone } })).toBe(3);
+  });
+
+  it('throttles lookups per seller: 429 over the limit, another seller is not affected', async () => {
+    throttle.setLimit('store_lookup', 3);
+    const phone = newPhone();
+    for (let i = 0; i < 3; i++) await seller.post('/store-cart/customer/lookup', { phone }).expect(200);
+    const over = await seller.post('/store-cart/customer/lookup', { phone }).expect(429);
+    expect(over.body).toMatchObject({ code: 'too_many_requests' });
+    expect(over.headers['retry-after']).toBeDefined();
+    await owner.post('/store-cart/customer/lookup', { phone }).expect(200);
   });
 
   it('refuses a seller whose orders.store permission was removed', async () => {

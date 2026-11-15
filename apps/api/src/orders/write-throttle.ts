@@ -8,7 +8,7 @@ import { CheckoutError } from './order-errors.js';
 /**
  * The public write endpoints that are rate limited per IP (a window of 15 minutes each). `lookup_number` and
  * `support_order` are keyed by the order number instead of the IP ("my order status" and the support requests about
- * an order, together with `lookup` / `support` per IP). `store_otp` is keyed by the seller (`seller:<id>`): the
+ * an order, together with `lookup` / `support` per IP). `store_otp` and `store_lookup` are keyed by the seller (`seller:<id>`): the
  * store's one public IP must never lock out sales (spec §4.3).
  */
 export type ThrottleBucket =
@@ -25,7 +25,8 @@ export type ThrottleBucket =
   | 'lookup_number'
   | 'support'
   | 'support_order'
-  | 'store_otp';
+  | 'store_otp'
+  | 'store_lookup';
 
 const WINDOW_MS = 15 * 60_000;
 /** Production defaults per key (mostly the IP) per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
@@ -49,6 +50,8 @@ const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   support_order: 5,
   // Store customer confirmation codes (Phase 6, spec §4.3): per seller, never per IP.
   store_otp: 30,
+  // Store customer lookups (phone → name), per seller.
+  store_lookup: 60,
 };
 
 /**
@@ -65,7 +68,7 @@ export class WriteThrottle {
 
   /**
    * Records a request; false when the key (the IP, the order number of `lookup_number` / `support_order`, or
-   * `seller:<id>` of `store_otp`) is over the bucket's limit.
+   * `seller:<id>` of `store_otp` / `store_lookup`) is over the bucket's limit.
    */
   allow(bucket: ThrottleBucket, key: string | undefined): boolean {
     return this.bucket(bucket).allow(key ?? 'unknown');

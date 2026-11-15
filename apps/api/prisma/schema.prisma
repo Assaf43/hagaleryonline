@@ -1092,6 +1092,8 @@ enum OtpPurpose {
   SIGN_UP        @map("sign_up")
   VERIFY_CONTACT @map("verify_contact")
   RESET_PASSWORD @map("reset_password")
+  /// The store tablet's customer confirmation (Phase 6): never accepted by a website sign-in or sign-up.
+  STORE_CONFIRM  @map("store_confirm")
 
   @@map("otp_purpose")
 }
