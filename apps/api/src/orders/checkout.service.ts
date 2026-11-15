@@ -119,7 +119,7 @@ export class CheckoutService {
     // Signed in: the account's cart (found by the session); a guest: the cookie's cart.
     const order = await this.placeOrder({ token, customerId }, input, { customerId, channel: 'web' });
     // 4. The provider call, outside the transaction.
-    return { redirectUrl: await this.payments.openPaymentPage(order) };
+    return { redirectUrl: await this.payments.openPaymentPage(order, 'order') };
   }
 
   /**

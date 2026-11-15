@@ -18,6 +18,7 @@ import {
   OrderChannel,
   OrderShippingMethod,
   OrderStatus,
+  PaymentStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
 import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
@@ -27,7 +28,7 @@ import { promotionEnded } from '../promotions/discount-engine.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import { DEFAULT_RETURN_WINDOW_DAYS, returnUntil } from '../support/support-input.js';
 import { currentSlotView } from './delivery-slot.js';
-import { lockCart, lockOrder, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
+import { lockCart, lockOrder, lockOrderPayments, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
 import { canCancel } from './order-transitions.js';
@@ -57,10 +58,18 @@ export function effectiveStatus(order: { status: OrderStatus; reservedUntil: Dat
     : order.status;
 }
 
-/** Only failed or expired orders get a new payment page; a paid one never, a pending one while its page is open. */
+/**
+ * Only failed or expired orders get a new payment page on the website; a paid one never, a pending one while its page
+ * is open (the seller's retry may also reopen that one, `retryPayment`).
+ */
 export function retryable(order: { status: OrderStatus; reservedUntil: Date }, now = new Date()): boolean {
   const status = effectiveStatus(order, now);
   return status === OrderStatus.PAYMENT_FAILED || status === OrderStatus.EXPIRED;
+}
+
+/** The seller's retry (store orders): what the website retries, plus a pending order whose page is open (reopen). */
+export function sellerRetryable(order: { status: OrderStatus; reservedUntil: Date }, now = new Date()): boolean {
+  return retryable(order, now) || effectiveStatus(order, now) === OrderStatus.PENDING_PAYMENT;
 }
 
 /**
@@ -157,25 +166,45 @@ export class OrdersService {
    * 20 minutes; the provider call happens after commit. 409 `not_retryable` or `insufficient_stock` otherwise, and
    * `promotion_ended` when the order's promotion or coupon is no longer active, out of its dates or used up by other
    * orders — the order's discounted total would no longer be honored (spec §6).
+   *
+   * The seller's retry (`{ sellerId }`, POST /api/admin/store-orders/:number/retry) also reopens a store order still
+   * waiting for its payment (a closed provider tab, a second "לתשלום"): its open payment rows are cancelled under
+   * their locks (payments → order, as the cancel does), so the old page's result is a late result of a replaced
+   * attempt — a failure is ignored, a success pays the order once and any further success is `paid_twice` (the
+   * webhook's rules, unchanged). The provider returns to `/pay/done` for the seller, to the tokened page otherwise.
    */
   async retryPayment(numberParam: string, access: OrderAccess): Promise<CheckoutResponse> {
     const found = await this.find(numberParam, access);
+    const bySeller = 'sellerId' in access;
     const snapshot = await this.catalog.snapshot();
     const order = await this.prisma.$transaction(
       async (tx) => {
-        // Same order as checkout: store-cart → welcome → cart → order → variants → promotion. A store order's cart may
-        // be gone (store carts are deleted after 30 days, orders or not): the order alone is enough.
+        // Same order as checkout: store-cart → welcome → cart → (payments →) order → variants → promotion. A store
+        // order's cart may be gone (store carts are deleted after 30 days, orders or not): the order alone is enough.
         if (found.channel === OrderChannel.STORE && found.sellerId !== null) await lockStoreCart(tx, found.sellerId);
         if (found.customerId) await lockWelcome(tx, found.customerId);
         if (found.cartId) await lockCart(tx, found.cartId);
+        if (bySeller) await lockOrderPayments(tx, found.id);
         await lockOrder(tx, found.id);
         const current = await tx.order.findUniqueOrThrow({
           where: { id: found.id },
           include: { items: { select: { variantId: true, quantity: true } } },
         });
-        if (!retryable(current)) throw notRetryable();
+        const now = new Date();
+        if (!(bySeller ? sellerRetryable(current, now) : retryable(current, now))) throw notRetryable();
+        const reopen = effectiveStatus(current, now) === OrderStatus.PENDING_PAYMENT;
         if (await this.superseded(tx, current)) throw superseded();
         if (current.items.some((i) => i.variantId === null)) throw notRetryable();
+        if (reopen) {
+          // The old page is closed: its result no longer decides the order (the webhook ignores a failure of a
+          // payment that is not the latest). Released for the stock check below: its own reservation must not count
+          // against it — rolled back with everything else on a refusal.
+          await tx.payment.updateMany({
+            where: { orderId: current.id, status: PaymentStatus.PENDING },
+            data: { status: PaymentStatus.CANCELLED },
+          });
+          await tx.order.update({ where: { id: current.id }, data: { status: OrderStatus.PAYMENT_FAILED } });
+        }
         await lockVariants(
           tx,
           current.items.map((i) => i.variantId!),
@@ -192,7 +221,7 @@ export class OrdersService {
       },
       { timeout: 15_000 },
     );
-    return { redirectUrl: await this.payments.openPaymentPage(order) };
+    return { redirectUrl: await this.payments.openPaymentPage(order, bySeller ? 'store' : 'order') };
   }
 
   private async find(numberParam: string, access: OrderAccess) {

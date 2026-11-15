@@ -125,8 +125,9 @@ export class OrderLifecycleService {
 
   /**
    * POST /api/admin/store-orders/:number/cancel (Phase 6): the seller cancels their own unpaid store order — the
-   * customer's cancel (same rule and locks), recorded with the seller as the actor (`ADMIN`) and audited
-   * (`store_order.cancel`). 404 for an order that is not this seller's store order.
+   * customer's cancel (same locks), from waiting for payment or a failed payment (`canCancel(…, 'seller')`), recorded
+   * with the seller as the actor (`ADMIN`) and audited (`store_order.cancel`). 404 for an order that is not this
+   * seller's store order.
    */
   cancelStoreOrder(numberParam: string, actor: LifecycleActor): Promise<OrderView> {
     return this.cancelUnpaid(numberParam, { sellerId: actor.adminId }, actor);
@@ -145,7 +146,8 @@ export class OrderLifecycleService {
       await lockOrderPayments(tx, found.id);
       await lockOrder(tx, found.id);
       const order = await tx.order.findUniqueOrThrow({ where: { id: found.id } });
-      if (!canCancel(effectiveStatus(order), 'customer')) throw invalidTransition();
+      // The seller may also drop a failed payment's order (order-transitions.ts); never a paid one.
+      if (!canCancel(effectiveStatus(order), seller ? 'seller' : 'customer')) throw invalidTransition();
       await tx.payment.updateMany({
         where: { orderId: order.id, status: PaymentStatus.PENDING },
         data: { status: PaymentStatus.CANCELLED },

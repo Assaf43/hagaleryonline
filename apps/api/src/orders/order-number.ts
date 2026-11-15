@@ -37,9 +37,22 @@ export function confirmationPath(number: number, token: string): string {
 export const STORE_RETURN_PATH = '/pay/done';
 
 /**
- * Where the payment provider returns the customer after paying (`OrderSummary.returnPath`): the tokened confirmation
- * page for a website order; never that link for a store order, whose tablet is shared — its link comes by e-mail.
+ * Who opened the payment page, which decides where the provider returns (`OrderSummary.returnPath`):
+ *  - `store`: the seller's endpoints (store checkout, store retry) on the shared store tablet → `/pay/done`, a page
+ *    without personal data (§4.7); the order's tokened link comes by e-mail;
+ *  - `order`: the website's checkout and retry — also a store order retried by its customer from the tokened order
+ *    page — → that tokened confirmation page.
  */
-export function returnPathOf(order: { number: number; publicToken: string; channel: 'WEB' | 'STORE' }): string {
-  return order.channel === 'STORE' ? STORE_RETURN_PATH : confirmationPath(order.number, order.publicToken);
+export type PaymentReturn = 'store' | 'order';
+
+export function returnPathFor(order: { number: number; publicToken: string }, returnTo: PaymentReturn): string {
+  return returnTo === 'store' ? STORE_RETURN_PATH : confirmationPath(order.number, order.publicToken);
+}
+
+/**
+ * The fallback when the provider no longer knows the return path it was given (the sandbox after a restart): by the
+ * order's channel — a store order never gets the tokened link on what may be the store tablet.
+ */
+export function defaultReturnPath(order: { number: number; publicToken: string; channel: 'WEB' | 'STORE' }): string {
+  return returnPathFor(order, order.channel === 'STORE' ? 'store' : 'order');
 }

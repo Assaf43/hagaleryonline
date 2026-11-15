@@ -99,9 +99,17 @@ export interface StorePendingOrder {
   total: number;
   status: 'pending_payment' | 'payment_failed';
   reservedUntil: string;
+  /** What the seller may do now, computed on the server by the endpoints' own rules. */
+  actions: StorePendingAction[];
 }
 
-/** `POST /api/admin/store-orders/:number/retry` → a new payment page. */
+/**
+ * `retry`: a new payment page (`POST …/:number/retry`) — for a failed order, and for one still waiting whose page was
+ * closed (the old page is closed with it); `cancel`: `POST …/:number/cancel` (waiting or failed, never paid).
+ */
+export type StorePendingAction = 'retry' | 'cancel';
+
+/** `POST /api/admin/store-orders/:number/retry` → a new payment page (returns to `/pay/done`). */
 export interface StoreOrderRetry {
   redirectUrl: string;
 }

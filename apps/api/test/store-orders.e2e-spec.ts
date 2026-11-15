@@ -270,6 +270,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
         total: order.total,
         status: 'pending_payment',
         reservedUntil: order.reservedUntil.toISOString(),
+        actions: ['retry', 'cancel'],
       },
     ]);
 
@@ -399,7 +400,8 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
 
   it('double submit: a second POST for the same sale answers 409 order_pending, never a second order', async () => {
     const customer = await existingAccount();
-    await newSale(sellerA, [[plenty, 1]]);
+    // The last unit: reopening the waiting order must not count its own reservation against it.
+    await newSale(sellerA, [[last, 1]]);
     await confirm(sellerA, customer.phone);
     const probe = await sellerA.post('/store-orders', { ...orderBody(), expectedTotal: 0 }).expect(409);
     const body = { ...orderBody(), expectedTotal: probe.body.total as number };
@@ -416,10 +418,108 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(again.body).toMatchObject({ code: 'order_pending', number: won.number });
     expect(await prisma.order.count({ where: { sellerId: sellerAId } })).toBe(1);
     expect((await orderOf(won.number)).status).toBe(OrderStatus.PENDING_PAYMENT);
+    expect((await sellerA.get('/store-orders/pending').expect(200)).body).toEqual([
+      expect.objectContaining({ number: won.number, status: 'pending_payment', actions: ['retry', 'cancel'] }),
+    ]);
 
-    // No cart at all: the empty-cart error.
-    await prisma.order.updateMany({ where: { sellerId: sellerAId }, data: { status: OrderStatus.EXPIRED } });
+    // The provider tab was closed: the seller reopens the waiting order from the pending list. The old page's
+    // payment is closed and a new page opens; the reservation starts again.
+    const before = await orderOf(won.number);
+    const reopened = (await sellerA.post(`/store-orders/${won.number}/retry`).expect(201)).body as CheckoutResponse;
+    expect(reopened.redirectUrl).not.toBe(won.redirectUrl);
+    const oldTx = txOf(won.redirectUrl);
+    const newTx = txOf(reopened.redirectUrl);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: oldTx } })).status).toBe('CANCELLED');
+    expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: newTx } })).status).toBe('PENDING');
+    const waiting = await orderOf(won.number);
+    expect(waiting.status).toBe(OrderStatus.PENDING_PAYMENT);
+    expect(waiting.reservedUntil.getTime()).toBeGreaterThanOrEqual(before.reservedUntil.getTime());
+
+    // The new page pays the order, and returns to the store's short page.
+    expect((await complete(newTx, 'success').expect(200)).body).toEqual({ confirmationUrl: '/pay/done' });
+    expect((await orderOf(won.number)).status).toBe(OrderStatus.PAID);
+    expect(await stockOf(last)).toBe(0);
+    // The old page paid too, afterwards: the existing paid-twice rule (kept for staff, no stock, no status change).
+    await complete(oldTx, 'success').expect(200);
+    expect(await prisma.payment.findUniqueOrThrow({ where: { transactionId: oldTx } })).toMatchObject({
+      status: 'SUCCEEDED',
+      rawStatus: 'paid_twice',
+    });
+    expect((await orderOf(won.number)).status).toBe(OrderStatus.PAID);
+    expect(await stockOf(last)).toBe(0);
+    // A paid order is never reopened nor cancelled by the seller.
+    expect((await sellerA.post(`/store-orders/${won.number}/retry`).expect(409)).body).toMatchObject({
+      code: 'not_retryable',
+    });
+    await sellerA.post(`/store-orders/${won.number}/cancel`).expect(409);
+    expect((await sellerA.get('/store-orders/pending').expect(200)).body).toEqual([]);
+
+    // No open cart (its order is paid): the empty-cart error.
     expect((await sellerA.post('/store-orders', body).expect(409)).body).toMatchObject({ code: 'empty_cart' });
+  });
+
+  it('the old page paid first after a reopen: the order is paid once, the new page then is paid twice', async () => {
+    const customer = await existingAccount();
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, customer.phone);
+    const a = (await placeStore(sellerA)).body as StoreOrderCreated;
+    const reopened = (await sellerA.post(`/store-orders/${a.number}/retry`).expect(201)).body as CheckoutResponse;
+    await complete(txOf(a.redirectUrl), 'success').expect(200);
+    expect((await orderOf(a.number)).status).toBe(OrderStatus.PAID);
+    expect(await stockOf(plenty)).toBe(49);
+    await complete(txOf(reopened.redirectUrl), 'success').expect(200);
+    expect(
+      (await prisma.payment.findUniqueOrThrow({ where: { transactionId: txOf(reopened.redirectUrl) } })).rawStatus,
+    ).toBe('paid_twice');
+    expect(await stockOf(plenty)).toBe(49);
+    // A failure of the closed old page never fails the reopened order's newer page.
+    const b = await existingAccount();
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, b.phone);
+    const c = (await placeStore(sellerA)).body as StoreOrderCreated;
+    const again = (await sellerA.post(`/store-orders/${c.number}/retry`).expect(201)).body as CheckoutResponse;
+    await complete(txOf(c.redirectUrl), 'failure').expect(200);
+    expect((await orderOf(c.number)).status).toBe(OrderStatus.PENDING_PAYMENT);
+    await complete(txOf(again.redirectUrl), 'success').expect(200);
+    expect((await orderOf(c.number)).status).toBe(OrderStatus.PAID);
+  });
+
+  it('the seller cancels a failed store order; the customer retries a store order from the tokened page', async () => {
+    const customer = await existingAccount();
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, customer.phone);
+    const a = (await placeStore(sellerA)).body as StoreOrderCreated;
+    await complete(txOf(a.redirectUrl), 'failure').expect(200);
+    expect((await sellerA.get('/store-orders/pending').expect(200)).body).toEqual([
+      expect.objectContaining({ number: a.number, status: 'payment_failed', actions: ['retry', 'cancel'] }),
+    ]);
+    const cancelled = await sellerA.post(`/store-orders/${a.number}/cancel`).expect(200);
+    expect(cancelled.body).toMatchObject({ number: a.number, status: 'cancelled' });
+    const order = await prisma.order.findUniqueOrThrow({ where: { number: a.number }, include: { events: true } });
+    expect(order.events).toEqual([
+      expect.objectContaining({
+        fromStatus: OrderStatus.PAYMENT_FAILED,
+        toStatus: OrderStatus.CANCELLED,
+        actorType: OrderActorType.ADMIN,
+        actorAdminId: sellerAId,
+      }),
+    ]);
+    // The customer's own cancel of a failed order is still refused (the website rule is unchanged).
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, customer.phone);
+    const b = (await placeStore(sellerA)).body as StoreOrderCreated;
+    await complete(txOf(b.redirectUrl), 'failure').expect(200);
+    const token = (await orderOf(b.number)).publicToken;
+    const t = encodeURIComponent(token);
+    await http().post(`/api/orders/${b.number}/cancel?t=${t}`).set('Origin', STOREFRONT).expect(409);
+
+    // The customer retries the store order from the link in their e-mail: the provider returns to that tokened page.
+    const retry = await http().post(`/api/orders/${b.number}/retry-payment?t=${t}`).set('Origin', STOREFRONT);
+    expect(retry.status, JSON.stringify(retry.body)).toBe(201);
+    const done = (await complete(txOf((retry.body as CheckoutResponse).redirectUrl), 'success').expect(200))
+      .body as SandboxCompleteResponse;
+    expect(done.confirmationUrl).toBe(`/order/${b.number}?t=${t}`);
+    expect((await orderOf(b.number)).status).toBe(OrderStatus.PAID);
   });
 
   it('the store order costs what the website charges for the same cart; a quick account gets the welcome benefit', async () => {

@@ -12,7 +12,7 @@ import {
 } from '../generated/prisma/client.js';
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
-import { returnPathOf } from '../orders/order-number.js';
+import { defaultReturnPath, returnPathFor, type PaymentReturn } from '../orders/order-number.js';
 import { PAID_OR_LATER } from '../orders/order-transitions.js';
 import { LATE_PAYMENT_MANUAL_NOTE } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -49,7 +49,7 @@ const VIEW_STATUS: Record<PaymentStatus, SandboxPaymentView['status']> = {
 /** What happened to a webhook: applied, or recognized as a repeat / out-of-order call and ignored. */
 export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored' | 'late_payment';
 
-/** The order fields needed to open a payment page (the channel and token decide where the provider returns). */
+/** The order fields needed to open a payment page (the token makes the website's return link). */
 export interface PayableOrder {
   id: string;
   number: number;
@@ -93,9 +93,10 @@ export class PaymentsService {
   /**
    * Asks the provider for a payment page and records the pending payment. Called after the order's transaction
    * committed, so no row lock is held during the provider call. If the provider fails, the order is marked
-   * failed at once (its reservation is released) and the customer can retry.
+   * failed at once (its reservation is released) and the customer can retry. `returnTo` is the caller's: the
+   * seller's endpoints return to `/pay/done`, the website's to the tokened confirmation page (order-number.ts).
    */
-  async openPaymentPage(order: PayableOrder): Promise<string> {
+  async openPaymentPage(order: PayableOrder, returnTo: PaymentReturn): Promise<string> {
     let page: { redirectUrl: string; transactionId: string };
     try {
       const contact = order.contact as { fullName: string; phone: string; email: string };
@@ -104,7 +105,7 @@ export class PaymentsService {
         orderNumber: order.number,
         amount: order.total,
         customer: { fullName: contact.fullName, phone: contact.phone, email: contact.email },
-        returnPath: returnPathOf(order),
+        returnPath: returnPathFor(order, returnTo),
       });
     } catch (error) {
       this.logger.error(`Payment page for order ${order.number} failed`, error);
@@ -433,7 +434,7 @@ export class PaymentsService {
       this.logger.error(`Sandbox webhook answered ${status}`);
       throw paymentUnavailable();
     }
-    return { confirmationUrl: sandbox.returnPath(payment.transactionId) ?? returnPathOf(payment.order) };
+    return { confirmationUrl: sandbox.returnPath(payment.transactionId) ?? defaultReturnPath(payment.order) };
   }
 
   /** 404 unless the active provider is the sandbox. */

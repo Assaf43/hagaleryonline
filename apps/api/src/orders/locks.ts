@@ -23,7 +23,9 @@ import { Prisma } from '../generated/prisma/client.js';
  *    their usage counts hold until commit and the account's paid orders are read only after it. A store checkout
  *    then saves the delivery address under the customer row (FOR NO KEY UPDATE, last; the account's address writes
  *    take only that row);
- *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne);
+ *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne); the
+ *    seller's reopen of a waiting store order also locks the order's payments right before the order (the cancel's
+ *    payments → order), so the old page's webhook either lands first or finds its payment cancelled;
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
  *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);
  *    the cart's coupon is cleared after commit;

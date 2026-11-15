@@ -6,6 +6,7 @@ import {
   type StoreOrderCreated,
   type StoreOrderRetry,
   type StoreOrderStatus,
+  type StorePendingAction,
   type StorePendingOrder,
 } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
@@ -21,7 +22,8 @@ import {
   orderPending,
 } from '../orders/order-errors.js';
 import { parseOrderNumber } from '../orders/order-number.js';
-import { effectiveStatus, OrdersService, STATUS_VIEW } from '../orders/orders.service.js';
+import { effectiveStatus, OrdersService, sellerRetryable, STATUS_VIEW } from '../orders/orders.service.js';
+import { canCancel } from '../orders/order-transitions.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { StoreCartService } from './store-cart.service.js';
@@ -54,6 +56,17 @@ const LISTED = (now: Date): Prisma.OrderWhereInput => ({
 });
 const listed = (o: { status: OrderStatus; reservedUntil: Date }, now: Date) =>
   (o.status === OrderStatus.PENDING_PAYMENT || o.status === OrderStatus.PAYMENT_FAILED) && o.reservedUntil > now;
+
+/**
+ * What the seller may do with a listed order, by the rules the endpoints themselves apply: the seller's retry
+ * (`sellerRetryable`: also reopens a waiting order) and the seller's cancel (`canCancel(…, 'seller')`).
+ */
+function pendingActions(o: { status: OrderStatus; reservedUntil: Date }, now: Date): StorePendingAction[] {
+  const actions: StorePendingAction[] = [];
+  if (sellerRetryable(o, now)) actions.push('retry');
+  if (canCancel(effectiveStatus(o, now), 'seller')) actions.push('cancel');
+  return actions;
+}
 
 const sameAddress = (a: CheckoutAddress, b: CheckoutAddress) =>
   a.localityId === b.localityId &&
@@ -172,7 +185,7 @@ export class StoreOrdersService {
         },
       },
     );
-    return { number: order.number, redirectUrl: await this.payments.openPaymentPage(order) };
+    return { number: order.number, redirectUrl: await this.payments.openPaymentPage(order, 'store') };
   }
 
   /** GET /api/admin/store-orders/pending — this seller's store orders not paid yet, newest first. */
@@ -190,6 +203,7 @@ export class StoreOrdersService {
       total: o.total,
       status: o.status === OrderStatus.PAYMENT_FAILED ? 'payment_failed' : 'pending_payment',
       reservedUntil: o.reservedUntil.toISOString(),
+      actions: pendingActions(o, now),
     }));
   }
 
@@ -199,12 +213,15 @@ export class StoreOrdersService {
     return { number: order.number, status: STATUS_VIEW[effectiveStatus(order)], total: order.total };
   }
 
-  /** POST /api/admin/store-orders/:number/retry — the website's retry rules, for the seller's own store order. */
+  /**
+   * POST /api/admin/store-orders/:number/retry — the website's retry rules for the seller's own store order, plus the
+   * reopen of an order still waiting for its payment (`OrdersService.retryPayment`); returns to `/pay/done`.
+   */
   retry(sellerId: number, numberParam: string): Promise<StoreOrderRetry> {
     return this.orders.retryPayment(numberParam, { sellerId });
   }
 
-  /** POST /api/admin/store-orders/:number/cancel — an unpaid store order of this seller (audited). */
+  /** POST /api/admin/store-orders/:number/cancel — an unpaid (waiting or failed) store order of this seller (audited). */
   async cancel(actor: StoreActor, numberParam: string): Promise<StoreOrderStatus> {
     const view = await this.lifecycle.cancelStoreOrder(numberParam, { adminId: actor.sellerId, ip: actor.ip });
     return { number: view.number, status: view.status, total: view.total };
