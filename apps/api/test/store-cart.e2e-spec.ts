@@ -285,4 +285,30 @@ describe('Store cart (e2e, ADM-18)', () => {
     expect(row.storeCustomerId).toBeNull();
     expect(row.storeConfirmedAt).toBeNull();
   });
+
+  it('lapses the customer confirmation when the cart was idle for two hours', async () => {
+    await sellerA.post('/store-cart').expect(201);
+    await sellerA.post('/store-cart/items', { variantId: variantA, quantity: 1 }).expect(201);
+    // Confirmed recently, but the cart itself has not been used for more than two hours.
+    await prisma.cart.updateMany({
+      where: { sellerId: sellerAId },
+      data: {
+        storeCustomerId: customerId,
+        storeConfirmedAt: new Date(Date.now() - 30 * 60_000),
+        updatedAt: new Date(Date.now() - 2 * HOUR_MS - 60_000),
+      },
+    });
+    const lapsed = view(await sellerA.get('/store-cart').expect(200));
+    expect(lapsed.customer).toBeNull();
+    // The lines stay.
+    expect(lapsed.itemCount).toBe(1);
+    const row = await prisma.cart.findFirstOrThrow({ where: { sellerId: sellerAId } });
+    expect(row.storeCustomerId).toBeNull();
+    expect(row.storeConfirmedAt).toBeNull();
+  });
+
+  it('concurrent new sales leave the seller exactly one open cart', async () => {
+    await Promise.all(Array.from({ length: 5 }, () => sellerA.post('/store-cart').expect(201)));
+    expect(await prisma.cart.count({ where: { sellerId: sellerAId, orders: { none: {} } } })).toBe(1);
+  });
 });

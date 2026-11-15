@@ -333,8 +333,9 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
         select: { id: true },
       });
       if (!cart) return null;
-      await this.prisma.cart.update({ where: { id: cart.id }, data: { updatedAt: now } });
-      return cart;
+      // A concurrent new sale of the same seller may have just replaced this cart: then it reads as none.
+      const touched = await this.prisma.cart.updateMany({ where: { id: cart.id }, data: { updatedAt: now } });
+      return touched.count === 1 ? cart : null;
     }
     if (owner.customerId) {
       const cart = (await liveAccountCarts(this.prisma, owner.customerId))[0];

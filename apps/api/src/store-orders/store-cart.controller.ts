@@ -10,10 +10,11 @@ import {
   Patch,
   Post,
   Res,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { MAX_COUPON_CODE_LENGTH, type CartView, type StoreCartView } from '@hg/models';
+import { MAX_COUPON_CODE_LENGTH, type CartView, type StoreCartView, type StoreCustomerLookup } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import type { RequestMeta } from '../auth/auth.service.js';
 import {
@@ -25,7 +26,11 @@ import {
   type AdminContext,
 } from '../auth/guards.js';
 import { CartError, CartService, type CartResult } from '../cart/cart.service.js';
+import { badField } from '../customers/account-errors.js';
+import { normalizePhone } from '../customers/contact-normalize.js';
+import { AccountErrorFilter } from '../customers/customer-auth.controller.js';
 import { StoreCartService } from './store-cart.service.js';
+import { parseStoreCodeInput, parseStoreVerifyInput, StoreCustomerService } from './store-customer.service.js';
 
 /** Most units one request may ask for; the line limit clamps it further (as on the website). */
 const MAX_REQUEST_QUANTITY = 999;
@@ -51,15 +56,18 @@ function parseQuantity(value: unknown): number {
 /**
  * The seller's store cart (spec §4.2, ADM-18): `/api/admin/store-cart`. Every call works on the signed-in seller's
  * own open cart and delegates to the website's `CartService`; the answer is the cart view plus the attached customer.
- * No cookie is read or set.
+ * No cookie is read or set. The customer endpoints (`customer/*`, spec §4.1 step 2) confirm the customer by a one-time
+ * code without a customer session; their account errors answer like the account API (with `Retry-After` on 429).
  */
 @Controller('admin/store-cart')
 @UseGuards(SameOriginGuard, AdminAuthGuard)
 @RequirePermission('orders.store')
+@UseFilters(AccountErrorFilter)
 export class StoreCartController {
   constructor(
     private readonly carts: CartService,
     private readonly storeCarts: StoreCartService,
+    private readonly storeCustomers: StoreCustomerService,
     private readonly audit: AuditService,
   ) {}
 
@@ -133,6 +141,52 @@ export class StoreCartController {
   @HttpCode(HttpStatus.OK)
   async removeCoupon(@Admin() admin: AdminContext): Promise<StoreCartView> {
     return this.change(admin, (owner) => this.carts.removeCoupon(owner));
+  }
+
+  /** Whether the phone has an account (opens the seller's cart when there is none). */
+  @Header('Cache-Control', 'no-store')
+  @Post('customer/lookup')
+  @HttpCode(HttpStatus.OK)
+  lookup(
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<StoreCustomerLookup> {
+    const phone = normalizePhone(((body ?? {}) as Record<string, unknown>).phone);
+    if (!phone) throw badField('phone');
+    return this.storeCustomers.lookup({ sellerId: admin.user.id, ip: client.ip }, phone);
+  }
+
+  /** Sends the confirmation code (per-seller limit `store_otp`). */
+  @Header('Cache-Control', 'no-store')
+  @Post('customer/code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async sendCode(@Body() body: unknown, @Admin() admin: AdminContext, @ClientMeta() client: RequestMeta) {
+    const input = parseStoreCodeInput(body);
+    await this.storeCustomers.requestCode({ sellerId: admin.user.id, ip: client.ip }, input);
+  }
+
+  /** Checks the code and attaches the customer (a new phone gets its quick account); never a customer session. */
+  @Header('Cache-Control', 'no-store')
+  @Post('customer/verify')
+  @HttpCode(HttpStatus.OK)
+  async verify(
+    @Body() body: unknown,
+    @Admin() admin: AdminContext,
+    @ClientMeta() client: RequestMeta,
+  ): Promise<StoreCartView> {
+    const input = parseStoreVerifyInput(body);
+    const cartId = await this.storeCustomers.verify({ sellerId: admin.user.id, ip: client.ip }, input);
+    return this.respond(cartId, await this.carts.read(this.storeCarts.ownerOf(admin.user.id, cartId)));
+  }
+
+  /** Drops the confirmed customer from the open cart; 404 when there is none. */
+  @Header('Cache-Control', 'no-store')
+  @Delete('customer')
+  @HttpCode(HttpStatus.OK)
+  async clearCustomer(@Admin() admin: AdminContext, @ClientMeta() client: RequestMeta): Promise<StoreCartView> {
+    const cartId = await this.storeCustomers.clear({ sellerId: admin.user.id, ip: client.ip });
+    return this.respond(cartId, await this.carts.read(this.storeCarts.ownerOf(admin.user.id, cartId)));
   }
 
   /** Runs a cart change on the seller's open cart; 404 when there is none. */

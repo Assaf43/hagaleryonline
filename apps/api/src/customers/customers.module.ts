@@ -51,5 +51,7 @@ import { OtpService, resolveOtpPepper } from './otp.service.js';
         ),
     },
   ],
+  // The store tablet's customer confirmation (Phase 6) uses the same codes, without a session.
+  exports: [OtpService],
 })
 export class CustomersModule {}

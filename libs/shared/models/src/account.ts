@@ -153,7 +153,9 @@ export type AccountErrorCode =
   | 'too_many_requests'
   | 'forbidden'
   | 'not_found'
-  | 'address_limit';
+  | 'address_limit'
+  /** Store confirmation (Phase 6): a code to an e-mail the account has not verified (decision 85). */
+  | 'email_not_verified';
 
 // ---------- Account data (Phase 5c Task 12, spec §6.3, ACC-03, ACC-04, ACC-05) ----------
 

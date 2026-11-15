@@ -22,3 +22,35 @@ export interface StoreCustomer {
 
 /** The store cart: the website cart's view plus the attached customer. */
 export type StoreCartView = CartView & { customer: StoreCustomer | null };
+
+/**
+ * `POST /api/admin/store-cart/customer/lookup` `{ phone }` (spec §4.1 step 2): whether the phone has an account, and
+ * what the seller may show of it. `maskedEmail` is null for an account without an e-mail; a code goes to the e-mail
+ * only when `emailVerified` (decision 85).
+ */
+export type StoreCustomerLookup =
+  { exists: false } | { exists: true; fullName: string; maskedEmail: string | null; emailVerified: boolean };
+
+/** Where the confirmation code goes: the phone, or the account's verified e-mail. A new phone takes `sms` only. */
+export type StoreCodeChannel = 'sms' | 'email';
+
+/**
+ * The details the seller types for a new phone (a quick account: `fullName` and `email`, both required), or only
+ * `email` for an existing account that has none (saved unverified).
+ */
+export interface StoreNewCustomer {
+  fullName?: string;
+  email: string;
+}
+
+/** `POST /api/admin/store-cart/customer/code` → 204. */
+export interface StoreCodeRequest {
+  phone: string;
+  channel: StoreCodeChannel;
+  newCustomer?: StoreNewCustomer;
+}
+
+/** `POST /api/admin/store-cart/customer/verify` → `StoreCartView` with the confirmed customer. */
+export interface StoreVerifyRequest extends StoreCodeRequest {
+  code: string;
+}
