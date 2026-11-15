@@ -95,7 +95,8 @@ type Plan =
  * (phone verified, e-mail not). Every code has the purpose `store_confirm`. A confirmed customer is held on the seller's open cart
  * (`storeCustomerId`); no customer session is created and no cookie is set.
  *
- * Code requests and lookups count per seller (`store_otp` / `store_lookup`, `seller:<id>`), never per IP: the store has one public IP. The
+ * Code requests, lookups and checks count per seller (`store_otp` / `store_lookup` / `store_verify`, `seller:<id>`),
+ * never per IP: the store has one public IP. The
  * per-target limit of `OtpService` (3 codes / 10 minutes) and its 5 attempts per code stay. Audit entries carry ids
  * and the channel only, never a code or a hash.
  */
@@ -144,6 +145,10 @@ export class StoreCustomerService {
    * spends no attempt. Returns the cart id.
    */
   async verify(actor: SellerActor, input: StoreVerifyInput): Promise<string> {
+    // Counted first, on every call: the refusals below (400 / 409 / 401) would otherwise tell, without a limit,
+    // whether a phone has an account or an e-mail is taken.
+    if (!this.throttle.allow('store_verify', `seller:${actor.sellerId}`))
+      throw tooManyRequests(THROTTLE_RETRY_AFTER_SECONDS);
     const plan = await this.plan(input, true);
     const target = plan.kind === 'existing' ? plan.target : input.phone;
     const row = await this.otp.check(target, STORE_OTP_PURPOSE, input.code);

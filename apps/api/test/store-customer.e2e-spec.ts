@@ -102,6 +102,7 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
   beforeEach(() => {
     throttle.setLimit('store_otp', 30);
     throttle.setLimit('store_lookup', 60);
+    throttle.setLimit('store_verify', 60);
   });
 
   /** The website's account API, as a browser on the storefront would call it. */
@@ -391,6 +392,33 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
     expect(over.body).toMatchObject({ code: 'too_many_requests' });
     expect(over.headers['retry-after']).toBeDefined();
     await owner.post('/store-cart/customer/lookup', { phone }).expect(200);
+  });
+
+  it('throttles code checks per seller on every call, before any refusal tells anything', async () => {
+    throttle.setLimit('store_verify', 3);
+    const known = await account();
+    const taken = await account();
+    const verify = (who: AdminBrowser, body: object) => who.post('/store-cart/customer/verify', body);
+    // Under the limit each answer differs: unknown phone, known phone with a wrong code, a taken e-mail.
+    await verify(seller, { phone: newPhone(), channel: 'sms', code: '123456' }).expect(400);
+    await verify(seller, { phone: known.phone, channel: 'sms', code: '123456' }).expect(401);
+    await verify(seller, {
+      phone: newPhone(),
+      channel: 'sms',
+      code: '123456',
+      newCustomer: { fullName: 'ZZ חדש', email: taken.email },
+    }).expect(409);
+    // Over it every call is the same 429, whatever it would have revealed.
+    for (const body of [
+      { phone: newPhone(), channel: 'sms', code: '123456' },
+      { phone: known.phone, channel: 'sms', code: '123456' },
+      { phone: newPhone(), channel: 'sms', code: '123456', newCustomer: { fullName: 'ZZ חדש', email: taken.email } },
+    ]) {
+      const over = await verify(seller, body).expect(429);
+      expect(over.body).toMatchObject({ code: 'too_many_requests' });
+      expect(over.headers['retry-after']).toBeDefined();
+    }
+    await verify(owner, { phone: known.phone, channel: 'sms', code: '123456' }).expect(401);
   });
 
   it('refuses a seller whose orders.store permission was removed', async () => {
