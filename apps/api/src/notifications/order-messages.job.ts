@@ -146,12 +146,16 @@ export class OrderMessagesJob implements OnModuleInit {
       this.logger.warn(`Customer ${customerId} no longer exists: the welcome e-mail is skipped`);
       return;
     }
-    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { id: true, contact: true } });
-    const to = customer.email ?? (order?.contact as { email?: string } | undefined)?.email;
-    if (!to) throw new Error(`Customer ${customerId} has no e-mail address`);
+    // The account's own address only: an e-mail released to a newer verified account (decision 85) is that
+    // account's now, so the order's copy of it is never used.
+    if (!customer.email) {
+      this.logger.warn(`Customer ${customerId} has no e-mail address any more: the welcome e-mail is skipped`);
+      return;
+    }
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { id: true } });
     await this.notifications.email(
       'store_welcome',
-      to,
+      customer.email,
       {
         customerName: customer.fullName,
         phoneMasked: maskPhone(customer.phone),

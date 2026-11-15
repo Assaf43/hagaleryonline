@@ -311,6 +311,44 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(await prisma.outboxJob.count({ where: { type: 'email.store_welcome' } })).toBe(1);
   });
 
+  it("a quick account's first store order records its store consent even from a later cart; a released e-mail gets no welcome", async () => {
+    // The quick account is opened in one sale, whose basket is then dropped for a new one (another cart).
+    await newSale(sellerA, [[plenty, 1]]);
+    const customer = await quickAccount(sellerA);
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, customer.phone);
+    const first = await placeStore(sellerA, { marketingConsent: true });
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).toMatchObject({
+      marketingConsent: true,
+      marketingConsentSource: MarketingConsentSource.STORE,
+    });
+
+    // Paid; then a verified website sign-up takes the e-mail (released): the welcome is skipped, never sent to the
+    // order's copy of the old address.
+    await complete(txOf((first.body as StoreOrderCreated).redirectUrl), 'success').expect(200);
+    await prisma.customer.update({ where: { id: customer.id }, data: { email: null } });
+    emailSpy.mockClear();
+    await outbox.runDue(100);
+    // Only the order's own e-mail (its subject carries the number), no welcome.
+    const sent = emailSpy.mock.calls.filter(([m]) => m.to === customer.newCustomer.email);
+    expect(sent).toHaveLength(1);
+    expect(sent[0][0].subject).toContain(String((first.body as StoreOrderCreated).number));
+    expect(await prisma.outboxJob.findFirstOrThrow({ where: { type: 'email.store_welcome' } })).toMatchObject({
+      state: 'DONE',
+    });
+
+    // After a paid order, or once withdrawn, a store order never records the account's consent again.
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: { email: customer.newCustomer.email, marketingConsent: false, marketingWithdrawnAt: new Date() },
+    });
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, customer.phone);
+    expect((await placeStore(sellerA, { marketingConsent: true })).status).toBe(201);
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).marketingConsent).toBe(false);
+  });
+
   it('existing customer sale: the account is the customer, a known address is not saved twice, consent untouched', async () => {
     const customer = await existingAccount();
     await prisma.customerAddress.create({ data: { customerId: customer.id, ...address, isDefault: true } });

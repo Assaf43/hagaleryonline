@@ -26,6 +26,7 @@ import { effectiveStatus, OrdersService, sellerRetryable, STATUS_VIEW } from '..
 import { canCancel } from '../orders/order-transitions.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { hasPaidOrder } from '../promotions/promotions.service.js';
 import { StoreCartService } from './store-cart.service.js';
 import { isConfirmationLive } from './store-confirmation.js';
 import { StoreService } from './store.service.js';
@@ -123,12 +124,6 @@ export class StoreOrdersService {
     if (!customer || !isConfirmationLive(cart)) throw customerNotConfirmed();
     if (!customer.email) throw customerEmailRequired();
     const contact = { fullName: customer.fullName, phone: customer.phone, email: customer.email };
-    // A quick account opened in this sale gives its marketing consent here (source `store`); an existing account's
-    // consent is its own (the order keeps the checkbox either way).
-    const createdHere =
-      customer.createdVia === CustomerOrigin.STORE &&
-      customer.createdBySellerId === sellerId &&
-      customer.createdAt >= cart.createdAt;
 
     const order = await this.checkout.placeOrder(
       { token: undefined, customerId: null, store: { sellerId, cartId: open.id } },
@@ -161,9 +156,16 @@ export class StoreOrdersService {
         },
         afterCreate: async (tx, created) => {
           if (input.saveAddress) await saveAddress(tx, customer.id, input.address);
-          if (input.marketingConsent && createdHere)
+          // A quick account gives its marketing consent at its first store order (source `store`), whichever cart or
+          // seller that is: an account made at the store, with no paid order, whose consent was never recorded (a
+          // withdrawn one keeps its time). Any other account's consent is its own (the order keeps the checkbox).
+          if (
+            input.marketingConsent &&
+            customer.createdVia === CustomerOrigin.STORE &&
+            !(await hasPaidOrder(tx, customer.id))
+          )
             await tx.customer.updateMany({
-              where: { id: customer.id, marketingConsent: false },
+              where: { id: customer.id, marketingConsent: false, marketingConsentAt: null },
               data: {
                 marketingConsent: true,
                 marketingConsentAt: new Date(),
