@@ -328,7 +328,13 @@ export class CustomerAuthService {
       });
       return await this.signedIn(customer, client);
     } catch (error) {
-      if (isUniqueViolation(error)) await this.assertFree(details.phone, details.email);
+      if (isUniqueViolation(error)) {
+        await this.assertFree(details.phone, details.email);
+        // Taken meanwhile by a holder the check above lets go (an unverified e-mail inserted after the release):
+        // still one of the two, never a raw 500.
+        if ((await this.prisma.customer.count({ where: { phone: details.phone } })) > 0) throw phoneTaken();
+        throw emailTaken();
+      }
       throw error;
     }
   }

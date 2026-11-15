@@ -7,7 +7,7 @@ import { App } from 'supertest/types.js';
 import type { CustomerMe } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
-import { MarketingConsentSource } from './../src/generated/prisma/client.js';
+import { MarketingConsentSource, Prisma } from './../src/generated/prisma/client.js';
 import {
   EMAIL_PROVIDER,
   SMS_PROVIDER,
@@ -176,6 +176,28 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
         .post('sign-up', { ...details, email: newEmail(), signUpToken })
         .expect(400)
         .expect((r) => expect(r.body.code).toBe('invalid_token'));
+    });
+
+    it('answers 409 email_taken, not 500, when the insert hits a unique e-mail taken meanwhile', async () => {
+      // An unverified holder of the e-mail inserted between the release and the insert (a race the pre-checks miss).
+      const phone = newPhone();
+      const email = newEmail();
+      const b = browser();
+      const details = { fullName: 'דנה לוי', phone, email, marketingConsent: false };
+      await b.post('sign-up', details).expect(200, { verify: true });
+      const signUpToken = await verifyBoth(b, phone, email);
+      const spy = vi
+        .spyOn(prisma, '$transaction')
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'e2e' }),
+        );
+      try {
+        const res = await b.post('sign-up', { ...details, signUpToken }).expect(409);
+        expect(res.body).toMatchObject({ code: 'email_taken' });
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await prisma.customer.count({ where: { phone } })).toBe(0);
     });
 
     it('without consent stores no consent time', async () => {
