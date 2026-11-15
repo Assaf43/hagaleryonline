@@ -209,9 +209,9 @@ export class SupportService {
   }
 
   /**
-   * The order of a request, or the one 404 `lookupMiss()`. Signed in: the typed number, or (none typed) the order of
-   * the first line, and it must be the customer's; the phone is not needed. Signed out: number + phone are required
-   * (400 `order`) and compared in constant time.
+   * The order of a request, or the one 404 `lookupMiss()`. With a typed number + phone (signed in or out) both must
+   * match, compared in constant time. Signed in without a phone: the typed number, or (none typed) the order of the
+   * first line, and it must be the customer's. Signed out without a reference: 400 `order`.
    */
   private async findOrder(
     ref: OrderRefInput | null,
@@ -222,7 +222,10 @@ export class SupportService {
     if (ref) this.countOrder(lookupThrottleKey(ref.number), res);
     const number = ref ? parseOrderNumber(lookupNumberText(ref.number)) : null;
 
-    if (customer) {
+    // A signed-in caller who sends number + phone is matched exactly like a signed-out one (a guest order placed
+    // before sign-up; nothing links it to the account, decision 77). Without a phone the session decides.
+    const typedPhone = ref !== null && ref.phone.trim() !== '';
+    if (customer && !typedPhone) {
       const order = ref
         ? await this.prisma.order.findUnique({ where: { number: number ?? 0 }, select: orderSelect })
         : ((

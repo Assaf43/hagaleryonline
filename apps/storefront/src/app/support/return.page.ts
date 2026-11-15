@@ -14,6 +14,7 @@ import {
   RETURN_REASON_LABELS_HE,
   SUPPORT_FIELD_MESSAGES_HE,
   SUPPORT_LIMITS,
+  SUPPORT_RETURN_NOT_DELIVERED_HE,
   SUPPORT_RETURN_WINDOW_PASSED_HE,
   type OrderLine,
   type ReturnReason,
@@ -22,14 +23,7 @@ import {
 import { formatDate } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { OrderStep } from './order-step';
-import {
-  RETURN_NOT_DELIVERED_HE,
-  SupportApi,
-  supportErrorMessage,
-  supportFailure,
-  supportSuccessText,
-  type SupportOrder,
-} from './support.api';
+import { SupportApi, supportErrorMessage, supportFailure, supportSuccessText, type SupportOrder } from './support.api';
 
 type ReturnField = 'items' | 'type' | 'reasonCode' | 'note';
 
@@ -75,7 +69,7 @@ export class ReturnPage {
   protected readonly blocked = computed(() => {
     const o = this.found()?.order;
     if (!o) return '';
-    if (o.status !== 'delivered') return RETURN_NOT_DELIVERED_HE;
+    if (o.status !== 'delivered') return SUPPORT_RETURN_NOT_DELIVERED_HE;
     if (o.returnUntil && Date.now() > Date.parse(o.returnUntil)) return SUPPORT_RETURN_WINDOW_PASSED_HE;
     return '';
   });
@@ -187,7 +181,7 @@ export class ReturnPage {
     this.busy.set(true);
     try {
       const created = await this.api.returns(body);
-      this.done.set(created.ticketNumber ? supportSuccessText(created.ticketNumber) : 'קיבלנו את פנייתך.');
+      this.done.set(supportSuccessText(created.ticketNumber));
       this.focus('#rt-success');
     } catch (error) {
       const failure = supportFailure(error);

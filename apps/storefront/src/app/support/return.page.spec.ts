@@ -1,5 +1,6 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
+import { Router } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
 import { ReturnPage } from './return.page';
 import { answerLookup, deliveredOrder, failWith, setupSupport, tick } from './support.testing';
@@ -84,6 +85,7 @@ describe('ReturnPage (/returns, SRV-02)', () => {
 
   it('looks the order up by number + phone and reads it with the link token as a query parameter only', async () => {
     http = setupSupport();
+    const stored = vi.spyOn(Storage.prototype, 'setItem');
     fixture = TestBed.createComponent(ReturnPage);
     fixture.componentRef.setInput('order', '100001');
     fixture.detectChanges();
@@ -100,7 +102,11 @@ describe('ReturnPage (/returns, SRV-02)', () => {
     read.flush(deliveredOrder());
     await settle();
     expect(text()).toContain('הזמנה מספר 100001');
-    expect(location.href).not.toContain('tok123');
+    // The token stays in memory: not in storage, not on the page (links, text), not in the router's URL.
+    expect(stored).not.toHaveBeenCalled();
+    expect(el().innerHTML).not.toContain('tok123');
+    expect(TestBed.inject(Router).url).not.toContain('tok123');
+    stored.mockRestore();
   });
 
   it('a lookup miss shows one message and keeps the form', async () => {
@@ -251,10 +257,28 @@ describe('ReturnPage (/returns, SRV-02)', () => {
     expect(trap.closest('[aria-hidden="true"]')).not.toBeNull();
   });
 
-  it('keeps the live regions rendered while empty', async () => {
-    await openOrder();
+  it('writes the "cannot use this order" reason into a region that was already rendered (announced)', async () => {
+    http = setupSupport();
+    fixture = TestBed.createComponent(ReturnPage);
+    document.body.appendChild(fixture.nativeElement);
+    fixture.detectChanges();
+    await settle();
+    const region = q('#rt-blocked');
+    expect(region.getAttribute('role')).toBe('alert');
+    expect(region.textContent?.trim()).toBe('');
+    fill('#rt-os-number', '100001');
+    fill('#rt-os-phone', '050-123-4567');
+    await submitStep();
+    await answerLookup(http, deliveredOrder({}, 'shipped'));
+    await settle();
+    expect(q('#rt-blocked')).toBe(region);
+    expect(region.textContent?.trim()).toBe('אפשר לבקש החזרה רק אחרי שההזמנה סופקה');
     expect(q('#rt-success').getAttribute('role')).toBe('status');
-    expect(alerts().length).toBeGreaterThan(0);
+  });
+
+  it('moves focus to the found order after the customer looks it up', async () => {
+    await openOrder();
+    expect(document.activeElement).toBe(q('#rt-os-summary'));
   });
 
   it('a signed-in customer needs no phone: the account order is read and the request carries no order reference', async () => {

@@ -163,6 +163,20 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       expect(res.body.returnUntil).toBe(new Date(order.deliveredAt!.getTime() + days * DAY).toISOString());
     });
 
+    it('the account order view carries the same fields', async () => {
+      const customer = await prisma.customer.create({
+        data: { fullName: 'ZZ לקוח', phone: '0541112255', email: `v${Date.now()}@support.zz.test` },
+      });
+      const cookie = `hg_customer=${await app.get(CustomerSessionService).start(customer.id)}`;
+      const order = await makeOrder(OrderStatus.DELIVERED, { customerId: customer.id });
+      const res = await http().get(`/api/account/orders/${order.number}`).set('Cookie', cookie).expect(200);
+      const settings = await prisma.storeSettings.findUnique({ where: { id: 1 } });
+      const days = settings?.returnWindowDays ?? 14;
+      expect(res.body.lines[0].orderItemId).toBe(order.items[0].id);
+      expect(res.body.deliveredAt).toBe(order.deliveredAt!.toISOString());
+      expect(res.body.returnUntil).toBe(new Date(order.deliveredAt!.getTime() + days * DAY).toISOString());
+    });
+
     it('an order that is not delivered has null deliveredAt and returnUntil', async () => {
       const order = await makeOrder(OrderStatus.SHIPPED, { deliveredAt: null });
       const res = await http().get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200);
@@ -260,6 +274,24 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       expect(await prisma.supportTicket.count({ where: { orderId: order.id } })).toBe(0);
     });
 
+    it('signed in with number + phone of a guest order: matched like signed out, ticket customerId stays null', async () => {
+      const customer = await prisma.customer.create({
+        data: { fullName: 'ZZ לקוח', phone: '0541112244', email: `g${Date.now()}@support.zz.test` },
+      });
+      const cookie = `hg_customer=${await app.get(CustomerSessionService).start(customer.id)}`;
+      const guest = await makeOrder(OrderStatus.DELIVERED);
+      const res = await post('returns', returnBody(guest), cookie).expect(202);
+      expect(await ticketOf(res)).toMatchObject({ orderId: guest.id, customerId: null });
+      // A wrong phone is the same 404 as for a signed-out caller.
+      const wrong = await post('returns', returnBody(guest, { order: ref(guest, '0529999999') }), cookie).expect(404);
+      const signedOutWrong = await post('returns', returnBody(guest, { order: ref(guest, '0529999999') })).expect(404);
+      expect(wrong.body).toEqual(signedOutWrong.body);
+      // Multipart (damaged) the same.
+      const photoFile = { data: await photo(), name: 'a.jpg' };
+      const dmg = await damaged(guest, [photoFile]).set('Cookie', cookie).expect(202);
+      expect(await ticketOf(dmg)).toMatchObject({ orderId: guest.id, customerId: null });
+    });
+
     it('signed in: the customer’s own order without a phone; another order → the same 404', async () => {
       const customer = await prisma.customer.create({
         data: { fullName: 'ZZ לקוח', phone: '0541112233', email: `c${Date.now()}@support.zz.test` },
@@ -270,8 +302,16 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       expect(await ticketOf(res)).toMatchObject({ orderId: own.id, customerId: customer.id });
 
       const other = await makeOrder(OrderStatus.DELIVERED);
-      // Number + the right phone of a guest order is still not the signed-in customer's.
-      expect((await post('returns', returnBody(other), cookie).expect(404)).body.code).toBe('not_found');
+      // Without a phone the session decides: a guest order is not the signed-in customer's.
+      expect(
+        (
+          await post(
+            'returns',
+            returnBody(other, { order: { number: String(other.number), phone: '' } }),
+            cookie,
+          ).expect(404)
+        ).body.code,
+      ).toBe('not_found');
       expect((await post('returns', returnBody(other, { order: null }), cookie).expect(404)).body.code).toBe(
         'not_found',
       );

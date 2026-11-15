@@ -5,6 +5,8 @@ import {
   ORDER_LOOKUP_MISS_HE,
   SUPPORT_FIELD_MESSAGES_HE,
   SUPPORT_NOT_DELIVERED_HE,
+  SUPPORT_RECEIVED_HE,
+  SUPPORT_RETURN_NOT_DELIVERED_HE,
   SUPPORT_RETURN_WINDOW_PASSED_HE,
   type ContactRequestBody,
   type OrderView,
@@ -17,11 +19,9 @@ import {
 import { AccountApi } from '../account/account.api';
 import { CheckoutApi, checkoutErrorMessage } from '../checkout/checkout.api';
 
-/** "קיבלנו את פנייתך. מספר הפנייה: 5001". */
-export const supportSuccessText = (ticketNumber: number): string => `קיבלנו את פנייתך. מספר הפנייה: ${ticketNumber}`;
-
-/** A return form's own wording of 409 `not_delivered` (the damaged form uses the API's). */
-export const RETURN_NOT_DELIVERED_HE = 'אפשר לבקש החזרה רק אחרי שההזמנה סופקה';
+/** "קיבלנו את פנייתך. מספר הפנייה: 5001"; a filled honeypot gets no number, so only the first sentence. */
+export const supportSuccessText = (ticketNumber: number | undefined): string =>
+  ticketNumber ? `${SUPPORT_RECEIVED_HE} מספר הפנייה: ${ticketNumber}` : SUPPORT_RECEIVED_HE;
 
 export type SupportKind = 'return' | 'damaged' | 'contact';
 
@@ -55,7 +55,7 @@ export function supportErrorMessage(failure: SupportFailure, kind: SupportKind):
     case 'not_found':
       return ORDER_LOOKUP_MISS_HE;
     case 'not_delivered':
-      return kind === 'return' ? RETURN_NOT_DELIVERED_HE : SUPPORT_NOT_DELIVERED_HE;
+      return kind === 'return' ? SUPPORT_RETURN_NOT_DELIVERED_HE : SUPPORT_NOT_DELIVERED_HE;
     case 'return_window_passed':
       return SUPPORT_RETURN_WINDOW_PASSED_HE;
     case 'too_many_requests':

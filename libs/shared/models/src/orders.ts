@@ -43,6 +43,15 @@ export const CHECKOUT_LIMITS = {
   notesMax: 500,
 } as const;
 
+/**
+ * The shape of an order number as typed or in a URL: digits only, 6 to 12 of them (the API also requires it to be
+ * from 100001 up to the int4 limit).
+ */
+export const ORDER_NUMBER_PATTERN = /^\d{6,12}$/;
+export const ORDER_NUMBER_MAX_LENGTH = 12;
+/** Longest phone text a field takes (spaces, dashes and "+972" included; the API stores 05XXXXXXXX). */
+export const PHONE_INPUT_MAX_LENGTH = 20;
+
 /** Israeli mobile after spaces and dashes are removed. */
 export const CHECKOUT_PHONE_PATTERN = /^05\d{8}$/;
 export const CHECKOUT_EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;

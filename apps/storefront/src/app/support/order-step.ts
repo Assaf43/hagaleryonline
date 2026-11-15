@@ -9,16 +9,25 @@ import {
   inject,
   input,
   output,
+  computed,
   signal,
   untracked,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { ORDER_LOOKUP_MISS_HE, SUPPORT_FIELD_MESSAGES_HE } from '@hg/models';
+import {
+  ORDER_LOOKUP_MISS_HE,
+  ORDER_NUMBER_MAX_LENGTH,
+  PHONE_INPUT_MAX_LENGTH,
+  SUPPORT_FIELD_MESSAGES_HE,
+} from '@hg/models';
 import { CustomerStore } from '../account/customer.store';
 import { checkoutErrorMessage } from '../checkout/checkout.api';
 import { SupportApi, supportFailure, type SupportOrder } from './support.api';
 
 type StepField = 'number' | 'phone';
+
+/** Signed in, and the account has no such order: a guest order needs its phone. */
+export const GUEST_ORDER_HINT_HE = 'לא מצאנו את ההזמנה בחשבון שלכם. אם הזמנתם כאורח, הזינו גם את מספר הטלפון.';
 
 const REQUIRED: Record<StepField, string> = {
   number: 'יש להזין את מספר ההזמנה',
@@ -56,6 +65,12 @@ export class OrderStep {
   protected readonly formError = signal('');
   protected readonly busy = signal(false);
   protected readonly current = signal<SupportOrder | null>(null);
+  protected readonly numberMax = ORDER_NUMBER_MAX_LENGTH;
+  protected readonly phoneMax = PHONE_INPUT_MAX_LENGTH;
+  /** Signed in, but the order was placed as a guest: look it up by number + phone like a signed-out customer. */
+  protected readonly guest = signal(false);
+  /** The phone is asked for: signed out, or a signed-in customer looking for a guest order. */
+  protected readonly askPhone = computed(() => this.store.me() === null || this.guest());
   private prefilled = false;
 
   constructor() {
@@ -93,42 +108,60 @@ export class OrderStep {
 
   protected submit(event: Event): void {
     event.preventDefault();
-    void this.load();
+    void this.load(true);
+  }
+
+  /** "הזמנה שביצעתי כאורח?": shows the phone field and switches to the lookup by number + phone. */
+  protected asGuest(): void {
+    this.guest.set(true);
+    this.formError.set('');
+    this.focusLater('phone');
+  }
+
+  private focusLater(field: StepField | 'summary'): void {
+    const id = field === 'summary' ? `${this.idPrefix()}-summary` : this.id(field);
+    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`#${id}`)?.focus(), {
+      injector: this.injector,
+    });
   }
 
   protected change(): void {
     this.current.set(null);
     this.orderChange.emit(null);
-    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`#${this.id('number')}`)?.focus(), {
-      injector: this.injector,
-    });
+    this.focusLater('number');
   }
 
-  private async load(): Promise<void> {
+  /** `byCustomer`: the customer pressed the button (focus then moves to the found order); not the automatic load. */
+  private async load(byCustomer = false): Promise<void> {
     if (this.busy()) return;
     this.formError.set('');
-    const signedIn = this.store.me() !== null;
+    const withPhone = this.askPhone();
     const number = this.number().trim();
     const phone = this.phone().trim();
     const errors: Partial<Record<StepField, string>> = {};
     if (!number) errors.number = REQUIRED.number;
-    if (!signedIn && !phone) errors.phone = REQUIRED.phone;
+    if (withPhone && !phone) errors.phone = REQUIRED.phone;
     this.errors.set(errors);
     const first = (['number', 'phone'] as const).find((f) => errors[f]);
     if (first) {
-      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`#${this.id(first)}`)?.focus(), {
-        injector: this.injector,
-      });
+      this.focusLater(first);
       return;
     }
     this.busy.set(true);
     try {
-      const result = await this.api.loadOrder(number, signedIn ? null : phone);
+      const result = await this.api.loadOrder(number, withPhone ? phone : null);
       this.current.set(result);
       this.orderChange.emit(result);
+      if (byCustomer) this.focusLater('summary');
     } catch (error) {
-      if (signedIn && this.store.unauthorized(error)) return;
+      if (!withPhone && this.store.unauthorized(error)) return;
       const failure = supportFailure(error);
+      if (failure.status === 404 && !withPhone) {
+        // The account has no such order: it may be a guest order, which needs its phone.
+        this.guest.set(true);
+        this.formError.set(GUEST_ORDER_HINT_HE);
+        return;
+      }
       this.formError.set(
         failure.status === 404
           ? ORDER_LOOKUP_MISS_HE

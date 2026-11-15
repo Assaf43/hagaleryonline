@@ -9,10 +9,11 @@
 
     <hg-support-order-step idPrefix="dm-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
 
+    <!-- Always rendered, so the reason the order cannot be used is announced when it appears. -->
+    <p id="dm-blocked" class="form-error" role="alert">{{ blocked() }}</p>
+
     @if (found(); as f) {
-      @if (blocked(); as why) {
-        <p class="form-error" role="alert">{{ why }}</p>
-      } @else {
+      @if (!blocked()) {
         <form class="stack" novalidate (submit)="submit($event)">
           <div class="field">
             <label class="field-label" for="dm-line">איזה פריט פגום?</label>

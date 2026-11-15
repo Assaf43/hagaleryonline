@@ -148,6 +148,10 @@ export const SUPPORT_FIELD_MESSAGES_HE: Record<SupportField, string> = {
 };
 
 export const SUPPORT_NOT_DELIVERED_HE = 'אפשר לשלוח בקשה זו רק להזמנה שסופקה';
+/** A return form's own wording of `not_delivered` (the damaged form uses `SUPPORT_NOT_DELIVERED_HE`). */
+export const SUPPORT_RETURN_NOT_DELIVERED_HE = 'אפשר לבקש החזרה רק אחרי שההזמנה סופקה';
+/** The start of every confirmation ("קיבלנו את פנייתך. מספר הפנייה: 5001"; without a number for a filled honeypot). */
+export const SUPPORT_RECEIVED_HE = 'קיבלנו את פנייתך.';
 export const SUPPORT_RETURN_WINDOW_PASSED_HE = 'עבר מועד ההחזרה להזמנה הזו';
 
 // ---- Admin inbox (spec §7.2, permission `support.manage`) ----

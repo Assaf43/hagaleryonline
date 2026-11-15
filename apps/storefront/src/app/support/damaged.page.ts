@@ -125,7 +125,7 @@ export class DamagedPage {
         { order: found.ref, orderItemId: this.line(), description, website: this.website() },
         this.photos(),
       );
-      this.done.set(created.ticketNumber ? supportSuccessText(created.ticketNumber) : 'קיבלנו את פנייתך.');
+      this.done.set(supportSuccessText(created.ticketNumber));
       this.focus('#dm-success');
     } catch (error) {
       const failure = supportFailure(error);

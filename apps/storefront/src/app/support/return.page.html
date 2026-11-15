@@ -9,10 +9,11 @@
 
     <hg-support-order-step idPrefix="rt-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
 
+    <!-- Always rendered, so the reason the order cannot be used is announced when it appears. -->
+    <p id="rt-blocked" class="form-error" role="alert">{{ blocked() }}</p>
+
     @if (found(); as f) {
-      @if (blocked(); as why) {
-        <p class="form-error" role="alert">{{ why }}</p>
-      } @else {
+      @if (!blocked()) {
         @if (deadline(); as d) {
           <p class="notice">
             אפשר לבקש החזרה או החלפה עד <bdi>{{ d }}</bdi>

@@ -11,7 +11,15 @@ import {
   untracked,
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import { CHECKOUT_LIMITS, SUPPORT_FIELD_MESSAGES_HE, SUPPORT_LIMITS, type ContactRequestBody } from '@hg/models';
+import {
+  CHECKOUT_LIMITS,
+  ORDER_NUMBER_MAX_LENGTH,
+  ORDER_NUMBER_PATTERN,
+  PHONE_INPUT_MAX_LENGTH,
+  SUPPORT_FIELD_MESSAGES_HE,
+  SUPPORT_LIMITS,
+  type ContactRequestBody,
+} from '@hg/models';
 import { CustomerStore } from '../account/customer.store';
 import { isEmail, isPhone, normalizePhone } from '../account/account-forms';
 import { PageMeta } from '../core/page-meta';
@@ -44,7 +52,13 @@ export class ContactPage {
   protected readonly support = SUPPORT_CONTACT;
   protected readonly whatsapp = whatsappLink(SUPPORT_CONTACT.whatsapp);
   protected readonly id = id;
-  protected readonly limits = { ...SUPPORT_LIMITS, name: CHECKOUT_LIMITS.fullNameMax };
+  protected readonly limits = {
+    ...SUPPORT_LIMITS,
+    name: CHECKOUT_LIMITS.fullNameMax,
+    email: CHECKOUT_LIMITS.emailMax,
+    phone: PHONE_INPUT_MAX_LENGTH,
+    orderNumber: ORDER_NUMBER_MAX_LENGTH,
+  };
   protected readonly values = signal<Record<ContactField, string>>({
     fullName: '',
     phone: '',
@@ -123,7 +137,7 @@ export class ContactPage {
     const message = v.message.trim();
     if (message.length < L.messageMin || message.length > L.messageMax)
       errors.message = SUPPORT_FIELD_MESSAGES_HE.message;
-    if (v.orderNumber.trim() && !/^\d{1,12}$/.test(v.orderNumber.trim().replace(/\s/g, ''))) {
+    if (v.orderNumber.trim() && !ORDER_NUMBER_PATTERN.test(v.orderNumber.trim().replace(/\s/g, ''))) {
       errors.orderNumber = SUPPORT_FIELD_MESSAGES_HE.orderNumber;
     }
     return errors;
@@ -154,7 +168,7 @@ export class ContactPage {
     this.busy.set(true);
     try {
       const created = await this.api.contact(body);
-      this.done.set(created.ticketNumber ? supportSuccessText(created.ticketNumber) : 'קיבלנו את פנייתך.');
+      this.done.set(supportSuccessText(created.ticketNumber));
       afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('#ct-success')?.focus(), {
         injector: this.injector,
       });
