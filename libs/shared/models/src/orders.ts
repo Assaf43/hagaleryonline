@@ -203,6 +203,8 @@ export type OrderStatus =
   | 'expired';
 
 export interface OrderLine {
+  /** The order line's id: what a return or damaged-product request names (Phase 5d). */
+  orderItemId: number;
   /** Null when the variant was deleted since. */
   variantId: number | null;
   sku: string;
@@ -297,6 +299,10 @@ export interface OrderView {
   createdAt: string;
   /** ISO time until which the stock is held while waiting for payment. */
   reservedUntil: string;
+  /** ISO time the order was delivered; null unless its status is `delivered`. */
+  deliveredAt: string | null;
+  /** ISO time of the last moment a return or exchange can be requested (deliveredAt + the return window); null unless delivered. */
+  returnUntil: string | null;
   lines: OrderLine[];
   address: OrderAddressView;
   method: ShippingMethod;

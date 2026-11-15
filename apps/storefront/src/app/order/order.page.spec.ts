@@ -13,8 +13,11 @@ function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
     status,
     createdAt: '2026-11-10T10:00:00.000Z',
     reservedUntil: '2026-11-10T10:20:00.000Z',
+    deliveredAt: null,
+    returnUntil: null,
     lines: [
       {
+        orderItemId: 11,
         variantId: 1,
         sku: 'ALBA-1',
         modelName: 'ALBA',
@@ -255,6 +258,24 @@ describe('OrderPage', () => {
       async (status) => {
         await setup(order(status));
         expect(el().querySelector('h1')?.textContent?.trim()).toBe(ORDER_STATUS_LABELS_HE[status]);
+      },
+    );
+
+    it('links to the return and damaged-product forms with only the order number, for a delivered order', async () => {
+      await setup(order('delivered'));
+      const links = [...el().querySelectorAll<HTMLAnchorElement>('.support-links a')];
+      expect(links.map((a) => a.textContent?.trim())).toEqual(['החזרה או החלפה', 'דיווח על מוצר פגום']);
+      expect(links.map((a) => a.getAttribute('href'))).toEqual([
+        '/returns?order=100001',
+        '/returns/damaged?order=100001',
+      ]);
+    });
+
+    it.each(['paid', 'processing', 'delivery_scheduled', 'shipped', 'cancelled', 'pending_payment'] as const)(
+      'has no return or damaged links for a %s order',
+      async (status) => {
+        await setup(order(status));
+        expect(el().querySelector('.support-links')).toBeNull();
       },
     );
 

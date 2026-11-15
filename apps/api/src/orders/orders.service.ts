@@ -19,6 +19,7 @@ import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
+import { DEFAULT_RETURN_WINDOW_DAYS, returnUntil } from '../support/support-input.js';
 import { currentSlotView } from './delivery-slot.js';
 import { lockCart, lockOrder, lockVariants, lockWelcome } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
@@ -92,6 +93,11 @@ export class OrdersService {
       !(await this.promotionGone(this.prisma, order)) &&
       (await this.retryBlocker(this.prisma, order.items, await this.catalog.snapshot())) === null;
     const address = order.address as unknown as OrderAddressView;
+    const deliveredAt = status === OrderStatus.DELIVERED ? order.deliveredAt : null;
+    const returnWindowDays = deliveredAt
+      ? ((await this.prisma.storeSettings.findUnique({ where: { id: 1 } }))?.returnWindowDays ??
+        DEFAULT_RETURN_WINDOW_DAYS)
+      : 0;
     return {
       invoices: invoiceViews(order.invoices),
       number: order.number,
@@ -102,7 +108,10 @@ export class OrdersService {
       deliverySlot: currentSlotView(order.slots),
       createdAt: order.createdAt.toISOString(),
       reservedUntil: order.reservedUntil.toISOString(),
+      deliveredAt: deliveredAt ? deliveredAt.toISOString() : null,
+      returnUntil: deliveredAt ? returnUntil(deliveredAt, returnWindowDays).toISOString() : null,
       lines: order.items.map((i) => ({
+        orderItemId: i.id,
         variantId: i.variantId,
         sku: i.sku,
         modelName: i.modelName,

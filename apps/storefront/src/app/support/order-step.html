@@ -1,0 +1,55 @@
+@if (!store.ready()) {
+  <p class="hint" role="status">טוען…</p>
+} @else if (current(); as c) {
+  <p class="order-summary">
+    הזמנה מספר <bdi>{{ c.order.number }}</bdi>
+    <button type="button" class="link-btn" (click)="change()">שינוי הזמנה</button>
+  </p>
+} @else {
+  <form class="stack" novalidate (submit)="submit($event)">
+    <div class="field">
+      <label class="field-label" [for]="id('number')">מספר הזמנה</label>
+      <input
+        class="input"
+        type="text"
+        dir="ltr"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength="20"
+        [id]="id('number')"
+        [value]="number()"
+        [attr.aria-invalid]="errors().number ? true : null"
+        [attr.aria-describedby]="errors().number ? id('number') + '-error' : null"
+        (input)="input('number', $event)"
+      />
+      @if (errors().number; as e) {
+        <p class="field-error" [id]="id('number') + '-error'">{{ e }}</p>
+      }
+    </div>
+    @if (!store.me()) {
+      <div class="field">
+        <label class="field-label" [for]="id('phone')">טלפון נייד</label>
+        <input
+          class="input"
+          type="tel"
+          dir="ltr"
+          inputmode="tel"
+          autocomplete="tel"
+          maxlength="20"
+          [id]="id('phone')"
+          [value]="phone()"
+          [attr.aria-invalid]="errors().phone ? true : null"
+          [attr.aria-describedby]="errors().phone ? id('phone') + '-error' : null"
+          (input)="input('phone', $event)"
+        />
+        @if (errors().phone; as e) {
+          <p class="field-error" [id]="id('phone') + '-error'">{{ e }}</p>
+        }
+      </div>
+    }
+    <p class="form-error" role="alert">{{ formError() }}</p>
+    <div>
+      <button type="submit" class="btn btn-primary" [disabled]="busy()">המשך</button>
+    </div>
+  </form>
+}

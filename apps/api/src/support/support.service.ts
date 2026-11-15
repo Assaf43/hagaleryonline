@@ -17,14 +17,13 @@ import {
   parseContactInput,
   parseDamagedInput,
   parseReturnInput,
+  DEFAULT_RETURN_WINDOW_DAYS,
   returnWindowPassed,
   supportField,
   withinReturnWindow,
   type OrderRefInput,
 } from './support-input.js';
 
-/** Used only if the settings row is missing (migration support inserts it with this value). */
-export const DEFAULT_RETURN_WINDOW_DAYS = 14;
 /**
  * Stand-ins of the same length as a stored phone (05XXXXXXXX), never equal to each other or to a real phone: the
  * compare runs even with no order or no valid phone, as in "my order status" (order-lookup.service).

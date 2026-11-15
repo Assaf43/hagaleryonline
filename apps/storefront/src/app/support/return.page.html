@@ -1,0 +1,145 @@
+<section class="container page narrow">
+  <h1>החזרה או החלפה</h1>
+
+  <!-- Always rendered, so the confirmation is announced; focus moves here after sending. -->
+  <p id="rt-success" class="success" role="status" tabindex="-1">{{ done() }}</p>
+
+  @if (!done()) {
+    <p class="intro">הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, ובחרו אילו פריטים להחזיר או להחליף.</p>
+
+    <hg-support-order-step idPrefix="rt-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
+
+    @if (found(); as f) {
+      @if (blocked(); as why) {
+        <p class="form-error" role="alert">{{ why }}</p>
+      } @else {
+        @if (deadline(); as d) {
+          <p class="notice">
+            אפשר לבקש החזרה או החלפה עד <bdi>{{ d }}</bdi>
+          </p>
+        }
+        <form class="stack" novalidate (submit)="submit($event)">
+          <fieldset class="field" [attr.aria-describedby]="errors().items ? 'rt-items-error' : null">
+            <legend class="field-label">אילו פריטים?</legend>
+            <ul class="lines">
+              @for (line of f.order.lines; track line.orderItemId; let i = $index) {
+                <li class="line">
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      [id]="'rt-line-' + i"
+                      [checked]="isPicked(line)"
+                      [attr.aria-invalid]="errors().items ? true : null"
+                      (change)="toggle(line, $event)"
+                    />
+                    <span>
+                      <bdi dir="ltr">{{ line.modelName }}</bdi> · {{ line.nameHe }}
+                      @for (label of line.optionLabels; track label) {
+                        <span class="hint"> · {{ label }}</span>
+                      }
+                      <span class="hint">
+                        · הוזמנו <bdi>{{ line.quantity }}</bdi></span
+                      >
+                    </span>
+                  </label>
+                  @if (isPicked(line) && line.quantity > 1) {
+                    <div class="field qty">
+                      <label class="field-label" [for]="'rt-qty-' + i">כמות להחזרה</label>
+                      <select class="input" [id]="'rt-qty-' + i" (change)="setQuantity(line, $event)">
+                        @for (n of range(line); track n) {
+                          <option [value]="n" [selected]="n === quantityOf(line)">{{ n }}</option>
+                        }
+                      </select>
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+            @if (errors().items; as e) {
+              <p class="field-error" id="rt-items-error">{{ e }}</p>
+            }
+          </fieldset>
+
+          <fieldset class="field">
+            <legend class="field-label">מה תרצו?</legend>
+            <label class="check">
+              <input
+                type="radio"
+                name="rt-type"
+                id="rt-type-return"
+                [checked]="type() === 'return'"
+                (change)="setType('return')"
+              />
+              <span>החזרה</span>
+            </label>
+            <label class="check">
+              <input
+                type="radio"
+                name="rt-type"
+                id="rt-type-exchange"
+                [checked]="type() === 'exchange'"
+                (change)="setType('exchange')"
+              />
+              <span>החלפה</span>
+            </label>
+          </fieldset>
+
+          <div class="field">
+            <label class="field-label" for="rt-reason">סיבה</label>
+            <select
+              class="input"
+              id="rt-reason"
+              [attr.aria-invalid]="errors().reasonCode ? true : null"
+              [attr.aria-describedby]="errors().reasonCode ? 'rt-reason-error' : null"
+              (change)="setReason($event)"
+            >
+              <option value="" [selected]="!reason()">בחרו סיבה</option>
+              @for (r of reasons; track r.code) {
+                <option [value]="r.code" [selected]="reason() === r.code">{{ r.label }}</option>
+              }
+            </select>
+            @if (errors().reasonCode; as e) {
+              <p class="field-error" id="rt-reason-error">{{ e }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="rt-note">הערה (לא חובה)</label>
+            <textarea
+              class="input textarea"
+              id="rt-note"
+              rows="3"
+              [attr.maxlength]="noteMax"
+              [value]="note()"
+              [attr.aria-invalid]="errors().note ? true : null"
+              [attr.aria-describedby]="errors().note ? 'rt-note-error' : null"
+              (input)="setNote($event)"
+            ></textarea>
+            @if (errors().note; as e) {
+              <p class="field-error" id="rt-note-error">{{ e }}</p>
+            }
+          </div>
+
+          <!-- Honeypot: people never see or reach it; a bot that fills it gets a silent 202. -->
+          <div class="hp" aria-hidden="true">
+            <label for="rt-website">אתר אינטרנט</label>
+            <input
+              id="rt-website"
+              name="website"
+              type="text"
+              tabindex="-1"
+              autocomplete="off"
+              [value]="website()"
+              (input)="setWebsite($event)"
+            />
+          </div>
+
+          <p class="form-error" role="alert">{{ formError() }}</p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">שליחת הבקשה</button>
+          </div>
+        </form>
+      }
+    }
+  }
+</section>

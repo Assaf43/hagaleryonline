@@ -152,6 +152,25 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
     await app.close();
   });
 
+  describe('order view fields for the forms', () => {
+    it('a delivered order shows its lines ids, deliveredAt and returnUntil (delivery + the window)', async () => {
+      const order = await makeOrder(OrderStatus.DELIVERED);
+      const res = await http().get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200);
+      const settings = await prisma.storeSettings.findUnique({ where: { id: 1 } });
+      const days = settings?.returnWindowDays ?? 14;
+      expect(res.body.lines[0].orderItemId).toBe(order.items[0].id);
+      expect(res.body.deliveredAt).toBe(order.deliveredAt!.toISOString());
+      expect(res.body.returnUntil).toBe(new Date(order.deliveredAt!.getTime() + days * DAY).toISOString());
+    });
+
+    it('an order that is not delivered has null deliveredAt and returnUntil', async () => {
+      const order = await makeOrder(OrderStatus.SHIPPED, { deliveredAt: null });
+      const res = await http().get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200);
+      expect(res.body.deliveredAt).toBeNull();
+      expect(res.body.returnUntil).toBeNull();
+    });
+  });
+
   describe('return / exchange', () => {
     it('a delivered order within the window: 202 with a ticket number from 5001, both e-mails queued and sent', async () => {
       const order = await makeOrder(OrderStatus.DELIVERED);

@@ -46,6 +46,8 @@ import { MenuData } from './menu-data';
         </div>
         <ul class="links">
           <li><a routerLink="/order-status">מצב ההזמנה שלי</a></li>
+          <li><a routerLink="/returns">החזרות והחלפות</a></li>
+          <li><a routerLink="/contact">צור קשר</a></li>
           <li><a routerLink="/sizing-guide">מדריך מידות</a></li>
           <li><a routerLink="/terms">תנאי שימוש</a></li>
         </ul>

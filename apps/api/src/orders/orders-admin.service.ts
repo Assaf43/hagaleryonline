@@ -257,6 +257,7 @@ export class OrdersAdminService {
       total: order.total,
       deliveryEstimate: (order.deliveryEstimate as OrderView['deliveryEstimate']) ?? null,
       lines: order.items.map((i) => ({
+        orderItemId: i.id,
         variantId: i.variantId,
         sku: i.sku,
         modelName: i.modelName,

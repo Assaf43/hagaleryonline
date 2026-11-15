@@ -60,6 +60,10 @@ export const routes: Routes = [
     canActivate: [accountGuard],
     loadComponent: () => import('./account/consent.page').then((m) => m.ConsentPage),
   },
+  // Returns, damaged products and contact (Phase 5d, SRV-02, SRV-03, SRV-05): noindex, not in the sitemap.
+  { path: 'returns', loadComponent: () => import('./support/return.page').then((m) => m.ReturnPage) },
+  { path: 'returns/damaged', loadComponent: () => import('./support/damaged.page').then((m) => m.DamagedPage) },
+  { path: 'contact', loadComponent: () => import('./support/contact.page').then((m) => m.ContactPage) },
   { path: 'terms', loadComponent: () => import('./info/terms.page').then((m) => m.TermsPage) },
   { path: 'favorites', loadComponent: () => import('./favorites/favorites.page').then((m) => m.FavoritesPage) },
   { path: 'sizing-guide', loadComponent: () => import('./guide/sizing-guide.page').then((m) => m.SizingGuidePage) },

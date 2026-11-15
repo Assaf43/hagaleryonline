@@ -6,6 +6,7 @@ import {
   parseDamagedInput,
   parseReturnInput,
   SupportError,
+  returnUntil,
   withinReturnWindow,
 } from './support-input.js';
 
@@ -235,5 +236,15 @@ describe('matchLines', () => {
         ),
       ),
     ).toBe('items.1.quantity');
+  });
+});
+
+describe('returnUntil (the order view deadline)', () => {
+  it('is the same boundary withinReturnWindow allows', () => {
+    const deliveredAt = new Date('2026-11-01T10:00:00.000Z');
+    const until = returnUntil(deliveredAt, 14);
+    expect(until.toISOString()).toBe('2026-11-15T10:00:00.000Z');
+    expect(withinReturnWindow(deliveredAt, 14, until)).toBe(true);
+    expect(withinReturnWindow(deliveredAt, 14, new Date(until.getTime() + 1))).toBe(false);
   });
 });

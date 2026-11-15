@@ -148,7 +148,7 @@ export const SUPPORT_FIELD_MESSAGES_HE: Record<SupportField, string> = {
 };
 
 export const SUPPORT_NOT_DELIVERED_HE = 'אפשר לשלוח בקשה זו רק להזמנה שסופקה';
-export const SUPPORT_RETURN_WINDOW_PASSED_HE = 'חלפה התקופה להחזרה או להחלפה של הזמנה זו';
+export const SUPPORT_RETURN_WINDOW_PASSED_HE = 'עבר מועד ההחזרה להזמנה הזו';
 
 // ---- Admin inbox (spec §7.2, permission `support.manage`) ----
 

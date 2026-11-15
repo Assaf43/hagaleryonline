@@ -70,6 +70,7 @@ const DETAIL: AdminOrderDetail = {
   deliveryEstimate: { fulfillment: 'in_stock', leadTimeDays: 3 },
   lines: [
     {
+      orderItemId: 11,
       variantId: 1,
       sku: 'ALBA-BEIGE',
       modelName: 'ALBA',

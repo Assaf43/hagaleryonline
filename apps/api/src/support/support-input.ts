@@ -167,8 +167,16 @@ export function parseContactInput(raw: unknown): ContactInput {
 
 /** SRV-02: a return or exchange is allowed while `now ≤ deliveredAt + returnWindowDays`. */
 export function withinReturnWindow(deliveredAt: Date, returnWindowDays: number, now = new Date()): boolean {
-  return now.getTime() <= deliveredAt.getTime() + returnWindowDays * 24 * 60 * 60_000;
+  return now.getTime() <= returnUntil(deliveredAt, returnWindowDays).getTime();
 }
+
+/** The last moment a return or exchange can be requested (the order view's `returnUntil`). */
+export function returnUntil(deliveredAt: Date, returnWindowDays: number): Date {
+  return new Date(deliveredAt.getTime() + returnWindowDays * 24 * 60 * 60_000);
+}
+
+/** Used only if the settings row is missing (migration support inserts it with this value). */
+export const DEFAULT_RETURN_WINDOW_DAYS = 14;
 
 /** Every requested line is a line of the order, for at most its ordered quantity (400 naming the line otherwise). */
 export function matchLines(requested: LineInput[], orderLines: { id: number; quantity: number }[]): void {

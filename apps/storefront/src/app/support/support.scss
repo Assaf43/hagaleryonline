@@ -1,0 +1,144 @@
+// Shared by the three support forms (return, damaged product, contact).
+:host {
+  display: block;
+}
+
+.page {
+  display: grid;
+  gap: var(--space-5);
+  padding-block: var(--space-5) var(--space-7);
+  align-content: start;
+}
+
+.narrow {
+  inline-size: 100%;
+  max-inline-size: 640px;
+  margin-inline: auto;
+}
+
+h1,
+h2,
+p,
+fieldset {
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--font-h3);
+}
+
+.intro,
+.hint {
+  color: var(--color-text-secondary);
+}
+
+.hint {
+  font-size: var(--font-small);
+}
+
+.stack {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+}
+
+fieldset.field {
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.textarea {
+  block-size: auto;
+  padding-block: var(--space-2);
+  resize: vertical;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--control-height);
+}
+
+// Always rendered, even when empty, so a message put in it is announced.
+.form-error {
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  min-block-size: var(--control-height);
+  margin-inline-start: var(--space-3);
+}
+
+.order-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.line {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.qty {
+  max-inline-size: 120px;
+}
+
+.notice {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-info-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+}
+
+// The honeypot: out of sight and out of the tab order, but not display:none (some bots skip those fields).
+.hp {
+  position: absolute;
+  inset-inline-start: -10000px;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+}
+
+.success:focus {
+  outline: none;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}

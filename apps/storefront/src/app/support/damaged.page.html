@@ -1,0 +1,79 @@
+<section class="container page narrow">
+  <h1>דיווח על מוצר פגום</h1>
+
+  <!-- Always rendered, so the confirmation is announced; focus moves here after sending. -->
+  <p id="dm-success" class="success" role="status" tabindex="-1">{{ done() }}</p>
+
+  @if (!done()) {
+    <p class="intro">הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, וצרפו תמונות של הנזק.</p>
+
+    <hg-support-order-step idPrefix="dm-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
+
+    @if (found(); as f) {
+      @if (blocked(); as why) {
+        <p class="form-error" role="alert">{{ why }}</p>
+      } @else {
+        <form class="stack" novalidate (submit)="submit($event)">
+          <div class="field">
+            <label class="field-label" for="dm-line">איזה פריט פגום?</label>
+            <select
+              class="input"
+              id="dm-line"
+              [attr.aria-invalid]="errors().orderItemId ? true : null"
+              [attr.aria-describedby]="errors().orderItemId ? 'dm-line-error' : null"
+              (change)="setLine($event)"
+            >
+              <option value="0" [selected]="!line()">בחרו פריט</option>
+              @for (l of f.order.lines; track l.orderItemId) {
+                <option [value]="l.orderItemId" [selected]="line() === l.orderItemId">
+                  {{ l.modelName }} · {{ l.nameHe }}
+                </option>
+              }
+            </select>
+            @if (errors().orderItemId; as e) {
+              <p class="field-error" id="dm-line-error">{{ e }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="dm-description">תיאור הנזק</label>
+            <textarea
+              class="input textarea"
+              id="dm-description"
+              rows="4"
+              [attr.maxlength]="descriptionMax"
+              [value]="description()"
+              [attr.aria-invalid]="errors().description ? true : null"
+              [attr.aria-describedby]="errors().description ? 'dm-description-error' : null"
+              (input)="setDescription($event)"
+            ></textarea>
+            @if (errors().description; as e) {
+              <p class="field-error" id="dm-description-error">{{ e }}</p>
+            }
+          </div>
+
+          <hg-photo-picker inputId="dm-photos" [error]="errors().photos ?? ''" (photosChange)="setPhotos($event)" />
+
+          <!-- Honeypot: people never see or reach it; a bot that fills it gets a silent 202. -->
+          <div class="hp" aria-hidden="true">
+            <label for="dm-website">אתר אינטרנט</label>
+            <input
+              id="dm-website"
+              name="website"
+              type="text"
+              tabindex="-1"
+              autocomplete="off"
+              [value]="website()"
+              (input)="setWebsite($event)"
+            />
+          </div>
+
+          <p class="form-error" role="alert">{{ formError() }}</p>
+          <div class="actions">
+            <button type="submit" class="btn btn-primary" [disabled]="busy()">שליחת הדיווח</button>
+          </div>
+        </form>
+      }
+    }
+  }
+</section>

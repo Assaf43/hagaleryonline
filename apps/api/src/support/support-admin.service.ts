@@ -18,7 +18,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { SupportTicketStatus, SupportTicketType, type Prisma } from '../generated/prisma/client.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { DEFAULT_RETURN_WINDOW_DAYS } from './support.service.js';
+import { DEFAULT_RETURN_WINDOW_DAYS } from './support-input.js';
 
 export const ADMIN_TICKETS_PAGE_SIZE = 30;
 /** `support_tickets.number` is a PostgreSQL integer (int4). */
