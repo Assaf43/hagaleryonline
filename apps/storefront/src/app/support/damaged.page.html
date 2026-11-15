@@ -5,7 +5,14 @@
   <p id="dm-success" class="success" role="status" tabindex="-1">{{ done() }}</p>
 
   @if (!done()) {
-    <p class="intro">הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, וצרפו תמונות של הנזק.</p>
+    <!-- Signed in, the session proves the owner: the phone is asked for only for a guest order (the step says so). -->
+    <p class="intro">
+      @if (signedIn()) {
+        הזינו את מספר ההזמנה וצרפו תמונות של הנזק.
+      } @else {
+        הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, וצרפו תמונות של הנזק.
+      }
+    </p>
 
     <hg-support-order-step idPrefix="dm-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
 
@@ -27,7 +34,8 @@
               <option value="0" [selected]="!line()">בחרו פריט</option>
               @for (l of f.order.lines; track l.orderItemId) {
                 <option [value]="l.orderItemId" [selected]="line() === l.orderItemId">
-                  {{ l.modelName }} · {{ l.nameHe }}
+                  {{ l.modelName }} · {{ l.nameHe
+                  }}{{ l.optionLabels.length ? ' · ' + l.optionLabels.join(' · ') : '' }}
                 </option>
               }
             </select>

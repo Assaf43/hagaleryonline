@@ -301,4 +301,21 @@ describe('ReturnPage (/returns, SRV-02)', () => {
     await settle();
     expect(text()).toContain('מספר הפנייה: 5002');
   });
+
+  it('the intro asks for the phone only when signed out', async () => {
+    http = setupSupport();
+    fixture = TestBed.createComponent(ReturnPage);
+    fixture.detectChanges();
+    await settle();
+    expect(q('.intro').textContent?.trim()).toBe(
+      'הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, ובחרו אילו פריטים להחזיר או להחליף.',
+    );
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    http = setupSupport(true);
+    fixture = TestBed.createComponent(ReturnPage);
+    fixture.detectChanges();
+    await settle();
+    expect(q('.intro').textContent?.trim()).toBe('הזינו את מספר ההזמנה ובחרו אילו פריטים להחזיר או להחליף.');
+  });
 });

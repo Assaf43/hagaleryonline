@@ -2,7 +2,9 @@
   <p class="hint" role="status">טוען…</p>
 } @else if (current(); as c) {
   <p class="order-summary" tabindex="-1" [id]="idPrefix() + '-summary'">
-    הזמנה מספר <bdi>{{ c.order.number }}</bdi>
+    <span class="order-ref"
+      >הזמנה מספר <bdi>{{ c.order.number }}</bdi></span
+    >
     <button type="button" class="link-btn" (click)="change()">שינוי הזמנה</button>
   </p>
 } @else {

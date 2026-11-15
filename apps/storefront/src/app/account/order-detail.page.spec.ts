@@ -71,6 +71,14 @@ describe('OrderDetailPage (account)', () => {
     expect(hrefs).toEqual(['/returns?order=100001', '/returns/damaged?order=100001']);
   });
 
+  it('after the return deadline only the damaged-product link stays', async () => {
+    await setup(orderView('delivered', { returnUntil: '2020-01-01T21:59:59.999Z' }));
+    const hrefs = [...el().querySelectorAll<HTMLAnchorElement>('a[href^="/returns"]')].map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(hrefs).toEqual(['/returns/damaged?order=100001']);
+  });
+
   it('has no return or damaged links before delivery', async () => {
     await setup(orderView('shipped'));
     expect(el().querySelector('a[href^="/returns"]')).toBeNull();

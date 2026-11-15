@@ -19,7 +19,8 @@ const TYPE_CODE: Record<SupportTicketType, TicketTypeCode> = {
 };
 
 /**
- * Handlers of the ticket e-mails (spec §7.1): `email.ticket_received` to the ticket's contact e-mail, and
+ * Handlers of the ticket e-mails (spec §7.1): `email.ticket_received` to the ticket's contact e-mail (never with
+ * customer-typed text: a contact ticket is greeted without a name), and
  * `email.ticket_alert` to the business inbox `SUPPORT_EMAIL` (read once; without it the alert is skipped with a
  * warning, it is not required at startup). A missing recipient finishes the job with a warning (a retry cannot fix
  * it); a provider error throws, so the outbox retries.
@@ -60,12 +61,13 @@ export class TicketMessagesJob implements OnModuleInit {
       this.logger.warn(`Ticket ${ticket.number} has no e-mail address: no confirmation e-mail`);
       return;
     }
-    await this.notifications.email(
-      'ticket_received',
-      ticket.email,
-      { ticketNumber: ticket.number, customerName: ticket.fullName },
-      ticket.orderId ?? undefined,
-    );
+    // Never echo customer-typed text to a typed address (the shop domain must not relay it): a contact ticket gets
+    // the generic greeting; a ticket about an order uses the order's own contact snapshot.
+    const data =
+      ticket.type === SupportTicketType.CONTACT
+        ? { ticketNumber: ticket.number }
+        : { ticketNumber: ticket.number, customerName: ticket.fullName };
+    await this.notifications.email('ticket_received', ticket.email, data, ticket.orderId ?? undefined);
   }
 
   async alert({ ticketId }: TicketJob): Promise<void> {

@@ -33,8 +33,8 @@ const NO_GIVEN_PHONE = '__________';
 
 /**
  * A new ticket: the type, what it is about and the contact snapshot. A ticket about an order belongs to the order's
- * account (`order.customerId`, null for a guest order); only a contact ticket without an order takes the signed-in
- * customer.
+ * account (`order.customerId`, null for a guest order); a contact ticket (its order number is not verified) takes the
+ * signed-in customer, or null.
  */
 export interface NewTicket {
   id?: string;
@@ -162,7 +162,9 @@ export class SupportService {
       this.open(tx, {
         type: SupportTicketType.CONTACT,
         orderId: order?.id ?? null,
-        customerId: order ? order.customerId : (customer?.id ?? null),
+        // The typed order number is not verified: the ticket belongs to the session customer only, never to the
+        // typed order's owner.
+        customerId: customer?.id ?? null,
         fullName: input.fullName,
         phone: input.phone,
         email: input.email,

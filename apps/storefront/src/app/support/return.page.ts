@@ -22,6 +22,8 @@ import {
 } from '@hg/models';
 import { formatDate } from '../core/format';
 import { PageMeta } from '../core/page-meta';
+import { CustomerStore } from '../account/customer.store';
+import { returnOpen } from '../order/return-window';
 import { OrderStep } from './order-step';
 import { SupportApi, supportErrorMessage, supportFailure, supportSuccessText, type SupportOrder } from './support.api';
 
@@ -49,6 +51,9 @@ export class ReturnPage {
   private readonly api = inject(SupportApi);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
+  private readonly store = inject(CustomerStore);
+  /** Known only in the browser after the session loads; the server renders the signed-out text. */
+  protected readonly signedIn = computed(() => this.store.me() !== null);
 
   protected readonly ids = IDS;
   protected readonly reasons = RETURN_REASONS.map((code) => ({ code, label: RETURN_REASON_LABELS_HE[code] }));
@@ -70,7 +75,7 @@ export class ReturnPage {
     const o = this.found()?.order;
     if (!o) return '';
     if (o.status !== 'delivered') return SUPPORT_RETURN_NOT_DELIVERED_HE;
-    if (o.returnUntil && Date.now() > Date.parse(o.returnUntil)) return SUPPORT_RETURN_WINDOW_PASSED_HE;
+    if (!returnOpen(o)) return SUPPORT_RETURN_WINDOW_PASSED_HE;
     return '';
   });
   protected readonly deadline = computed(() => {

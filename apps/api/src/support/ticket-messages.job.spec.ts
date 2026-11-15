@@ -1,11 +1,20 @@
 import type { ConfigService } from '@nestjs/config';
 import { SupportTicketType } from '../generated/prisma/client.js';
 import type { NotificationsService } from '../notifications/notifications.service.js';
+import { renderEmail } from '../notifications/templates/index.js';
 import type { OutboxService } from '../outbox/outbox.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { TicketMessagesJob } from './ticket-messages.job.js';
 
-const TICKET = {
+const TICKET: {
+  id: string;
+  number: number;
+  type: SupportTicketType;
+  email: string;
+  fullName: string;
+  orderId: string | null;
+  order: { number: number } | null;
+} = {
   id: 't-1',
   number: 5001,
   type: SupportTicketType.DAMAGED,
@@ -56,5 +65,30 @@ describe('TicketMessagesJob', () => {
     const empty = job('support@example.test', { email: '' });
     await expect(empty.job.received({ ticketId: 't-1' })).resolves.toBeUndefined();
     expect(empty.email).not.toHaveBeenCalled();
+  });
+
+  it('a contact ticket: the confirmation never echoes the typed name (generic greeting, no relay)', async () => {
+    const typed = 'Win a prize at https://evil.example/claim now';
+    const { job: j, email } = job('support@example.test', {
+      type: SupportTicketType.CONTACT,
+      fullName: typed,
+      orderId: null,
+      order: null,
+    });
+    await j.received({ ticketId: 't-1' });
+    expect(email).toHaveBeenCalledWith('ticket_received', 'dana@example.test', { ticketNumber: 5001 }, undefined);
+    const data = email.mock.calls[0][2] as { ticketNumber: number };
+    const m = renderEmail('ticket_received', data);
+    for (const part of [m.subject, m.text, m.html]) {
+      expect(part).not.toContain('evil.example');
+      expect(part).not.toContain('Win a prize');
+    }
+    expect(m.text.startsWith('שלום,')).toBe(true);
+  });
+
+  it('a contact ticket with an order number still gets the generic greeting (the e-mail was typed)', async () => {
+    const { job: j, email } = job('support@example.test', { type: SupportTicketType.CONTACT, fullName: 'דנה' });
+    await j.received({ ticketId: 't-1' });
+    expect(email).toHaveBeenCalledWith('ticket_received', 'dana@example.test', { ticketNumber: 5001 }, 'o-1');
   });
 });

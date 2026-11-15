@@ -28,11 +28,6 @@ const STATUS_FILTERS: Filter<SupportTicketStatus>[] = [
   ...SUPPORT_TICKET_STATUSES.map((value) => ({ value, label: SUPPORT_TICKET_STATUS_LABELS_HE[value] })),
 ];
 
-/** "תמונה אחת" / "N תמונות". */
-export function photosLabel(count: number): string {
-  return count === 1 ? 'תמונה אחת' : `${count} תמונות`;
-}
-
 const known = <T extends string>(list: readonly T[], value: string | undefined): T | null =>
   value !== undefined && (list as readonly string[]).includes(value) ? (value as T) : null;
 
@@ -64,7 +59,6 @@ export class InboxPage {
   protected readonly typeLabels = SUPPORT_TICKET_TYPE_LABELS_HE;
   protected readonly statusLabels = SUPPORT_TICKET_STATUS_LABELS_HE;
   protected readonly dateTime = israelDateTime;
-  protected readonly photosLabel = photosLabel;
   protected readonly type = computed(() => known(SUPPORT_TICKET_TYPES, this.typeParam()));
   protected readonly status = computed(() => known(SUPPORT_TICKET_STATUSES, this.statusParam()));
   protected readonly page = computed(() => {

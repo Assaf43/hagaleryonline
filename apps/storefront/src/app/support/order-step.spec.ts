@@ -92,6 +92,8 @@ describe('OrderStep', () => {
     await settle();
     expect(alertText()).toBe(GUEST_ORDER_HINT_HE);
     expect(q('#os-phone')).not.toBeNull();
+    // Focus moves to the field the customer now has to fill.
+    expect(document.activeElement).toBe(q('#os-phone'));
     fill('#os-phone', '050-123-4567');
     await submit();
     await tick();
@@ -111,5 +113,40 @@ describe('OrderStep', () => {
     await settle();
     expect(emitted.at(-1)).toMatchObject({ ref: null });
     expect(document.activeElement).not.toBe(q('#os-summary'));
+  });
+
+  it('cuts a long ?order= value to the shared order number length', async () => {
+    await open(false, '1'.repeat(30));
+    expect(q('#os-number').value).toBe('1'.repeat(12));
+  });
+
+  it('keeps the lookup error while the customer edits (the button does not move), until the next submit', async () => {
+    await open(false);
+    fill('#os-number', '100001');
+    fill('#os-phone', '0501234567');
+    await submit();
+    await tick();
+    failWith(http.expectOne('/api/orders/lookup'), 404, 'not_found');
+    await settle();
+    const before = alertText();
+    expect(before).toBeTruthy();
+    fill('#os-phone', '0501234568');
+    expect(alertText()).toBe(before);
+    await submit();
+    await tick();
+    http.expectOne('/api/orders/lookup').flush({ url: '/order/100001?t=tok9' });
+    await tick();
+    http.expectOne((r) => r.url === '/api/orders/100001').flush(deliveredOrder());
+    await settle();
+    expect(emitted.at(-1)).toMatchObject({ ref: { number: '100001' } });
+  });
+
+  it('the found order reads "הזמנה מספר N" as one text run, apart from the change button', async () => {
+    await open(true, '100001');
+    http.expectOne('/api/account/orders/100001').flush(deliveredOrder());
+    await settle();
+    const ref = q<HTMLElement>('#os-summary .order-ref');
+    expect(ref.textContent?.replace(/\s+/g, ' ').trim()).toBe('הזמנה מספר 100001');
+    expect(ref.querySelector('bdi')?.textContent).toBe('100001');
   });
 });

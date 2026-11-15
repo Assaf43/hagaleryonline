@@ -68,7 +68,8 @@ describe('support inbox ("פניות")', () => {
     expect(rows[0].querySelector('.date')?.textContent).toContain('6.11.2026 00:30');
     expect(rows[0].textContent).toContain('דנה כהן');
     expect(rows[0].textContent).toContain('100002');
-    expect(rows[0].querySelector('.photos')?.textContent).toContain('3 תמונות');
+    expect(rows[0].querySelector('.photos')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('3 תמונות');
+    expect(rows[0].querySelector('.photos bdi')?.textContent).toBe('3');
     expect(rows[0].querySelector('a')?.getAttribute('href')).toBe('/support/5002');
     expect(rows[1].querySelector('.status')?.textContent?.trim()).toBe('סגורה');
     expect(rows[1].textContent).toContain('שאלה על משלוח');
@@ -101,6 +102,8 @@ describe('support inbox ("פניות")', () => {
       relativeTo: expect.anything(),
       queryParams: { type: null, status: 'in_progress', page: null },
     });
+    // Page numbers are isolated inside the Hebrew sentence.
+    expect([...el.querySelectorAll('.pager bdi')].map((b) => b.textContent)).toEqual(['1', '3']);
     el.querySelectorAll<HTMLButtonElement>('.pager button')[1].click();
     expect(navigate).toHaveBeenLastCalledWith([], {
       relativeTo: expect.anything(),

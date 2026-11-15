@@ -70,7 +70,9 @@
 
         @if (o.status === 'delivered') {
           <p class="support-links">
-            <a class="btn btn-secondary" routerLink="/returns" [queryParams]="{ order: o.number }">החזרה או החלפה</a>
+            @if (returnOpen(o)) {
+              <a class="btn btn-secondary" routerLink="/returns" [queryParams]="{ order: o.number }">החזרה או החלפה</a>
+            }
             <a class="btn btn-secondary" routerLink="/returns/damaged" [queryParams]="{ order: o.number }"
               >דיווח על מוצר פגום</a
             >

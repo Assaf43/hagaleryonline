@@ -3,6 +3,10 @@ import { bdi, emailLayout, esc, greeting, paragraph, type RenderedEmail } from '
 
 export interface TicketReceivedData {
   ticketNumber: number;
+  /**
+   * Only the order's contact snapshot (a ticket about an order), never a name the customer typed into a form: this
+   * e-mail goes to a typed address, so nothing typed may be echoed in it. Without it the greeting is "שלום,".
+   */
   customerName?: string;
 }
 

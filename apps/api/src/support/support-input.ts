@@ -11,6 +11,7 @@ import {
   type SupportField,
 } from '@hg/models';
 import { normalizeEmail, normalizePhone } from '../customers/contact-normalize.js';
+import { israelDate, israelMidnightUtc } from '../invoicing/vat.js';
 import { parseOrderNumber } from '../orders/order-number.js';
 
 /** Errors of the support endpoints: `{ statusCode, code, ...details }` (models `SupportErrorCode`). */
@@ -165,14 +166,20 @@ export function parseContactInput(raw: unknown): ContactInput {
   return { fullName, phone, email, subject, message, orderNumber };
 }
 
-/** SRV-02: a return or exchange is allowed while `now ≤ deliveredAt + returnWindowDays`. */
+/** SRV-02: a return or exchange is allowed while `now ≤ returnUntil(deliveredAt, returnWindowDays)`. */
 export function withinReturnWindow(deliveredAt: Date, returnWindowDays: number, now = new Date()): boolean {
   return now.getTime() <= returnUntil(deliveredAt, returnWindowDays).getTime();
 }
 
-/** The last moment a return or exchange can be requested (the order view's `returnUntil`). */
+/**
+ * The last moment a return or exchange can be requested (the order view's `returnUntil`): 23:59:59.999 Israel time
+ * on the Israel calendar date of delivery + `returnWindowDays` days — the date the customer is shown is the date
+ * enforced. The offset is taken on the last day itself, so a DST change inside the window comes out right.
+ */
 export function returnUntil(deliveredAt: Date, returnWindowDays: number): Date {
-  return new Date(deliveredAt.getTime() + returnWindowDays * 24 * 60 * 60_000);
+  const [y, m, d] = israelDate(deliveredAt).split('-').map(Number);
+  const dayAfter = new Date(Date.UTC(y, m - 1, d + returnWindowDays + 1)).toISOString().slice(0, 10);
+  return new Date(israelMidnightUtc(dayAfter).getTime() - 1);
 }
 
 /** Used only if the settings row is missing (migration support inserts it with this value). */

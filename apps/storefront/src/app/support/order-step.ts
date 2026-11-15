@@ -77,7 +77,7 @@ export class OrderStep {
     effect(() => {
       const initial = this.initialNumber();
       untracked(() => {
-        if (initial && !this.number()) this.number.set(initial.trim().slice(0, 20));
+        if (initial && !this.number()) this.number.set(initial.trim().slice(0, ORDER_NUMBER_MAX_LENGTH));
       });
     });
     // Signed in with an order number in the link: nothing more to ask.
@@ -102,7 +102,8 @@ export class OrderStep {
 
   protected input(field: StepField, event: Event): void {
     (field === 'number' ? this.number : this.phone).set((event.target as HTMLInputElement).value);
-    this.formError.set('');
+    // The lookup message stays until the next submit: removing it here would move the "המשך" button under the
+    // pointer, and the first click after editing would miss it.
     if (this.errors()[field]) this.errors.update((e) => ({ ...e, [field]: undefined }));
   }
 
@@ -134,7 +135,6 @@ export class OrderStep {
   /** `byCustomer`: the customer pressed the button (focus then moves to the found order); not the automatic load. */
   private async load(byCustomer = false): Promise<void> {
     if (this.busy()) return;
-    this.formError.set('');
     const withPhone = this.askPhone();
     const number = this.number().trim();
     const phone = this.phone().trim();
@@ -144,12 +144,14 @@ export class OrderStep {
     this.errors.set(errors);
     const first = (['number', 'phone'] as const).find((f) => errors[f]);
     if (first) {
+      this.formError.set('');
       this.focusLater(first);
       return;
     }
     this.busy.set(true);
     try {
       const result = await this.api.loadOrder(number, withPhone ? phone : null);
+      this.formError.set('');
       this.current.set(result);
       this.orderChange.emit(result);
       if (byCustomer) this.focusLater('summary');
@@ -160,6 +162,7 @@ export class OrderStep {
         // The account has no such order: it may be a guest order, which needs its phone.
         this.guest.set(true);
         this.formError.set(GUEST_ORDER_HINT_HE);
+        this.focusLater('phone');
         return;
       }
       this.formError.set(

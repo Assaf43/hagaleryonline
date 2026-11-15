@@ -74,8 +74,8 @@ describe('DamagedPage (/returns/damaged, SRV-03)', () => {
     expect(q('label[for="dm-line"]').textContent?.trim()).toBe('איזה פריט פגום?');
     expect([...el().querySelectorAll('#dm-line option')].map((o) => o.textContent?.trim())).toEqual([
       'בחרו פריט',
-      'ALBA · ספה תלת מושבית',
-      'LUNA · שולחן קפה',
+      'ALBA · ספה תלת מושבית · בז׳',
+      'LUNA · שולחן קפה · בז׳',
     ]);
     expect(q('label[for="dm-description"]').textContent?.trim()).toBe('תיאור הנזק');
     expect(q('input[type="file"]').getAttribute('accept')).toBe('image/*');
@@ -154,5 +154,36 @@ describe('DamagedPage (/returns/damaged, SRV-03)', () => {
     expect(trap.getAttribute('name')).toBe('website');
     expect(trap.getAttribute('tabindex')).toBe('-1');
     expect(trap.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('two lines of the same model differ by their options in the line list', async () => {
+    const base = deliveredOrder();
+    await openOrder(
+      deliveredOrder({
+        lines: [
+          { ...base.lines[0], orderItemId: 11, optionLabels: ['אפור', 'שמאל'] },
+          { ...base.lines[0], orderItemId: 13, optionLabels: ['אפור', 'ימין'] },
+        ],
+      }),
+    );
+    expect([...el().querySelectorAll('#dm-line option')].slice(1).map((o) => o.textContent?.trim())).toEqual([
+      'ALBA · ספה תלת מושבית · אפור · שמאל',
+      'ALBA · ספה תלת מושבית · אפור · ימין',
+    ]);
+  });
+
+  it('the intro asks for the phone only when signed out', async () => {
+    http = setupSupport();
+    fixture = TestBed.createComponent(DamagedPage);
+    fixture.detectChanges();
+    await settle();
+    expect(q('.intro').textContent?.trim()).toBe('הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, וצרפו תמונות של הנזק.');
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    http = setupSupport(true);
+    fixture = TestBed.createComponent(DamagedPage);
+    fixture.detectChanges();
+    await settle();
+    expect(q('.intro').textContent?.trim()).toBe('הזינו את מספר ההזמנה וצרפו תמונות של הנזק.');
   });
 });

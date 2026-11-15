@@ -271,6 +271,17 @@ describe('OrderPage', () => {
       ]);
     });
 
+    it('after the return deadline only the damaged-product link stays', async () => {
+      await setup(order('delivered', { returnUntil: '2020-01-01T21:59:59.999Z' }));
+      const links = [...el().querySelectorAll<HTMLAnchorElement>('.support-links a')];
+      expect(links.map((a) => a.textContent?.trim())).toEqual(['דיווח על מוצר פגום']);
+    });
+
+    it('before the return deadline both links show', async () => {
+      await setup(order('delivered', { returnUntil: '2999-01-01T21:59:59.999Z' }));
+      expect(el().querySelectorAll('.support-links a')).toHaveLength(2);
+    });
+
     it.each(['paid', 'processing', 'delivery_scheduled', 'shipped', 'cancelled', 'pending_payment'] as const)(
       'has no return or damaged links for a %s order',
       async (status) => {

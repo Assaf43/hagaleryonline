@@ -5,7 +5,14 @@
   <p id="rt-success" class="success" role="status" tabindex="-1">{{ done() }}</p>
 
   @if (!done()) {
-    <p class="intro">הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, ובחרו אילו פריטים להחזיר או להחליף.</p>
+    <!-- Signed in, the session proves the owner: the phone is asked for only for a guest order (the step says so). -->
+    <p class="intro">
+      @if (signedIn()) {
+        הזינו את מספר ההזמנה ובחרו אילו פריטים להחזיר או להחליף.
+      } @else {
+        הזינו את מספר ההזמנה ואת הטלפון שאיתו הזמנתם, ובחרו אילו פריטים להחזיר או להחליף.
+      }
+    </p>
 
     <hg-support-order-step idPrefix="rt-os" [initialNumber]="order()" (orderChange)="orderFound($event)" />
 

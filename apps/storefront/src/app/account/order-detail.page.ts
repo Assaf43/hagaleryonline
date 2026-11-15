@@ -21,6 +21,7 @@ import { SUPPORT_CONTACT } from '../core/support-contact';
 import { AccountNav } from './account-nav';
 import { AccountApi, accountErrorMessage, accountFailure } from './account.api';
 import { CustomerStore } from './customer.store';
+import { returnOpen } from '../order/return-window';
 
 /**
  * `/account/orders/:number` (ACC-03): the order view of Task 5 (`OrderDetail`) for an order of this account, with the
@@ -45,6 +46,8 @@ export class OrderDetailPage {
   private readonly cancelDialog = viewChild<ElementRef<HTMLDialogElement>>('cancelDialog');
 
   protected readonly order = signal<OrderView | null>(null);
+  /** "החזרה או החלפה" only until the return deadline; the damaged-product link stays. */
+  protected readonly returnOpen = (o: OrderView): boolean => returnOpen(o);
   protected readonly state = signal<'loading' | 'ready' | 'not_found' | 'error'>('loading');
   protected readonly cancelling = signal(false);
   protected readonly actionError = signal('');

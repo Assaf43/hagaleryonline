@@ -64,7 +64,13 @@
               <span class="subject">{{ t.subject }}</span>
             }
             @if (t.attachmentCount > 0) {
-              <span class="photos">{{ photosLabel(t.attachmentCount) }}</span>
+              <span class="photos">
+                @if (t.attachmentCount === 1) {
+                  תמונה אחת
+                } @else {
+                  <bdi>{{ t.attachmentCount }}</bdi> תמונות
+                }
+              </span>
             }
           </span>
         </a>
@@ -78,7 +84,9 @@
       <button matButton="outlined" type="button" [disabled]="d.page === 1 || loading()" (click)="goTo(d.page - 1)">
         הקודם
       </button>
-      <span class="muted">עמוד {{ d.page }} מתוך {{ pages(d) }}</span>
+      <span class="muted"
+        >עמוד <bdi>{{ d.page }}</bdi> מתוך <bdi>{{ pages(d) }}</bdi></span
+      >
       <button
         matButton="outlined"
         type="button"

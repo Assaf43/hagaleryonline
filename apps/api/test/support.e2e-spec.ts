@@ -19,6 +19,7 @@ import {
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { returnUntil } from './../src/support/support-input.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -153,14 +154,14 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
   });
 
   describe('order view fields for the forms', () => {
-    it('a delivered order shows its lines ids, deliveredAt and returnUntil (delivery + the window)', async () => {
+    it('a delivered order shows its lines ids, deliveredAt and returnUntil (end of the Israel day of delivery + the window)', async () => {
       const order = await makeOrder(OrderStatus.DELIVERED);
       const res = await http().get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200);
       const settings = await prisma.storeSettings.findUnique({ where: { id: 1 } });
       const days = settings?.returnWindowDays ?? 14;
       expect(res.body.lines[0].orderItemId).toBe(order.items[0].id);
       expect(res.body.deliveredAt).toBe(order.deliveredAt!.toISOString());
-      expect(res.body.returnUntil).toBe(new Date(order.deliveredAt!.getTime() + days * DAY).toISOString());
+      expect(res.body.returnUntil).toBe(returnUntil(order.deliveredAt!, days).toISOString());
     });
 
     it('the account order view carries the same fields', async () => {
@@ -174,7 +175,7 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       const days = settings?.returnWindowDays ?? 14;
       expect(res.body.lines[0].orderItemId).toBe(order.items[0].id);
       expect(res.body.deliveredAt).toBe(order.deliveredAt!.toISOString());
-      expect(res.body.returnUntil).toBe(new Date(order.deliveredAt!.getTime() + days * DAY).toISOString());
+      expect(res.body.returnUntil).toBe(returnUntil(order.deliveredAt!, days).toISOString());
     });
 
     it('an order that is not delivered has null deliveredAt and returnUntil', async () => {
@@ -240,7 +241,7 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
 
     it('after the window (store settings: 14 days) → 409 return_window_passed', async () => {
       expect((await prisma.storeSettings.findUniqueOrThrow({ where: { id: 1 } })).returnWindowDays).toBe(14);
-      const order = await makeOrder(OrderStatus.DELIVERED, { deliveredAt: new Date(Date.now() - 15 * DAY) });
+      const order = await makeOrder(OrderStatus.DELIVERED, { deliveredAt: new Date(Date.now() - 16 * DAY) });
       expect((await post('returns', returnBody(order)).expect(409)).body.code).toBe('return_window_passed');
     });
 
@@ -319,7 +320,7 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
       // A ticket about an order belongs to the order's account, also when filed signed out with number + phone.
       const signedOut = await post('returns', returnBody(own)).expect(202);
       expect((await ticketOf(signedOut)).customerId).toBe(customer.id);
-      // A contact ticket without an order takes the signed-in customer; with an order, the order's account (none).
+      // A contact ticket takes the signed-in customer, with or without a (typed, unverified) order number.
       const contactBody = {
         fullName: 'ZZ לקוח',
         phone: PHONE,
@@ -333,7 +334,10 @@ describe('Support requests (e2e, SRV-02, SRV-03, SRV-05)', () => {
         { ...contactBody, orderNumber: String(other.number) },
         cookie,
       ).expect(202);
-      expect(await ticketOf(aboutGuestOrder)).toMatchObject({ orderId: other.id, customerId: null });
+      expect(await ticketOf(aboutGuestOrder)).toMatchObject({ orderId: other.id, customerId: customer.id });
+      // Signed out with someone's order number: the order's owner is never taken.
+      const aboutOwnOrder = await post('contact', { ...contactBody, orderNumber: String(own.number) }).expect(202);
+      expect(await ticketOf(aboutOwnOrder)).toMatchObject({ orderId: own.id, customerId: null });
     });
   });
 

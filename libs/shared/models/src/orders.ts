@@ -310,7 +310,7 @@ export interface OrderView {
   reservedUntil: string;
   /** ISO time the order was delivered; null unless its status is `delivered`. */
   deliveredAt: string | null;
-  /** ISO time of the last moment a return or exchange can be requested (deliveredAt + the return window); null unless delivered. */
+  /** ISO time of the last moment a return or exchange can be requested: 23:59:59.999 Israel time on the Israel date of delivery + the return window; null unless delivered. */
   returnUntil: string | null;
   lines: OrderLine[];
   address: OrderAddressView;
