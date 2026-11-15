@@ -137,20 +137,61 @@ describe('support ticket page', () => {
     expect(el.querySelector<HTMLTextAreaElement>('textarea[name="note"]')!.value).toBe('');
   });
 
-  it('changes the status from the select and refreshes the new-tickets badge', async () => {
+  it('the select only holds a choice: arrow-key changes post nothing; "עדכון סטטוס" posts once and refreshes the badge', async () => {
     const { fixture, el } = await open();
     const select = el.querySelector<HTMLSelectElement>('select[name="status"]')!;
+    const button = el.querySelector<HTMLButtonElement>('button.apply-status')!;
     expect(el.querySelector(`label[for="${select.id}"]`)?.textContent).toContain('סטטוס');
     expect([...select.options].map((o) => o.textContent?.trim())).toEqual(['חדשה', 'בטיפול', 'סגורה']);
-    select.value = 'in_progress';
-    select.dispatchEvent(new Event('change'));
+    expect(button.textContent?.trim()).toBe('עדכון סטטוס');
+    // Unchanged choice: the button is unavailable (but stays focusable) and a click sends nothing.
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    button.click();
+    await settle(fixture);
+    http.expectNone('/api/admin/support/5003/status');
+
+    // Arrow keys on a closed select fire "change" per step: new → in_progress → closed, nothing sent.
+    for (const value of ['in_progress', 'closed']) {
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      await settle(fixture);
+    }
+    http.expectNone('/api/admin/support/5003/status');
+    expect(button.getAttribute('aria-disabled')).not.toBe('true');
+    expect(select.disabled).toBe(false);
+
+    button.focus();
+    button.click();
+    button.click(); // A second click while saving is ignored.
+    await settle(fixture);
     const req = http.expectOne('/api/admin/support/5003/status');
-    expect(req.request.body).toEqual({ status: 'in_progress' });
-    req.flush({ ...TICKET, status: 'in_progress' });
+    expect(req.request.body).toEqual({ status: 'closed' });
+    expect(select.disabled).toBe(false);
+    expect(button.disabled).toBe(false);
+    req.flush({ ...TICKET, status: 'closed' });
     await settle(fixture);
     http.expectOne('/api/admin/support/count-new').flush({ count: 0 });
     await settle(fixture);
-    expect(el.querySelector('.status')?.textContent?.trim()).toBe('בטיפול');
+    expect(el.querySelector('.head .status')?.textContent?.trim()).toBe('סגורה');
+    expect(el.querySelector('.status-row [role=status]')?.textContent).toContain('הסטטוס עודכן: סגורה');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('a refused status change shows the error and keeps the choice for another try', async () => {
+    const { fixture, el } = await open();
+    const select = el.querySelector<HTMLSelectElement>('select[name="status"]')!;
+    select.value = 'in_progress';
+    select.dispatchEvent(new Event('change'));
+    await settle(fixture);
+    el.querySelector<HTMLButtonElement>('button.apply-status')!.click();
+    http
+      .expectOne('/api/admin/support/5003/status')
+      .flush({ code: 'invalid_input', field: 'status' }, { status: 400, statusText: 'Bad Request' });
+    await settle(fixture);
+    expect(el.querySelector('.status-row [role=alert]')?.textContent).toContain('הסטטוס לא תקין');
+    expect(el.querySelector('.head .status')?.textContent?.trim()).toBe('חדשה');
+    expect(el.querySelector<HTMLButtonElement>('button.apply-status')!.getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('a contact ticket says its order number was typed by the sender; without orders.view the number is text', async () => {

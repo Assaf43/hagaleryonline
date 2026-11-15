@@ -18,7 +18,7 @@ import { israelDateTime } from '../promotions/israel-time';
 /**
  * One support ticket (spec §7.2, permission support.manage): type and status, the sender's contact, the order link
  * (the refund action lives on the order page; the ticket never moves money), the lines, the photos, the internal
- * notes and the status select. Photos come from the private admin endpoint with the session cookie. The route's
+ * notes and the status select with its "עדכון סטטוס" button. Photos come from the private admin endpoint with the session cookie. The route's
  * `:number` is bound to the input.
  */
 @Component({
@@ -47,6 +47,14 @@ export class TicketPage {
   protected readonly error = signal('');
   protected readonly statusBusy = signal(false);
   protected readonly statusError = signal('');
+  /** The select's choice before it is applied; null = the ticket's own status. */
+  private readonly pendingStatus = signal<SupportTicketStatus | null>(null);
+  protected readonly chosenStatus = computed(() => this.pendingStatus() ?? this.ticket()?.status ?? null);
+  protected readonly canApplyStatus = computed(
+    () => !this.statusBusy() && this.chosenStatus() !== null && this.chosenStatus() !== this.ticket()?.status,
+  );
+  /** Read out by the polite live region after a status change. */
+  protected readonly statusMessage = signal('');
   protected readonly noteText = signal('');
   protected readonly noteBusy = signal(false);
   protected readonly noteError = signal('');
@@ -65,16 +73,28 @@ export class TicketPage {
     return `תמונה ${index + 1} מתוך ${total} שצירף הלקוח`;
   }
 
-  protected async changeStatus(t: AdminTicketDetail, select: HTMLSelectElement) {
-    const status = select.value as SupportTicketStatus;
-    if (status === t.status || this.statusBusy()) return;
+  /** Keeps the select's choice; nothing is sent until "עדכון סטטוס". */
+  protected chooseStatus(value: string) {
+    this.statusMessage.set('');
+    this.pendingStatus.set(
+      (SUPPORT_TICKET_STATUSES as readonly string[]).includes(value) ? (value as SupportTicketStatus) : null,
+    );
+  }
+
+  /** Sends the chosen status once; a second click while saving, or an unchanged choice, does nothing. */
+  protected async applyStatus(t: AdminTicketDetail) {
+    const status = this.chosenStatus();
+    if (!this.canApplyStatus() || !status) return;
     this.statusBusy.set(true);
     this.statusError.set('');
+    this.statusMessage.set('');
     try {
-      this.ticket.set(await this.api.setStatus(t.number, status));
+      const updated = await this.api.setStatus(t.number, status);
+      this.ticket.set(updated);
+      this.pendingStatus.set(null);
+      this.statusMessage.set(`הסטטוס עודכן: ${this.statusLabels[updated.status]}`);
       void this.api.refreshNewCount();
     } catch (e) {
-      select.value = t.status;
       this.statusError.set(errorMessage(e));
     } finally {
       this.statusBusy.set(false);
@@ -104,6 +124,8 @@ export class TicketPage {
   private async load(number: string) {
     const seq = ++this.requestSeq;
     this.ticket.set(null);
+    this.pendingStatus.set(null);
+    this.statusMessage.set('');
     this.error.set('');
     this.loading.set(true);
     try {

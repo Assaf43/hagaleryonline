@@ -25,17 +25,29 @@
 
   <div class="status-row">
     <label for="ticket-status">סטטוס</label>
+    <!-- The select only holds a choice; the button commits it (arrow keys fire "change" on a closed select). -->
     <select
       id="ticket-status"
       name="status"
-      [value]="t.status"
-      [disabled]="statusBusy()"
-      (change)="changeStatus(t, $any($event.target))"
+      [value]="chosenStatus()"
+      (change)="chooseStatus($any($event.target).value)"
     >
       @for (s of statuses; track s) {
-        <option [value]="s" [selected]="s === t.status">{{ statusLabels[s] }}</option>
+        <option [value]="s" [selected]="s === chosenStatus()">{{ statusLabels[s] }}</option>
       }
     </select>
+    <!-- disabledInteractive: aria-disabled, not the native attribute, so the focused button keeps focus. -->
+    <button
+      matButton="outlined"
+      type="button"
+      class="apply-status"
+      disabledInteractive
+      [disabled]="!canApplyStatus()"
+      (click)="applyStatus(t)"
+    >
+      עדכון סטטוס
+    </button>
+    <p class="visually-hidden" role="status">{{ statusMessage() }}</p>
     @if (statusError()) {
       <p class="error" role="alert">{{ statusError() }}</p>
     }
