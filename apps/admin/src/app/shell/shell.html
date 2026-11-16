@@ -85,6 +85,12 @@
           הזמנות
         </a>
       }
+      @if (can('orders.store')) {
+        <a class="nav-link" routerLink="/store-sale" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideStore></svg>
+          מכירה בחנות
+        </a>
+      }
       @if (can('support.manage')) {
         <a class="nav-link" routerLink="/support" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideInbox></svg>
@@ -110,7 +116,7 @@
         </a>
         <a
           class="nav-link"
-          routerLink="/settings/store"
+          routerLink="/settings/return-window"
           routerLinkActive="active"
           (click)="isPhone() && drawer.close()"
         >
@@ -148,6 +154,15 @@
         <a class="nav-link" routerLink="/settings/vat" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucidePercent></svg>
           מע"מ
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/settings/store"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideStore></svg>
+          החנות
         </a>
       }
       @if (canSeeAudit()) {

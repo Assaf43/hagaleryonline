@@ -18,6 +18,12 @@
     <span class="status" [attr.data-status]="o.status">{{ statusLabels[o.status] }}</span>
   </header>
   <p class="page-intro">נוצרה ב-{{ o.createdAt | date: 'd.M.yyyy HH:mm' }}</p>
+  <p class="channel-info">
+    ערוץ: {{ channelLabels[o.channel] }}
+    @if (o.seller; as s) {
+      · מוכר/ת: {{ s.name }}
+    }
+  </p>
 
   @if (o.deliverySlot; as s) {
     <p class="slot">

@@ -405,6 +405,18 @@ export const ORDER_ATTENTION_LABELS_HE: Record<OrderAttentionReason, string> = {
   job_failed: 'משימה אוטומטית נכשלה',
 };
 
+/** Where an order was placed: the website, or the seller at the store (Phase 6). */
+export type OrderChannel = 'web' | 'store';
+
+/** The channel in Hebrew, for the admin (ADM-18). */
+export const ORDER_CHANNEL_LABELS_HE: Record<OrderChannel, string> = { web: 'אתר', store: 'חנות' };
+
+/** The seller of a store order: the staff member's display name (ADM-18). */
+export interface OrderSeller {
+  id: number;
+  name: string;
+}
+
 /** One row of GET /api/admin/orders. */
 export interface AdminOrderRow {
   number: number;
@@ -419,6 +431,9 @@ export interface AdminOrderRow {
   /** Staff must look at it: see `attentionReasons`. */
   needsAttention: boolean;
   attentionReasons: OrderAttentionReason[];
+  channel: OrderChannel;
+  /** Null for a web order. */
+  seller: OrderSeller | null;
 }
 
 export interface AdminOrderPage {
@@ -446,6 +461,9 @@ export interface AdminOrderPayment {
 /** GET /api/admin/orders/:number */
 export interface AdminOrderDetail {
   number: number;
+  channel: OrderChannel;
+  /** Null for a web order. */
+  seller: OrderSeller | null;
   status: OrderStatus;
   createdAt: string;
   reservedUntil: string;

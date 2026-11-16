@@ -7,6 +7,7 @@ import type {
   AdminOrderPage,
   AdminRefundRequest,
   AdvanceOrderRequest,
+  OrderChannel,
   OrderStatus,
   ProvidersStatus,
 } from '@hg/models';
@@ -16,10 +17,11 @@ import type {
 export class OrdersApi {
   private readonly http = inject(HttpClient);
 
-  list(status: OrderStatus | null, page: number, attention = false) {
+  list(status: OrderStatus | null, page: number, attention = false, channel: OrderChannel | null = null) {
     let params = new HttpParams().set('page', page);
     if (status) params = params.set('status', status);
     if (attention) params = params.set('attention', 'true');
+    if (channel) params = params.set('channel', channel);
     return firstValueFrom(this.http.get<AdminOrderPage>('/api/admin/orders', { params }));
   }
 

@@ -94,6 +94,12 @@ export const routes: Routes = [
         title: 'הזמנה',
       },
       {
+        path: 'store-sale',
+        canMatch: [hasPermission('orders.store')],
+        loadComponent: () => import('./store-sale/store-sale.page').then((m) => m.StoreSalePage),
+        title: 'מכירה בחנות',
+      },
+      {
         path: 'support',
         canMatch: [hasPermission('support.manage')],
         loadComponent: () => import('./support/inbox.page').then((m) => m.InboxPage),
@@ -124,10 +130,16 @@ export const routes: Routes = [
         title: 'ספקים',
       },
       {
-        path: 'settings/store',
+        path: 'settings/return-window',
         canMatch: [hasPermission('orders.manage')],
         loadComponent: () => import('./settings/return-window.page').then((m) => m.ReturnWindowPage),
         title: 'ימי החזרה',
+      },
+      {
+        path: 'settings/store',
+        canMatch: [superAdminOnly],
+        loadComponent: () => import('./settings/store-settings.page').then((m) => m.StoreSettingsPage),
+        title: 'החנות',
       },
       {
         path: 'settings/failed-jobs',

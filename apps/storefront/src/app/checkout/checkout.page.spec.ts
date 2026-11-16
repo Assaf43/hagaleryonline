@@ -715,6 +715,16 @@ describe('CheckoutPage', () => {
       await render();
     });
 
+    it('an account without an e-mail gets an empty, required e-mail field', async () => {
+      const p = prefill([]);
+      p.contact.email = '';
+      await setup(undefined, { me: customerMe({ email: null, emailVerified: false }), prefill: p });
+      expect(q('#chk-email').value).toBe('');
+      expect(q('#chk-fullName').value).toBe('דנה כהן');
+      await submit();
+      expect(q('#chk-email').getAttribute('aria-invalid')).toBe('true');
+    });
+
     it('without saved addresses fills only the contact', async () => {
       await setup(undefined, { me: customerMe(), prefill: prefill([]) });
       expect(q('#chk-fullName').value).toBe('דנה כהן');

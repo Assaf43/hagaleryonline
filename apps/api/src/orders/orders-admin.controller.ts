@@ -22,7 +22,13 @@ import {
   type AdminContext,
 } from '../auth/guards.js';
 import { OrderLifecycleService } from './order-lifecycle.service.js';
-import { ORDER_STATUS_FILTERS, OrdersAdminService, type OrderStatusFilter } from './orders-admin.service.js';
+import {
+  ORDER_CHANNEL_FILTERS,
+  ORDER_STATUS_FILTERS,
+  OrdersAdminService,
+  type OrderChannelFilter,
+  type OrderStatusFilter,
+} from './orders-admin.service.js';
 
 const invalid = (field: string) => new BadRequestException({ statusCode: 400, code: 'invalid_input', field });
 
@@ -42,6 +48,7 @@ export class OrdersAdminController {
     @Query('status') status: unknown,
     @Query('page') page: unknown,
     @Query('attention') attention: unknown,
+    @Query('channel') channel: unknown,
   ): Promise<AdminOrderPage> {
     let filter: OrderStatusFilter | undefined;
     if (status !== undefined && status !== '') {
@@ -55,7 +62,13 @@ export class OrdersAdminController {
       pageNumber = Number(page);
     }
     if (attention !== undefined && attention !== '' && attention !== 'true') throw invalid('attention');
-    return this.orders.list(filter, pageNumber, attention === 'true');
+    let channelFilter: OrderChannelFilter | undefined;
+    if (channel !== undefined && channel !== '') {
+      if (typeof channel !== 'string' || !(ORDER_CHANNEL_FILTERS as readonly string[]).includes(channel))
+        throw invalid('channel');
+      channelFilter = channel as OrderChannelFilter;
+    }
+    return this.orders.list(filter, pageNumber, attention === 'true', channelFilter);
   }
 
   @Get('orders/:number')

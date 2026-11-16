@@ -9,6 +9,7 @@ import {
   FULFILLMENT_LABELS_HE,
   INVOICE_TYPE_LABELS_HE,
   ORDER_ATTENTION_LABELS_HE,
+  ORDER_CHANNEL_LABELS_HE,
   ORDER_STATUS_LABELS_HE,
   SHIPPING_METHOD_LABELS_HE,
   type AdminOrderDetail,
@@ -62,6 +63,7 @@ export class OrderDetailPage {
 
   protected readonly formatPrice = formatPrice;
   protected readonly formatAmount = formatAmount;
+  protected readonly channelLabels = ORDER_CHANNEL_LABELS_HE;
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
   protected readonly slotStateLabels = DELIVERY_SLOT_STATE_LABELS_HE;

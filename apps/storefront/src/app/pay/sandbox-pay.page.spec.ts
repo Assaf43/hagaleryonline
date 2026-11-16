@@ -79,6 +79,20 @@ describe('SandboxPayPage', () => {
     });
   }
 
+  for (const [label, r] of [
+    ['תשלום מצליח', 'ok'],
+    ['תשלום נכשל', 'fail'],
+    ['ביטול', 'fail'],
+  ] as const) {
+    it(`"${label}" returning to /pay/done appends ?r=${r}`, async () => {
+      await setup();
+      button(label).click();
+      http.expectOne(`${URL}/complete`).flush({ confirmationUrl: '/pay/done' });
+      await render();
+      expect(navigateByUrl).toHaveBeenCalledWith(`/pay/done?r=${r}`);
+    });
+  }
+
   it('shows the API error when the transaction is not found', async () => {
     await setup(404);
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('העסקה לא נמצאה');
