@@ -9,6 +9,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { HealthModule } from './health/health.module.js';
 import { InvoicingModule } from './invoicing/invoicing.module.js';
+import { MarketingModule } from './marketing/marketing.module.js';
 import { MediaModule } from './media/media.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { OrdersModule } from './orders/orders.module.js';
@@ -39,6 +40,7 @@ import { StoreOrdersModule } from './store-orders/store-orders.module.js';
     CustomersModule,
     SupportModule,
     StoreOrdersModule,
+    MarketingModule,
   ],
 })
 export class AppModule {}

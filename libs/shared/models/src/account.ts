@@ -2,6 +2,7 @@
  * Customer accounts (Phase 5c, spec §6.1, §6.2, ACC-01, NFR-12, decision 80): sign-up with phone and e-mail, sign-in
  * by e-mail + password or by a one-time code sent by SMS or e-mail. Endpoints under /api/account/.
  */
+import type { MarketingStatus } from './marketing.js';
 import type { CheckoutAddress, OrderStatus } from './orders.js';
 
 /** The signed-in customer (`GET /api/account/me`; `null` when signed out). */
@@ -23,8 +24,9 @@ export interface CustomerMe {
    */
   emailVerified: boolean;
   hasPassword: boolean;
+  /** The account's marketing contact is `subscribed` (decision 95; `GET /api/account/consent` has the details). */
   marketingConsent: boolean;
-  /** When the marketing consent was given (ISO time); null when there is none. */
+  /** When the current marketing consent was given (ISO time); null when there is none. */
   marketingConsentAt: string | null;
 }
 
@@ -208,19 +210,26 @@ export interface AccountOrdersPage {
 export const ACCOUNT_ORDERS_PAGE_SIZE = 10;
 
 /**
- * `PUT /api/account/consent { marketingConsent }` (CLAUDE.md §4.4): giving consent records its time and source
- * `account` and clears `marketingWithdrawnAt`; withdrawing records `marketingWithdrawnAt` (the consent's time and
- * source are kept). Sending the current value changes nothing.
+ * `PUT /api/account/consent { marketingConsent }` (CLAUDE.md §4.4, decision 95): the account's e-mail in the marketing
+ * contacts. `true` subscribes the verified e-mail at once (source `account`, a `confirmed` history event); an
+ * unverified or missing e-mail answers 409 `email_not_verified`. `false` withdraws it (a `withdrawn` event). Sending
+ * the current state changes nothing. Answers the `AccountConsent`.
  */
 export interface ConsentBody {
   marketingConsent: boolean;
 }
 
-export type MarketingConsentSource = 'signup' | 'checkout' | 'account' | 'store';
+export type MarketingConsentSource = 'signup' | 'checkout' | 'account' | 'store' | 'newsletter';
 
+/**
+ * `GET` / `PUT /api/account/consent`: the marketing contact of the account's e-mail. `status` null: that e-mail never
+ * had one. `pending` waits for the customer's confirmation link (a store or guest-checkout request). `consentAt` is the
+ * time of the current consent (null unless `subscribed`). `emailVerified` false: the account must verify its e-mail
+ * before it can subscribe here.
+ */
 export interface AccountConsent {
-  marketingConsent: boolean;
-  marketingConsentAt: string | null;
-  marketingConsentSource: MarketingConsentSource | null;
-  marketingWithdrawnAt: string | null;
+  status: MarketingStatus | null;
+  source: MarketingConsentSource | null;
+  consentAt: string | null;
+  emailVerified: boolean;
 }

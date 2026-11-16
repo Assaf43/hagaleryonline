@@ -999,12 +999,75 @@ model MockInvoiceDocument {
 // ---------- Customer accounts (Phase 5c, spec §3, §6.1, §6.2, ACC-01, NFR-12, decision 80) ----------
 
 enum MarketingConsentSource {
-  SIGNUP   @map("signup")
-  CHECKOUT @map("checkout")
-  ACCOUNT  @map("account")
-  STORE    @map("store")
+  SIGNUP     @map("signup")
+  CHECKOUT   @map("checkout")
+  ACCOUNT    @map("account")
+  STORE      @map("store")
+  NEWSLETTER @map("newsletter")
 
   @@map("marketing_consent_source")
+}
+
+enum MarketingStatus {
+  PENDING      @map("pending")
+  SUBSCRIBED   @map("subscribed")
+  UNSUBSCRIBED @map("unsubscribed")
+
+  @@map("marketing_status")
+}
+
+enum ConsentAction {
+  REQUESTED             @map("requested")
+  CONFIRMED             @map("confirmed")
+  WITHDRAWN             @map("withdrawn")
+  PROVIDER_UNSUBSCRIBED @map("provider_unsubscribed")
+  RELEASED              @map("released")
+
+  @@map("consent_action")
+}
+
+/// One marketing contact per e-mail (Phase 7, CLB-02): the current consent state. Tokens are stored as SHA-256 hex.
+model MarketingContact {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  /// Lower-case, trimmed.
+  email                String                 @unique
+  customerId           String?                @unique @map("customer_id") @db.Uuid
+  status               MarketingStatus
+  source               MarketingConsentSource
+  consentAt            DateTime?              @map("consent_at")
+  unsubscribedAt       DateTime?              @map("unsubscribed_at")
+  confirmTokenHash     String?                @unique @map("confirm_token_hash")
+  confirmExpiresAt     DateTime?              @map("confirm_expires_at")
+  unsubscribeTokenHash String                 @unique @map("unsubscribe_token_hash")
+  syncVersion          Int                    @default(0) @map("sync_version")
+  syncedVersion        Int                    @default(0) @map("synced_version")
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+
+  customer Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  events   MarketingConsentEvent[]
+
+  @@map("marketing_contacts")
+}
+
+/// Append-only consent history (who, what, when, which text version).
+model MarketingConsentEvent {
+  id              BigInt                  @id @default(autoincrement())
+  contactId       String                  @map("contact_id") @db.Uuid
+  action          ConsentAction
+  source          MarketingConsentSource?
+  textVersion     String?                 @map("text_version")
+  actorCustomerId String?                 @map("actor_customer_id") @db.Uuid
+  actorSellerId   Int?                    @map("actor_seller_id")
+  ip              String?
+  /// The e-mail tool's event id of a `provider_unsubscribed` event: a repeated webhook event records nothing new.
+  providerEventId String?                 @unique @map("provider_event_id")
+  at              DateTime                @default(now())
+
+  contact MarketingContact @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@index([contactId, at])
+  @@map("marketing_consent_events")
 }
 
 enum CustomerOrigin {
@@ -1017,31 +1080,28 @@ enum CustomerOrigin {
 /// A storefront customer. Phone (05XXXXXXXX) and e-mail (lower-case) are stored normalized and are unique; each counts
 /// as verified only after a code sent to it was entered (decision 80). The password is optional (argon2).
 model Customer {
-  id                     String                  @id @default(uuid()) @db.Uuid
-  fullName               String                  @map("full_name")
-  phone                  String                  @unique
+  id                String         @id @default(uuid()) @db.Uuid
+  fullName          String         @map("full_name")
+  phone             String         @unique
   /// Null for a customer a seller created without an e-mail (Phase 6); still unique when set.
-  email                  String?                 @unique
-  phoneVerifiedAt        DateTime?               @map("phone_verified_at")
-  emailVerifiedAt        DateTime?               @map("email_verified_at")
-  passwordHash           String?                 @map("password_hash")
-  marketingConsent       Boolean                 @default(false) @map("marketing_consent")
-  marketingConsentAt     DateTime?               @map("marketing_consent_at")
-  marketingConsentSource MarketingConsentSource? @map("marketing_consent_source")
-  marketingWithdrawnAt   DateTime?               @map("marketing_withdrawn_at")
-  createdVia             CustomerOrigin          @default(WEB) @map("created_via")
-  createdBySellerId      Int?                    @map("created_by_seller_id")
-  createdAt              DateTime                @default(now()) @map("created_at")
-  updatedAt              DateTime                @updatedAt @map("updated_at")
+  email             String?        @unique
+  phoneVerifiedAt   DateTime?      @map("phone_verified_at")
+  emailVerifiedAt   DateTime?      @map("email_verified_at")
+  passwordHash      String?        @map("password_hash")
+  createdVia        CustomerOrigin @default(WEB) @map("created_via")
+  createdBySellerId Int?           @map("created_by_seller_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
 
-  addresses       CustomerAddress[]
-  sessions        CustomerSession[]
-  otpCodes        OtpCode[]
-  orders          Order[]
-  carts           Cart[]            @relation("CartCustomer")
-  storeCarts      Cart[]            @relation("CartStoreCustomer")
-  tickets         SupportTicket[]
-  createdBySeller AdminUser?        @relation(fields: [createdBySellerId], references: [id], onDelete: Restrict)
+  addresses        CustomerAddress[]
+  sessions         CustomerSession[]
+  otpCodes         OtpCode[]
+  orders           Order[]
+  carts            Cart[]            @relation("CartCustomer")
+  storeCarts       Cart[]            @relation("CartStoreCustomer")
+  tickets          SupportTicket[]
+  marketingContact MarketingContact?
+  createdBySeller  AdminUser?        @relation(fields: [createdBySellerId], references: [id], onDelete: Restrict)
 
   @@map("customers")
 }

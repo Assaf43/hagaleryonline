@@ -10,7 +10,8 @@ import {
   type StorePendingOrder,
 } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
-import { CustomerOrigin, MarketingConsentSource, OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import { CheckoutService, parseOrderFields } from '../orders/checkout.service.js';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service.js';
 import {
@@ -26,7 +27,6 @@ import { effectiveStatus, OrdersService, sellerRetryable, STATUS_VIEW } from '..
 import { canCancel } from '../orders/order-transitions.js';
 import { PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { hasPaidOrder } from '../promotions/promotions.service.js';
 import { StoreCartService } from './store-cart.service.js';
 import { isConfirmationLive } from './store-confirmation.js';
 import { StoreService } from './store.service.js';
@@ -96,6 +96,7 @@ export class StoreOrdersService {
     private readonly storeCarts: StoreCartService,
     private readonly store: StoreService,
     private readonly audit: AuditService,
+    private readonly marketing: MarketingService,
   ) {}
 
   /**
@@ -124,6 +125,7 @@ export class StoreOrdersService {
     if (!customer || !isConfirmationLive(cart)) throw customerNotConfirmed();
     if (!customer.email) throw customerEmailRequired();
     const contact = { fullName: customer.fullName, phone: customer.phone, email: customer.email };
+    let consentSmsSent = false;
 
     const order = await this.checkout.placeOrder(
       { token: undefined, customerId: null, store: { sellerId, cartId: open.id } },
@@ -155,24 +157,8 @@ export class StoreOrdersService {
           if (!still?.email) throw customerEmailRequired();
         },
         afterCreate: async (tx, created) => {
+          consentSmsSent = false;
           if (input.saveAddress) await saveAddress(tx, customer.id, input.address);
-          // A quick account gives its marketing consent at its first store order (source `store`), whichever cart or
-          // seller that is: an account made at the store, with no paid order, whose consent was never recorded (a
-          // withdrawn one keeps its time). Any other account's consent is its own (the order keeps the checkbox).
-          if (
-            input.marketingConsent &&
-            customer.createdVia === CustomerOrigin.STORE &&
-            !(await hasPaidOrder(tx, customer.id))
-          )
-            await tx.customer.updateMany({
-              where: { id: customer.id, marketingConsent: false, marketingConsentAt: null },
-              data: {
-                marketingConsent: true,
-                marketingConsentAt: new Date(),
-                marketingConsentSource: MarketingConsentSource.STORE,
-                marketingWithdrawnAt: null,
-              },
-            });
           await this.audit.record(
             {
               actorId: sellerId,
@@ -184,10 +170,35 @@ export class StoreOrdersService {
             },
             tx,
           );
+          // Last (locks.ts): the marketing e-mail lock is the last lock of the transaction.
+          // The seller's marketing box (decision 96, CLB-08): the order keeps the box, and the customer gets an SMS link;
+          // consent is recorded only when they open it and confirm (source `store`). An e-mail already subscribed gets
+          // nothing. The contact is linked to the account only when the account verified the e-mail.
+          if (input.marketingConsent) {
+            const now = await tx.customer.findUniqueOrThrow({
+              where: { id: customer.id },
+              select: { email: true, emailVerifiedAt: true, phone: true },
+            });
+            if (now.email) {
+              const result = await this.marketing.requestConfirmation(tx, {
+                email: now.email,
+                customerId: now.emailVerifiedAt ? customer.id : null,
+                source: 'store',
+                channel: 'sms',
+                phone: now.phone,
+                actor: { sellerId, ip: actor.ip },
+              });
+              consentSmsSent = result === 'sent';
+            }
+          }
         },
       },
     );
-    return { number: order.number, redirectUrl: await this.payments.openPaymentPage(order, 'store') };
+    return {
+      number: order.number,
+      redirectUrl: await this.payments.openPaymentPage(order, 'store'),
+      consentSmsSent,
+    };
   }
 
   /** GET /api/admin/store-orders/pending — this seller's store orders not paid yet, newest first. */

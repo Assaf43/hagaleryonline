@@ -102,8 +102,10 @@ export interface CheckoutRequest {
    */
   expectedTotal: number;
   /**
-   * The marketing checkbox (never pre-checked, CLAUDE.md §4.4): stored on the order with its time (source
-   * `checkout`, Phase 7). Optional, false when missing; 400 `invalid_input` when not a boolean.
+   * The marketing checkbox (never pre-checked, CLAUDE.md §4.4): stored on the order with its time, and the contact
+   * e-mail's marketing consent (source `checkout`, decision 95): subscribed at once when it is the signed-in account's
+   * verified e-mail, otherwise a confirmation link is e-mailed. Optional, false when missing; 400 `invalid_input` when
+   * not a boolean.
    */
   marketingConsent?: boolean;
 }

@@ -32,7 +32,10 @@ import { Prisma } from '../generated/prisma/client.js';
  *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);
  *    the cart's coupon is cleared after commit;
  *  - customer cancel: the order's payments (ascending id), then the order (the webhook's payment → order);
- *  - admin status move: the order alone.
+ *  - admin status move: the order alone;
+ *  - marketing (Phase 7): a transaction-scoped advisory lock per e-mail (MarketingService), always the LAST lock of
+ *    its transaction — checkout and store checkout take it after the order insert, sign-up after the customer insert,
+ *    the e-mail change after the customer update. While holding it only marketing rows and outbox jobs are written.
  */
 
 /** Serializes checkouts of one cart. NO KEY UPDATE leaves cart line inserts and deletes (FK KEY SHARE) unblocked. */

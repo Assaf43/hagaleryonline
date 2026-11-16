@@ -1,4 +1,10 @@
 import { storeWelcome, type StoreWelcomeData } from './account.js';
+import {
+  newsletterConfirm,
+  storeConsentSms,
+  type NewsletterConfirmData,
+  type StoreConsentSmsData,
+} from './marketing.js';
 import { deliverySlotSms, type DeliverySlotSmsData } from './sms.js';
 import {
   orderCancelled,
@@ -16,6 +22,7 @@ import type { RenderedEmail } from './layout.js';
 
 export type { StoreWelcomeData } from './account.js';
 export type { RenderedEmail } from './layout.js';
+export type { NewsletterConfirmData, StoreConsentSmsData } from './marketing.js';
 export type { OrderLinkData, OrderPaidData, OrderPaidLine, RefundData } from './order-messages.js';
 export type { OtpData } from './otp.js';
 export type { DeliverySlotSmsData } from './sms.js';
@@ -32,12 +39,14 @@ export interface EmailTemplateData {
   ticket_received: TicketReceivedData;
   ticket_alert: TicketAlertData;
   store_welcome: StoreWelcomeData;
+  newsletter_confirm: NewsletterConfirmData;
 }
 export type EmailTemplate = keyof EmailTemplateData;
 
 export interface SmsTemplateData {
   delivery_slot: DeliverySlotSmsData;
   otp: OtpData;
+  store_consent: StoreConsentSmsData;
 }
 export type SmsTemplate = keyof SmsTemplateData;
 
@@ -51,11 +60,13 @@ const EMAIL: { [T in EmailTemplate]: (data: EmailTemplateData[T]) => RenderedEma
   ticket_received: ticketReceived,
   ticket_alert: ticketAlert,
   store_welcome: storeWelcome,
+  newsletter_confirm: newsletterConfirm,
 };
 
 const SMS: { [T in SmsTemplate]: (data: SmsTemplateData[T]) => string } = {
   delivery_slot: deliverySlotSms,
   otp: otpText,
+  store_consent: storeConsentSms,
 };
 
 export function renderEmail<T extends EmailTemplate>(template: T, data: EmailTemplateData[T]): RenderedEmail {

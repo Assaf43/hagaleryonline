@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { PLATFORM_ID } from '@angular/core';
 import { Router, provideRouter } from '@angular/router';
+import { CONSENT_TEXT_HE } from '@hg/models';
 import type {
   CartView,
   CheckoutPrefill,
@@ -566,9 +567,7 @@ describe('CheckoutPage', () => {
       const consent = q('#chk-marketing');
       expect(consent.type).toBe('checkbox');
       expect(consent.checked).toBe(false);
-      expect(q<HTMLLabelElement>('label[for="chk-marketing"]').textContent?.trim()).toBe(
-        'אני מאשר/ת קבלת עדכונים ומבצעים במייל',
-      );
+      expect(q<HTMLLabelElement>('label[for="chk-marketing"]').textContent?.trim()).toBe(CONSENT_TEXT_HE);
       await fillValid();
       consent.click();
       fixture.detectChanges();
@@ -577,6 +576,15 @@ describe('CheckoutPage', () => {
       expect(req.request.body).toMatchObject({ marketingConsent: true });
       req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
       await render();
+    });
+
+    it('says a confirmation link is sent by e-mail once the marketing box is ticked (CLB-02)', async () => {
+      await setup();
+      expect(el().textContent).not.toContain('נשלח קישור אישור למייל');
+      q('#chk-marketing').click();
+      fixture.detectChanges();
+      expect(el().querySelector('.marketing-hint')?.textContent?.trim()).toBe('נשלח קישור אישור למייל');
+      expect(q('#chk-marketing').getAttribute('aria-describedby')).toBe('chk-marketing-hint');
     });
   });
 

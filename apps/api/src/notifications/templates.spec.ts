@@ -151,3 +151,26 @@ describe('support e-mail templates (spec §7.1)', () => {
     for (const part of [m.subject, m.html, m.text]) expect(part).not.toMatch(/חנות|מוכר|סניף/);
   });
 });
+
+describe('marketing messages (decisions 95–96)', () => {
+  it('newsletter_confirm: the confirm button and the unsubscribe link in html and text, no name, never the store', () => {
+    const m = renderEmail('newsletter_confirm', {
+      confirmUrl: 'https://shop.test/newsletter/confirm?t=c1',
+      unsubscribeUrl: 'https://shop.test/newsletter/unsubscribe?t=u1',
+    });
+    expect(m.subject).toBe('אישור קבלת עדכונים ומבצעים מנסטו');
+    expect(m.html).toContain('dir="rtl"');
+    expect(m.html).toContain('href="https://shop.test/newsletter/confirm?t=c1"');
+    expect(m.html).toContain('href="https://shop.test/newsletter/unsubscribe?t=u1"');
+    expect(m.text).toContain('אישור ההרשמה: https://shop.test/newsletter/confirm?t=c1');
+    expect(m.text).toContain('להסרה מרשימת התפוצה: https://shop.test/newsletter/unsubscribe?t=u1');
+    expect(m.text).toContain('7 ימים');
+    for (const part of [m.subject, m.html, m.text]) expect(part).not.toMatch(/חנות|מוכר|סניף/);
+  });
+
+  it('store_consent SMS: the confirm link only', () => {
+    expect(renderSms('store_consent', { url: 'https://shop.test/newsletter/confirm?t=c1' })).toBe(
+      'NESTO: לאישור קבלת עדכונים ומבצעים במייל, היכנסו לקישור: https://shop.test/newsletter/confirm?t=c1',
+    );
+  });
+});

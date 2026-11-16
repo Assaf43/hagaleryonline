@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
+import { MarketingModule } from '../marketing/marketing.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { OrdersModule } from '../orders/orders.module.js';
@@ -23,7 +24,15 @@ import { OtpService, resolveOtpPepper } from './otp.service.js';
  * The session and its guards live in `CustomerSessionModule`, which the cart and checkout import too.
  */
 @Module({
-  imports: [AuthModule, CartModule, CustomerSessionModule, NotificationsModule, OrdersModule, WriteThrottleModule],
+  imports: [
+    AuthModule,
+    CartModule,
+    CustomerSessionModule,
+    MarketingModule,
+    NotificationsModule,
+    OrdersModule,
+    WriteThrottleModule,
+  ],
   controllers: [CustomerAuthController, AccountController],
   providers: [
     CustomerAuthService,

@@ -34,13 +34,7 @@ import { checkCustomerPassword } from '../auth/passwords.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { AccountError, badField, weakPassword } from './account-errors.js';
 import { normalizeEmail, normalizePhone, normalizeTarget } from './contact-normalize.js';
-import {
-  CustomerAuthService,
-  toMe,
-  type ClientInfo,
-  type NewCustomer,
-  type SignedIn,
-} from './customer-auth.service.js';
+import { CustomerAuthService, type ClientInfo, type NewCustomer, type SignedIn } from './customer-auth.service.js';
 import { CUSTOMER_COOKIE, type ResolvedCustomer } from './customer-session.service.js';
 import {
   CurrentCustomer,
@@ -184,9 +178,9 @@ export class CustomerAuthController {
 
   @Get('me')
   @UseGuards(OptionalCustomerGuard)
-  me(@OptionalCustomer() current: ResolvedCustomer | null, @Res() res: Response): void {
+  async me(@OptionalCustomer() current: ResolvedCustomer | null, @Res() res: Response): Promise<void> {
     // Sent explicitly: JSON `null` when signed out (Nest would send an empty body).
-    res.status(HttpStatus.OK).json(current ? toMe(current.customer) : null);
+    res.status(HttpStatus.OK).json(current ? await this.auth.me(current.customer) : null);
   }
 
   @Post('password')

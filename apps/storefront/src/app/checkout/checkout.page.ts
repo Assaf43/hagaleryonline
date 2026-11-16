@@ -18,7 +18,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { Subject, catchError, debounceTime, map, of, startWith, switchMap } from 'rxjs';
-import type { CheckoutPrefill, CustomerAddressView, LocalityOption, ShippingMethod, ShippingQuote } from '@hg/models';
+import {
+  CONSENT_TEXT_HE,
+  type CheckoutPrefill,
+  type CustomerAddressView,
+  type LocalityOption,
+  type ShippingMethod,
+  type ShippingQuote,
+} from '@hg/models';
 import { CustomerStore } from '../account/customer.store';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
@@ -134,6 +141,7 @@ export class CheckoutPage {
 
   protected readonly ids = FIELD_IDS;
   protected readonly marketingId = MARKETING_ID;
+  protected readonly consentText = CONSENT_TEXT_HE;
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly price = formatPrice;
 

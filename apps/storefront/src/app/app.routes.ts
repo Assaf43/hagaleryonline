@@ -65,6 +65,15 @@ export const routes: Routes = [
   { path: 'returns', loadComponent: () => import('./support/return.page').then((m) => m.ReturnPage) },
   { path: 'returns/damaged', loadComponent: () => import('./support/damaged.page').then((m) => m.DamagedPage) },
   { path: 'contact', loadComponent: () => import('./support/contact.page').then((m) => m.ContactPage) },
+  // Newsletter (Phase 7, MKT-01, CLB-02): noindex, the token comes in `?t=` and is used in the browser only.
+  {
+    path: 'newsletter/confirm',
+    loadComponent: () => import('./newsletter/confirm.page').then((m) => m.NewsletterConfirmPage),
+  },
+  {
+    path: 'newsletter/unsubscribe',
+    loadComponent: () => import('./newsletter/unsubscribe.page').then((m) => m.NewsletterUnsubscribePage),
+  },
   { path: 'terms', loadComponent: () => import('./info/terms.page').then((m) => m.TermsPage) },
   { path: 'favorites', loadComponent: () => import('./favorites/favorites.page').then((m) => m.FavoritesPage) },
   { path: 'sizing-guide', loadComponent: () => import('./guide/sizing-guide.page').then((m) => m.SizingGuidePage) },

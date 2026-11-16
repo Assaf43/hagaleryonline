@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import type { CustomerMe, OtpChannel, SignUpBody } from '@hg/models';
+import { CONSENT_TEXT_HE, type CustomerMe, type OtpChannel, type SignUpBody } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { AccountApi, accountErrorMessage, accountFailure } from './account.api';
 import {
@@ -69,6 +69,8 @@ export class SignUpPage {
   protected readonly email = signal('');
   protected readonly password = signal('');
   protected readonly consent = signal(false);
+  /** The text the sign-up's consent event records (CONSENT_TEXT_VERSION). */
+  protected readonly consentText = CONSENT_TEXT_HE;
 
   /** A contact the sign-in code already verified is filled and locked. */
   protected readonly lockedPhone = signal(false);

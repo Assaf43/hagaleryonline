@@ -3,32 +3,39 @@
   <hg-account-nav />
   <h2>דיוור ועדכונים</h2>
 
-  @if (store.me(); as me) {
+  @if (store.me() && consent(); as c) {
     <div class="stack">
-      <label class="check">
-        <input
-          type="checkbox"
-          id="consent-marketing"
-          aria-describedby="consent-hint"
-          [checked]="me.marketingConsent"
-          (change)="toggle($event)"
-        />
-        אני מאשר/ת קבלת דיוור ועדכונים שיווקיים
-      </label>
-      <p class="hint" id="consent-hint">אפשר לבטל את ההסכמה בכל רגע בלחיצה אחת. הסרת הסימון שומרת את הביטול מיד.</p>
-      @if (me.marketingConsent && me.marketingConsentAt) {
-        <p class="hint">
-          ההסכמה ניתנה ב־<bdi class="num">{{ date(me.marketingConsentAt) }}</bdi>
+      @if (pending()) {
+        <p class="notice">ממתין לאישור דרך הקישור ששלחנו. הדיוור יתחיל רק אחרי האישור.</p>
+        <p>
+          <button type="button" class="btn btn-secondary cancel-pending" (click)="cancelPending()">ביטול הבקשה</button>
         </p>
-      }
-      @if (!me.marketingConsent && result()?.marketingWithdrawnAt; as withdrawn) {
-        <p class="hint">
-          ההסכמה בוטלה ב־<bdi class="num">{{ date(withdrawn) }}</bdi>
-        </p>
+      } @else if (!subscribed() && !c.emailVerified) {
+        <p class="notice" role="note">כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל.</p>
+        <p><a class="verify-link" routerLink="/account/details">אימות הדוא״ל בפרטים שלי</a></p>
+      } @else {
+        <label class="check">
+          <input
+            type="checkbox"
+            id="consent-marketing"
+            aria-describedby="consent-hint"
+            [checked]="subscribed()"
+            (change)="toggle($event)"
+          />
+          {{ text }}
+        </label>
+        <p class="hint" id="consent-hint">אפשר לבטל את ההסכמה בכל רגע בלחיצה אחת. הסרת הסימון שומרת את הביטול מיד.</p>
+        @if (subscribed() && c.consentAt) {
+          <p class="hint">
+            ההסכמה ניתנה ב־<bdi class="num">{{ date(c.consentAt) }}</bdi>
+          </p>
+        }
       }
       <p class="notice" role="status">{{ status() }}</p>
       <p class="form-error" role="alert">{{ error() }}</p>
     </div>
+  } @else if (store.me() && error()) {
+    <p class="form-error" role="alert">{{ error() }}</p>
   } @else {
     <p class="state">טוען…</p>
   }

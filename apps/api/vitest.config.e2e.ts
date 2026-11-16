@@ -56,6 +56,10 @@ export default defineConfig({
       SUPPORT_EMAIL: 'support@example.test',
       // Invoices (Phase 5b): the mock numbers documents MOCK-INV-… / MOCK-CN-… and keeps them under MEDIA_DIR/private.
       INVOICE_PROVIDER: 'mock',
+      // E-mail marketing tool (Phase 7): the mock keeps the synced list in memory; the tests sign its webhooks.
+      MARKETING_PROVIDER: 'mock',
+      MARKETING_MOCK_SECRET: 'e2e-marketing-mock-secret-not-for-production',
+      MARKETING_TOKEN_SECRET: 'e2e-marketing-token-secret-not-for-production',
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
       // Outbox (Phase 5b): no background worker; the tests call OutboxService.runDue() themselves.
       OUTBOX_WORKER: 'off',

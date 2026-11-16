@@ -161,6 +161,7 @@ describe('Store customer confirmation (e2e, ADM-18, decision 85)', () => {
       email,
       emailVerified: false,
       isNew: true,
+      marketingStatus: null,
     });
     const cart = await prisma.cart.findFirstOrThrow({ where: { sellerId } });
     expect(cart.storeCustomerId).toBe(created.id);

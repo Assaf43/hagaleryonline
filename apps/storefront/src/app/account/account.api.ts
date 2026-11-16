@@ -112,6 +112,11 @@ export class AccountApi {
     return firstValueFrom(this.http.post<OrderView>(`/api/account/orders/${encodeURIComponent(number)}/cancel`, null));
   }
 
+  /** The marketing contact of the account's e-mail (status null: it never had one). */
+  consent() {
+    return firstValueFrom(this.http.get<AccountConsent>('/api/account/consent'));
+  }
+
   setConsent(marketingConsent: boolean) {
     const body: ConsentBody = { marketingConsent };
     return firstValueFrom(this.http.put<AccountConsent>('/api/account/consent', body));
@@ -167,6 +172,8 @@ export function accountErrorMessage(failure: AccountFailure): string {
       return 'כתובת הדוא״ל הזאת כבר רשומה';
     case 'address_limit':
       return 'אפשר לשמור עד 20 כתובות';
+    case 'email_not_verified':
+      return 'כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל';
     case 'invalid_field':
       return failure.messageHe ?? GENERIC_ERROR_MESSAGE_HE;
     case 'not_found':

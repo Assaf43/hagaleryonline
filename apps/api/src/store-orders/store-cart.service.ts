@@ -4,6 +4,7 @@ import type { CartView, StoreCartView, StoreCustomer } from '@hg/models';
 import { CART_TTL_MS, hashToken } from '../cart/cart-token.js';
 import type { CartOwner } from '../cart/cart.service.js';
 import { CustomerOrigin, Prisma } from '../generated/prisma/client.js';
+import { MarketingService, STATUS_VIEW } from '../marketing/marketing.service.js';
 import { lockStoreCart } from '../orders/locks.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { hasPaidOrder } from '../promotions/promotions.service.js';
@@ -16,7 +17,10 @@ import { lapseStoreConfirmation } from './store-confirmation.js';
  */
 @Injectable()
 export class StoreCartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly marketing: MarketingService,
+  ) {}
 
   /** The seller's open cart: the newest one with no order at all, used within the last 30 days. */
   async open(sellerId: number): Promise<{ id: string } | null> {
@@ -97,6 +101,7 @@ export class StoreCartService {
     });
     const c = cart?.storeCustomer;
     if (!c) return { ...view, customer: null };
+    const contact = await this.marketing.contactFor(c);
     const customer: StoreCustomer = {
       id: c.id,
       fullName: c.fullName,
@@ -104,6 +109,7 @@ export class StoreCartService {
       email: c.email,
       emailVerified: c.emailVerifiedAt !== null,
       isNew: c.createdVia === CustomerOrigin.STORE && !(await hasPaidOrder(this.prisma, c.id)),
+      marketingStatus: contact ? STATUS_VIEW[contact.status] : null,
     };
     return { ...view, customer };
   }

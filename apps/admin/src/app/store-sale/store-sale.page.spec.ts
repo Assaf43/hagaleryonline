@@ -14,6 +14,7 @@ const customer: StoreCustomer = {
   email: 'dana@example.test',
   emailVerified: true,
   isNew: false,
+  marketingStatus: null,
 };
 
 const line = {
@@ -216,6 +217,95 @@ describe('store sale page', () => {
     // The marketing checkbox is not pre-checked and "לתשלום" waits for the terms.
     expect(el(fixture).querySelector<HTMLInputElement>('input[name="marketing"]')!.checked).toBe(false);
     expect(el(fixture).querySelector<HTMLButtonElement>('.pay')!.disabled).toBe(true);
+  });
+
+  describe('marketing consent by SMS (CLB-08)', () => {
+    const toSummaryWith = async (c: StoreCustomer) => {
+      const fixture = await open(cartWith(c));
+      fixture.componentInstance.delivery.set(delivery);
+      fixture.componentInstance.goTo('summary');
+      await settle(fixture);
+      return fixture;
+    };
+    const box = (f: ComponentFixture<unknown>) => el(f).querySelector<HTMLInputElement>('input[name="marketing"]')!;
+
+    it('the box is disabled without an e-mail, with a hint why', async () => {
+      // The customer step already requires an e-mail to go on; the summary still guards the box itself.
+      const fixture = await toSummaryWith(customer);
+      fixture.componentInstance.cart.set(cartWith({ ...customer, email: null }));
+      fixture.detectChanges();
+      expect(box(fixture).disabled).toBe(true);
+      expect(flat(el(fixture).textContent)).toContain(flat('אין כתובת דוא״ל, לכן אי אפשר להציע דיוור'));
+    });
+
+    it('a subscribed e-mail shows a checked, disabled box and sends no consent', async () => {
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+      const fixture = await toSummaryWith({ ...customer, marketingStatus: 'subscribed' });
+      expect(box(fixture).checked).toBe(true);
+      expect(box(fixture).disabled).toBe(true);
+      expect(flat(el(fixture).textContent)).toContain(flat('כבר רשום לדיוור'));
+      fixture.componentInstance['acceptTerms'].set(true);
+      fixture.detectChanges();
+      el(fixture).querySelector<HTMLButtonElement>('.pay')!.click();
+      const req = http.expectOne('/api/admin/store-orders');
+      expect(req.request.body.marketingConsent).toBe(false);
+      req.flush({ number: 100060, redirectUrl: 'https://pay.example.test/x' });
+      await settle(fixture);
+      http.expectOne('/api/admin/store-orders/pending').flush([]);
+      expect(opened).toHaveBeenCalled();
+      expect(flat(el(fixture).textContent)).not.toContain(flat('נשלח ללקוח SMS לאישור הדיוור'));
+    });
+
+    it('a pending contact shows a hint that confirmation is still waiting', async () => {
+      const fixture = await toSummaryWith({ ...customer, marketingStatus: 'pending' });
+      expect(box(fixture).disabled).toBe(false);
+      expect(flat(el(fixture).textContent)).toContain(flat('אישור הדיוור עדיין ממתין ללקוח'));
+    });
+
+    it('after an order with the box ticked, the status step says the SMS was sent', async () => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      const fixture = await toSummaryWith(customer);
+      box(fixture).click();
+      fixture.componentInstance['acceptTerms'].set(true);
+      fixture.detectChanges();
+      el(fixture).querySelector<HTMLButtonElement>('.pay')!.click();
+      const req = http.expectOne('/api/admin/store-orders');
+      expect(req.request.body.marketingConsent).toBe(true);
+      req.flush({ number: 100061, redirectUrl: 'https://pay.example.test/x', consentSmsSent: true });
+      await settle(fixture);
+      http.expectOne('/api/admin/store-orders/pending').flush([]);
+      await settle(fixture);
+      expect(flat(el(fixture).textContent)).toContain(flat('נשלח ללקוח SMS לאישור הדיוור'));
+    });
+
+    it('the box ticked but no SMS sent (already subscribed meanwhile, or the daily limit): no SMS claim', async () => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      const fixture = await toSummaryWith(customer);
+      box(fixture).click();
+      fixture.componentInstance['acceptTerms'].set(true);
+      fixture.detectChanges();
+      el(fixture).querySelector<HTMLButtonElement>('.pay')!.click();
+      const req = http.expectOne('/api/admin/store-orders');
+      expect(req.request.body.marketingConsent).toBe(true);
+      req.flush({ number: 100063, redirectUrl: 'https://pay.example.test/x', consentSmsSent: false });
+      await settle(fixture);
+      http.expectOne('/api/admin/store-orders/pending').flush([]);
+      await settle(fixture);
+      expect(flat(el(fixture).textContent)).not.toContain(flat('נשלח ללקוח SMS לאישור הדיוור'));
+    });
+
+    it('without the tick the status step does not mention it', async () => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      const fixture = await toSummaryWith(customer);
+      fixture.componentInstance['acceptTerms'].set(true);
+      fixture.detectChanges();
+      el(fixture).querySelector<HTMLButtonElement>('.pay')!.click();
+      http.expectOne('/api/admin/store-orders').flush({ number: 100062, redirectUrl: 'https://pay.example.test/x' });
+      await settle(fixture);
+      http.expectOne('/api/admin/store-orders/pending').flush([]);
+      await settle(fixture);
+      expect(flat(el(fixture).textContent)).not.toContain(flat('נשלח ללקוח SMS לאישור הדיוור'));
+    });
   });
 
   it('places the order, opens the payment page in a new tab and shows the waiting status', async () => {

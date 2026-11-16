@@ -1,6 +1,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
+import { CONSENT_TEXT_HE } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { CustomerStore } from './customer.store';
 import { SignUpDraft } from './sign-up-draft';
@@ -57,6 +58,8 @@ describe('SignUpPage', () => {
     const consent = q<HTMLInputElement>('#su-consent');
     expect(consent.type).toBe('checkbox');
     expect(consent.checked).toBe(false);
+    // The text the sign-up event records (CONSENT_TEXT_VERSION) is the shared one.
+    expect(consent.closest('label')?.textContent?.trim()).toBe(CONSENT_TEXT_HE);
   });
 
   it('validates the details before sending', async () => {

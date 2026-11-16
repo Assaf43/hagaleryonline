@@ -27,7 +27,9 @@ export type ThrottleBucket =
   | 'support_order'
   | 'store_otp'
   | 'store_lookup'
-  | 'store_verify';
+  | 'store_verify'
+  | 'newsletter'
+  | 'newsletter_unsubscribe';
 
 const WINDOW_MS = 15 * 60_000;
 /** Production defaults per key (mostly the IP) per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
@@ -55,6 +57,10 @@ const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   store_lookup: 60,
   // Store code checks, per seller (every call, so their refusals are no unthrottled oracle).
   store_verify: 60,
+  // Newsletter sign-up and the confirmation link's preview and confirm (Phase 7, spec §6): one bucket per IP.
+  newsletter: 10,
+  // The unsubscribe link, per IP: its own, roomier bucket, so sign-ups from a shared IP never block leaving the list.
+  newsletter_unsubscribe: 60,
 };
 
 /**

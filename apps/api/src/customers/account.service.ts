@@ -9,27 +9,20 @@ import {
   type CustomerAddressInput,
   type CustomerAddressView,
   type CustomerMe,
-  type MarketingConsentSource as ConsentSourceView,
   type OrderView,
 } from '@hg/models';
-import { MarketingConsentSource, type Customer, type Prisma } from '../generated/prisma/client.js';
+import { type Customer, type Prisma } from '../generated/prisma/client.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import { MESSAGES, parseCheckoutAddress } from '../orders/checkout.service.js';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service.js';
 import { fieldError } from '../orders/order-errors.js';
 import { effectiveStatus, OrdersService, STATUS_VIEW } from '../orders/orders.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { accountNotFound, addressLimit, badField } from './account-errors.js';
+import { accountNotFound, addressLimit, badField, emailNotVerified } from './account-errors.js';
 import { listAddresses, toView } from './address-view.js';
 import { toMe } from './customer-auth.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const SOURCE_VIEW: Record<MarketingConsentSource, ConsentSourceView> = {
-  SIGNUP: 'signup',
-  CHECKOUT: 'checkout',
-  ACCOUNT: 'account',
-  STORE: 'store',
-};
 
 /**
  * The account's own data (spec §6.3, ACC-03, ACC-04, ACC-05): saved addresses, order history, the cancel of an
@@ -43,6 +36,7 @@ export class AccountService {
     private readonly prisma: PrismaService,
     private readonly orders: OrdersService,
     private readonly lifecycle: OrderLifecycleService,
+    private readonly marketing: MarketingService,
   ) {}
 
   addresses(customerId: string): Promise<CustomerAddressView[]> {
@@ -158,29 +152,39 @@ export class AccountService {
     const raw = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).name;
     const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
     if (name.length < CHECKOUT_LIMITS.fullNameMin || name.length > CHECKOUT_LIMITS.fullNameMax) throw badField('name');
-    return toMe(await this.prisma.customer.update({ where: { id: customerId }, data: { fullName: name } }));
+    const updated = await this.prisma.customer.update({ where: { id: customerId }, data: { fullName: name } });
+    return toMe(updated, await this.marketing.contactFor(updated));
+  }
+
+  /** GET /api/account/consent: the account's marketing contact (decision 95). */
+  consent(customerId: string): Promise<AccountConsent> {
+    return this.marketing.consentView(customerId);
   }
 
   /**
-   * Marketing consent (CLAUDE.md §4.4): giving it records the time and source `account` and clears an earlier
-   * withdrawal; withdrawing records the withdrawal time (the consent's time and source stay as the record of it). The
-   * current value: no change.
+   * PUT /api/account/consent (CLAUDE.md §4.4, ACC-05) through the marketing contact of the account's e-mail: `true`
+   * subscribes a verified e-mail at once (source `account`) — an unverified or missing one answers 409
+   * `email_not_verified`; `false` withdraws it (the history keeps the consent and the withdrawal). The current
+   * state: no change.
    */
-  async setConsent(customer: Customer, body: unknown): Promise<AccountConsent> {
+  async setConsent(customer: Customer, body: unknown, ip?: string): Promise<AccountConsent> {
     const value = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).marketingConsent;
     if (typeof value !== 'boolean') throw badField('marketingConsent');
-    const now = new Date();
-    const data: Prisma.CustomerUpdateManyMutationInput = value
-      ? {
-          marketingConsent: true,
-          marketingConsentAt: now,
-          marketingConsentSource: MarketingConsentSource.ACCOUNT,
-          marketingWithdrawnAt: null,
-        }
-      : { marketingConsent: false, marketingWithdrawnAt: now };
-    // Only when it changes: a repeated answer keeps the recorded times.
-    await this.prisma.customer.updateMany({ where: { id: customer.id, marketingConsent: !value }, data });
-    return consentView(await this.prisma.customer.findUniqueOrThrow({ where: { id: customer.id } }));
+    const actor = { customerId: customer.id, ip };
+    if (value) {
+      if (!customer.email || !customer.emailVerifiedAt) throw emailNotVerified();
+      const email = customer.email;
+      await this.prisma.$transaction((tx) =>
+        this.marketing.subscribeVerified(tx, { email, customerId: customer.id, source: 'account', actor }),
+      );
+    } else {
+      const contact = await this.marketing.contactFor(customer);
+      if (contact)
+        await this.prisma.$transaction((tx) =>
+          this.marketing.withdraw(tx, { email: contact.email, source: 'account', actor }),
+        );
+    }
+    return this.marketing.consentView(customer.id);
   }
 
   /** The checkout's address rules, the locality must exist, and an optional boolean `isDefault`. */
@@ -206,15 +210,6 @@ async function clearDefault(tx: Prisma.TransactionClient, customerId: string): P
 function addressData(input: CustomerAddressInput) {
   const { localityId, street, houseNumber, apartment, floor, hasElevator, notes } = input;
   return { localityId, street, houseNumber, apartment, floor, hasElevator, notes };
-}
-
-function consentView(c: Customer): AccountConsent {
-  return {
-    marketingConsent: c.marketingConsent,
-    marketingConsentAt: c.marketingConsentAt?.toISOString() ?? null,
-    marketingConsentSource: c.marketingConsentSource ? SOURCE_VIEW[c.marketingConsentSource] : null,
-    marketingWithdrawnAt: c.marketingWithdrawnAt?.toISOString() ?? null,
-  };
 }
 
 /** `?page=` from 1 (missing: 1); 400 `invalid_input` with `field: 'page'` otherwise. */

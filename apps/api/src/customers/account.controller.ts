@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Param,
   Post,
   Put,
@@ -86,9 +87,20 @@ export class AccountController {
     return this.account.changeName(current.customer.id, body);
   }
 
+  /** The account's marketing contact: status, source, consent time and whether the e-mail is verified. */
+  @Get('consent')
+  consent(@CurrentCustomer() current: ResolvedCustomer): Promise<AccountConsent> {
+    return this.account.consent(current.customer.id);
+  }
+
+  /** 409 `email_not_verified` when consent is given with an unverified (or no) e-mail. */
   @Put('consent')
   @Throttled('account')
-  consent(@CurrentCustomer() current: ResolvedCustomer, @Body() body: unknown): Promise<AccountConsent> {
-    return this.account.setConsent(current.customer, body);
+  setConsent(
+    @CurrentCustomer() current: ResolvedCustomer,
+    @Body() body: unknown,
+    @Ip() ip: string,
+  ): Promise<AccountConsent> {
+    return this.account.setConsent(current.customer, body, ip);
   }
 }

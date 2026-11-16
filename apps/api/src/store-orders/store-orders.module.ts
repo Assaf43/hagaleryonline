@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
+import { MarketingModule } from '../marketing/marketing.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { WriteThrottleModule } from '../orders/write-throttle.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
@@ -18,7 +19,15 @@ import { StoreService } from './store.service.js';
  * confirmation by code, and the store order on the website's checkout path.
  */
 @Module({
-  imports: [AuthModule, CartModule, CustomersModule, OrdersModule, ShippingModule, WriteThrottleModule],
+  imports: [
+    AuthModule,
+    CartModule,
+    CustomersModule,
+    MarketingModule,
+    OrdersModule,
+    ShippingModule,
+    WriteThrottleModule,
+  ],
   controllers: [StoreAdminController, StoreCartController, StoreOrdersController],
   providers: [StoreService, StoreCartService, StoreCustomerService, StoreOrdersService],
   exports: [StoreService, StoreCartService],

@@ -7,7 +7,7 @@ import { App } from 'supertest/types.js';
 import type { CustomerMe } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
-import { MarketingConsentSource, Prisma } from './../src/generated/prisma/client.js';
+import { MarketingConsentSource, MarketingStatus, Prisma } from './../src/generated/prisma/client.js';
 import {
   EMAIL_PROVIDER,
   SMS_PROVIDER,
@@ -17,6 +17,7 @@ import {
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { CustomerCleanupService } from './../src/customers/customer-cleanup.service.js';
+import { deleteMarketingContacts } from './test-marketing.js';
 import { uniqueIds } from './unique-ids.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -95,6 +96,7 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
   const cleanup = async () => {
     await prisma.otpCode.deleteMany({});
     await prisma.customer.deleteMany({ where: { email: { endsWith: DOMAIN } } });
+    await deleteMarketingContacts(prisma, { email: { endsWith: DOMAIN } });
   };
 
   beforeAll(async () => {
@@ -169,8 +171,14 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
 
       const row = await prisma.customer.findUniqueOrThrow({ where: { phone } });
       expect(row.passwordHash).toMatch(/^\$argon2id\$/);
-      expect(row.marketingConsentSource).toBe(MarketingConsentSource.SIGNUP);
-      expect(row.marketingConsentAt).not.toBeNull();
+      // The verified e-mail is subscribed at once (decision 95).
+      const contact = await prisma.marketingContact.findUniqueOrThrow({ where: { email } });
+      expect(contact).toMatchObject({
+        status: MarketingStatus.SUBSCRIBED,
+        source: MarketingConsentSource.SIGNUP,
+        customerId: row.id,
+      });
+      expect(contact.consentAt).not.toBeNull();
 
       await browser()
         .post('sign-up', { ...details, email: newEmail(), signUpToken })
@@ -200,10 +208,11 @@ describe('Customer accounts (e2e, ACC-01, NFR-12)', () => {
       expect(await prisma.customer.count({ where: { phone } })).toBe(0);
     });
 
-    it('without consent stores no consent time', async () => {
-      const { phone } = await signUp();
+    it('without consent stores no consent', async () => {
+      const { phone, email } = await signUp();
       const row = await prisma.customer.findUniqueOrThrow({ where: { phone } });
-      expect(row).toMatchObject({ marketingConsent: false, marketingConsentAt: null, passwordHash: null });
+      expect(row).toMatchObject({ passwordHash: null });
+      expect(await prisma.marketingContact.findUnique({ where: { email } })).toBeNull();
     });
 
     it('refuses a duplicate phone or e-mail with 409 phone_taken / email_taken', async () => {

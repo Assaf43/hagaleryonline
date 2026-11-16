@@ -10,6 +10,7 @@ import {
   PaymentStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { defaultReturnPath, returnPathFor, type PaymentReturn } from '../orders/order-number.js';
@@ -84,6 +85,7 @@ export class PaymentsService {
     private readonly promotions: PromotionsService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly marketing: MarketingService,
   ) {}
 
   get providerCode(): string {
@@ -350,7 +352,7 @@ export class PaymentsService {
    */
   private async onPaid(
     tx: Prisma.TransactionClient,
-    order: { id: string; promotionId: number | null },
+    order: { id: string; promotionId: number | null; customerId: string | null },
     welcomeTo: string | null,
   ): Promise<void> {
     await this.enqueuePaidJobs(tx, order.id);
@@ -363,6 +365,10 @@ export class PaymentsService {
         orderId: order.id,
       });
     if (order.promotionId !== null) await this.promotions.countUse(tx, order.promotionId);
+    // The e-mail tool's fields of the buying account changed (has purchased, interests). Last: its e-mail lock is the
+    // last lock. A marketing DB error here rolls the whole payment back on purpose: the provider retries the webhook,
+    // and a paid order never exists without its sync job.
+    await this.marketing.orderPaid(tx, { customerId: order.customerId });
   }
 
   /**

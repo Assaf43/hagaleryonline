@@ -19,8 +19,10 @@ import { hashPassword } from './../src/auth/passwords.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import {
+  ConsentAction,
   DiscountType,
   MarketingConsentSource,
+  MarketingStatus,
   OrderStatus,
   PromotionKind,
   PromotionTarget,
@@ -29,6 +31,7 @@ import {
 import { SMS_PROVIDER, type SmsProvider } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteMarketingContacts } from './test-marketing.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
 
@@ -154,6 +157,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
     await prisma.customer.deleteMany({ where: { email: { endsWith: DOMAIN } } });
+    await deleteMarketingContacts(prisma, { OR: [{ email: { endsWith: DOMAIN } }, { email: 'dana@example.test' }] });
     await prisma.promotion.deleteMany({ where: { OR: [{ code: COUPON }, { name: { startsWith: WELCOME_NAME } }] } });
     await prisma.otpCode.deleteMany({ where: { target: { startsWith: '05' } } });
   };
@@ -368,7 +372,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     });
   });
 
-  it('consent on and off: time and source recorded, withdrawal time kept', async () => {
+  it('consent on and off through the marketing contact: time and source recorded, withdrawal in the history', async () => {
     const c = await newCustomer();
     const b = browser();
     await browser().write('put', '/api/account/consent', { marketingConsent: true }).expect(401);
@@ -377,40 +381,47 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
 
     const on = await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
     expect(on.headers['cache-control']).toBe('no-store');
-    let row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
-    expect(row).toMatchObject({
-      marketingConsent: true,
-      marketingConsentSource: MarketingConsentSource.ACCOUNT,
-      marketingWithdrawnAt: null,
+    let contact = await prisma.marketingContact.findUniqueOrThrow({ where: { email: c.email } });
+    expect(contact).toMatchObject({
+      status: MarketingStatus.SUBSCRIBED,
+      source: MarketingConsentSource.ACCOUNT,
+      customerId: c.id,
     });
-    expect(row.marketingConsentAt).toBeInstanceOf(Date);
+    expect(contact.consentAt).toBeInstanceOf(Date);
     expect(on.body).toEqual({
-      marketingConsent: true,
-      marketingConsentAt: row.marketingConsentAt!.toISOString(),
-      marketingConsentSource: 'account',
-      marketingWithdrawnAt: null,
+      status: 'subscribed',
+      source: 'account',
+      consentAt: contact.consentAt!.toISOString(),
+      emailVerified: true,
     });
-    const consentAt = row.marketingConsentAt;
+    const consentAt = contact.consentAt;
     // The same answer again changes nothing.
     await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
-    expect((await prisma.customer.findUniqueOrThrow({ where: { id: c.id } })).marketingConsentAt).toEqual(consentAt);
+    expect((await prisma.marketingContact.findUniqueOrThrow({ where: { email: c.email } })).consentAt).toEqual(
+      consentAt,
+    );
 
     const off = await b.write('put', '/api/account/consent', { marketingConsent: false }).expect(200);
-    row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
-    expect(row.marketingConsent).toBe(false);
-    expect(row.marketingWithdrawnAt).toBeInstanceOf(Date);
-    expect(off.body).toMatchObject({
-      marketingConsent: false,
-      marketingWithdrawnAt: row.marketingWithdrawnAt!.toISOString(),
-    });
+    contact = await prisma.marketingContact.findUniqueOrThrow({ where: { email: c.email } });
+    expect(contact.status).toBe(MarketingStatus.UNSUBSCRIBED);
+    expect(contact.unsubscribedAt).toBeInstanceOf(Date);
+    expect(off.body).toEqual({ status: 'unsubscribed', source: 'account', consentAt: null, emailVerified: true });
     expect((await b.agent.get('/api/account/me').expect(200)).body).toMatchObject({ marketingConsent: false });
 
-    // Consent again: a new time, and the withdrawal is cleared.
+    // Consent again: a new time; the history keeps every step.
     const again = await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
-    expect(again.body).toMatchObject({ marketingConsent: true, marketingWithdrawnAt: null });
-    row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
-    expect(row.marketingWithdrawnAt).toBeNull();
-    expect(row.marketingConsentAt!.getTime()).toBeGreaterThanOrEqual(consentAt!.getTime());
+    expect(again.body).toMatchObject({ status: 'subscribed' });
+    contact = await prisma.marketingContact.findUniqueOrThrow({ where: { email: c.email } });
+    expect(contact.consentAt!.getTime()).toBeGreaterThanOrEqual(consentAt!.getTime());
+    const events = await prisma.marketingConsentEvent.findMany({
+      where: { contactId: contact.id },
+      orderBy: { id: 'asc' },
+    });
+    expect(events.map((e) => e.action)).toEqual([
+      ConsentAction.CONFIRMED,
+      ConsentAction.WITHDRAWN,
+      ConsentAction.CONFIRMED,
+    ]);
   });
 
   it('name change: trimmed, 2–80 characters, session required; me carries the consent time', async () => {
@@ -432,8 +443,8 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
 
     await b.write('put', '/api/account/consent', { marketingConsent: true }).expect(200);
     const me = (await b.agent.get('/api/account/me').expect(200)).body as { marketingConsentAt: string };
-    const row = await prisma.customer.findUniqueOrThrow({ where: { id: c.id } });
-    expect(me.marketingConsentAt).toBe(row.marketingConsentAt!.toISOString());
+    const contact = await prisma.marketingContact.findUniqueOrThrow({ where: { email: c.email } });
+    expect(me.marketingConsentAt).toBe(contact.consentAt!.toISOString());
   });
 
   it('address and consent writes are rate limited per IP (bucket account)', async () => {
@@ -707,6 +718,12 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       const checked = await orderOf(await other.checkout({ marketingConsent: true }));
       expect(checked.marketingConsent).toBe(true);
       expect(checked.marketingConsentAt).toBeInstanceOf(Date);
+      // A guest's box asks for a confirmation by e-mail: the contact waits for the link (decision 95).
+      expect(await prisma.marketingContact.findUnique({ where: { email: 'dana@example.test' } })).toMatchObject({
+        status: MarketingStatus.PENDING,
+        source: MarketingConsentSource.CHECKOUT,
+        customerId: null,
+      });
       const bad = await (async () => {
         const b = browser();
         await b.add(lamp, 1);

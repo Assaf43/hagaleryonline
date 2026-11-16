@@ -25,6 +25,7 @@ import { PAYABLE_ORDER, PaymentsService, type PayableOrder } from '../payments/p
 import { PrismaService } from '../prisma/prisma.service.js';
 import { couponProblemMessageHe } from '../promotions/discount-engine.js';
 import { discountInfo, discountLines, PromotionsService } from '../promotions/promotions.service.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
 import { lockCart, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
@@ -64,7 +65,10 @@ export interface PlaceOrderOptions {
    * the cart yet). Throws to refuse.
    */
   verify?: (tx: Prisma.TransactionClient, cartId: string) => Promise<void>;
-  /** Runs in the same transaction after the order is created (the store saves the address, consent and audit). */
+  /**
+   * Runs in the same transaction after the order is created: the website records the marketing consent, the store
+   * saves the address, asks for consent by SMS and audits.
+   */
   afterCreate?: (tx: Prisma.TransactionClient, order: { id: string; number: number }) => Promise<void>;
 }
 
@@ -108,16 +112,28 @@ export class CheckoutService {
     private readonly shipping: ShippingService,
     private readonly payments: PaymentsService,
     private readonly promotions: PromotionsService,
+    private readonly marketing: MarketingService,
   ) {}
 
+  /**
+   * The website checkout. With the marketing box the order keeps it (with its time) and the contact e-mail's consent
+   * is recorded in the order's transaction (source `checkout`, decision 95): subscribed at once when it is the
+   * signed-in account's verified e-mail, otherwise `pending` with a confirmation link e-mailed (a guest, or another
+   * address). The link request's result (sent, already subscribed, throttled) does not change the answer.
+   */
   async checkout(
     token: string | undefined,
     body: unknown,
     customerId: string | null = null,
+    meta: { ip?: string } = {},
   ): Promise<CheckoutResponse> {
     const input = parseCheckoutRequest(body);
     // Signed in: the account's cart (found by the session); a guest: the cookie's cart.
-    const order = await this.placeOrder({ token, customerId }, input, { customerId, channel: 'web' });
+    const order = await this.placeOrder({ token, customerId }, input, {
+      customerId,
+      channel: 'web',
+      afterCreate: input.marketingConsent ? (tx) => this.recordConsent(tx, input, customerId, meta.ip) : undefined,
+    });
     // 4. The provider call, outside the transaction.
     return { redirectUrl: await this.payments.openPaymentPage(order, 'order') };
   }
@@ -253,6 +269,22 @@ export class CheckoutService {
       { timeout: 15_000 },
     );
     return order;
+  }
+
+  private async recordConsent(
+    tx: Prisma.TransactionClient,
+    input: CheckoutRequest,
+    customerId: string | null,
+    ip: string | undefined,
+  ): Promise<void> {
+    const email = input.contact.email.trim().toLowerCase();
+    const actor = { customerId, ip };
+    const account = customerId
+      ? await tx.customer.findUnique({ where: { id: customerId }, select: { email: true, emailVerifiedAt: true } })
+      : null;
+    if (customerId && account?.emailVerifiedAt && account.email === email)
+      await this.marketing.subscribeVerified(tx, { email, customerId, source: 'checkout', actor });
+    else await this.marketing.requestConfirmation(tx, { email, source: 'checkout', channel: 'email', actor });
   }
 
   /** GET /api/checkout/prefill: the account's contact and saved addresses, default first (spec §6.4). */

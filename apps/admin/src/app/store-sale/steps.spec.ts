@@ -12,6 +12,7 @@ const customer = {
   email: 'dana@example.test',
   emailVerified: false,
   isNew: false,
+  marketingStatus: null,
 };
 const state = (over: Partial<SaleState>): SaleState => ({
   cart: null,
