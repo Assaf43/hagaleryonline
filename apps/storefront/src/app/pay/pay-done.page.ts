@@ -4,6 +4,7 @@ import {
   ElementRef,
   afterNextRender,
   computed,
+  effect,
   inject,
   input,
 } from '@angular/core';
@@ -62,11 +63,10 @@ export class PayDonePage {
 
   constructor() {
     const host = inject<ElementRef<HTMLElement>>(ElementRef);
-    inject(PageMeta).set({
-      title: 'סיימת בדף התשלום',
-      description: 'סיימת בדף התשלום',
-      path: '/pay/done',
-      noindex: true,
+    const meta = inject(PageMeta);
+    effect(() => {
+      const title = this.copy().title;
+      meta.set({ title, description: title, path: '/pay/done', noindex: true });
     });
     afterNextRender(() => host.nativeElement.querySelector('h1')?.focus());
   }

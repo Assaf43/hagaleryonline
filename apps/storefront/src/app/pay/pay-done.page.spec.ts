@@ -50,6 +50,19 @@ describe('PayDonePage', () => {
     el.remove();
   });
 
+  it('the page title equals the heading for each outcome', () => {
+    for (const [r, title] of [
+      ['ok', 'התשלום התקבל'],
+      ['fail', 'התשלום לא הושלם'],
+      [undefined, 'סיימת בדף התשלום'],
+    ] as const) {
+      TestBed.resetTestingModule();
+      const { set, el } = setup(r);
+      expect(set).toHaveBeenLastCalledWith(expect.objectContaining({ title, path: '/pay/done', noindex: true }));
+      expect(el.querySelector('h1')?.textContent?.trim()).toBe(title);
+    }
+  });
+
   it('is noindex', () => {
     const { set } = setup('ok');
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ path: '/pay/done', noindex: true }));
