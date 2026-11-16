@@ -229,6 +229,7 @@ describe('queryProducts', () => {
 
     it('is null without member prices', () => {
       expect(item(alba).memberPriceFrom).toBeNull();
+      expect(item(alba).memberPriceFromRegular).toBeNull();
     });
 
     it('is the lowest memberPrice ?? price over the variants, when one has a member price', () => {
@@ -245,6 +246,16 @@ describe('queryProducts', () => {
       const card = item(p);
       expect(card.memberPriceFrom).toBe(400_000);
       expect(card.priceFrom).toBe(450_000);
+      // The member strikes the regular price of the variant that gives 400 (B 520), not the cheapest one (A 450).
+      expect(card.memberPriceFromRegular).toBe(520_000);
+    });
+
+    it('memberPriceFromRegular on a tie is the lowest regular price (nothing to strike when no variant saves)', () => {
+      const p = product(9, 2, [
+        variant(450_000, 260, { color: 'gray' }),
+        variant(520_000, 280, { color: 'olive' }, { memberPrice: 450_000 }),
+      ]);
+      expect(item(p)).toMatchObject({ memberPriceFrom: 450_000, memberPriceFromRegular: 450_000 });
     });
 
     it('looks only at the variants the filters leave on the card', () => {
@@ -253,7 +264,9 @@ describe('queryProducts', () => {
         variant(450_000, 260, { color: 'gray' }),
       ]);
       expect(item(p, { attributes: { color: ['gray'] } }).memberPriceFrom).toBeNull();
+      expect(item(p, { attributes: { color: ['gray'] } }).memberPriceFromRegular).toBeNull();
       expect(item(p, { attributes: { color: ['beige'] } }).memberPriceFrom).toBe(470_000);
+      expect(item(p, { attributes: { color: ['beige'] } }).memberPriceFromRegular).toBe(500_000);
     });
   });
 

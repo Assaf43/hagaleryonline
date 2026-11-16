@@ -48,4 +48,11 @@ describe('memberPriceView', () => {
     }
     expect(memberPriceView(100_000, null, 100_000, true).memberLine).toBeNull();
   });
+
+  it('a member strikes the given regular price (the variant that gives the member price), only when it is higher', () => {
+    // Card: A 450 without a member price, B 520 with member 400 → "החל מ-400" with 520 struck, never 450.
+    expect(memberPriceView(450_000, null, 400_000, true, 520_000)).toMatchObject({ main: 400_000, struck: 520_000 });
+    expect(memberPriceView(450_000, null, 400_000, true, 400_000)).toMatchObject({ main: 400_000, struck: null });
+    expect(memberPriceView(450_000, null, 400_000, false, 520_000)).toMatchObject({ main: 450_000, struck: null });
+  });
 });

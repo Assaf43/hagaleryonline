@@ -10,10 +10,12 @@ import { MEMBER_PRICE_LABEL_HE, REGULAR_PRICE_SR_HE, Viewer, memberPriceView } f
   template: `
     @let pv = view();
     <p class="row">
-      <span class="price-now num" [class.sale]="onSale() && !pv.memberLine">{{ money(pv.main) }}</span>
+      <span class="price-now num" [class.sale]="onSale() && pv.memberLine?.kind !== 'member'">{{
+        money(pv.main)
+      }}</span>
       @if (pv.struck) {
         <s class="old num"
-          ><span class="visually-hidden">{{ pv.memberLine ? regularSr : 'במקום ' }}</span
+          ><span class="visually-hidden">{{ pv.memberLine?.kind === 'member' ? regularSr : 'במקום ' }}</span
           >{{ money(pv.struck) }}</s
         >
       }

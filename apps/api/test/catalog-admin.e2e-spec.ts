@@ -490,7 +490,7 @@ describe('Catalog admin (e2e)', () => {
     const card = (
       (await storefront('/products?q=zzbreeze&pageSize=60').expect(200)).body as ProductListResponse
     ).items.find((i) => i.modelName === 'ZZBREEZE')!;
-    expect(card).toMatchObject({ priceFrom: 369_000, memberPriceFrom: 340_000 });
+    expect(card).toMatchObject({ priceFrom: 369_000, memberPriceFrom: 340_000, memberPriceFromRegular: 369_000 });
 
     // Cutting the price under the member price (what a bulk price edit does) is the same error.
     const saved = (await editor.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
@@ -514,7 +514,10 @@ describe('Catalog admin (e2e)', () => {
       )
       .expect(200);
     const cleared = (await storefront('/products?q=zzbreeze&pageSize=60').expect(200)).body as ProductListResponse;
-    expect(cleared.items.find((i) => i.modelName === 'ZZBREEZE')!.memberPriceFrom).toBeNull();
+    expect(cleared.items.find((i) => i.modelName === 'ZZBREEZE')!).toMatchObject({
+      memberPriceFrom: null,
+      memberPriceFromRegular: null,
+    });
   });
 
   it('lets only the Super Admin delete a product for good', async () => {

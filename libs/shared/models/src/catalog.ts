@@ -82,6 +82,11 @@ export interface ProductCard {
   discountPercent: number | null;
   /** Lowest `memberPrice ?? price` over the variants on the card; null when none of them has a member price. */
   memberPriceFrom: number | null;
+  /**
+   * Current regular price of the variant that gives `memberPriceFrom` (lowest regular price on a tie); null when
+   * `memberPriceFrom` is null. A member's card strikes this value, only when it is above the member price.
+   */
+  memberPriceFromRegular: number | null;
   /** True when variants differ in price ("החל מ"). */
   hasPriceRange: boolean;
   swatches: Swatch[];

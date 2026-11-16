@@ -18,6 +18,7 @@ const card: Card = {
   compareAtFrom: null,
   discountPercent: null,
   memberPriceFrom: 90_000,
+  memberPriceFromRegular: 100_000,
   hasPriceRange: false,
   swatches: [],
   image: null,
@@ -32,9 +33,9 @@ function setup() {
 }
 
 describe('member price on the product card', () => {
-  function render(store: CustomerStore) {
+  function render(_store: CustomerStore, product: Card = card) {
     const f = TestBed.createComponent(ProductCard);
-    f.componentRef.setInput('product', card);
+    f.componentRef.setInput('product', product);
     f.detectChanges();
     return { f, text: () => (f.nativeElement as HTMLElement).textContent ?? '' };
   }
@@ -67,26 +68,77 @@ describe('member price on the product card', () => {
     expect(text()).not.toContain('חברי מועדון:');
     expect(el.querySelector('.price')?.classList.contains('sale')).toBe(false);
   });
+
+  it('a guest keeps the red sale price when the product also has a member price (decision 63)', () => {
+    const onSale: Card = {
+      ...card,
+      priceFrom: 80_000,
+      compareAtFrom: 100_000,
+      discountPercent: 20,
+      memberPriceFrom: 70_000,
+      memberPriceFromRegular: 80_000,
+    };
+    const store = setup();
+    store.restore(null);
+    const { f } = render(store, onSale);
+    const el = f.nativeElement as HTMLElement;
+    expect(el.querySelector('.price')?.classList.contains('sale')).toBe(true);
+    expect(el.querySelector('s')?.textContent).toContain('במקום');
+    expect(el.querySelector('s')?.textContent).not.toContain('מחיר רגיל');
+  });
+
+  it('a member strikes the regular price of the variant that gives the member price', () => {
+    // A 450 without a member price, B 520 with member 400.
+    const mixed: Card = {
+      ...card,
+      priceFrom: 45_000,
+      memberPriceFrom: 40_000,
+      memberPriceFromRegular: 52_000,
+      hasPriceRange: true,
+    };
+    const store = setup();
+    store.restore(customerMe());
+    const el = render(store, mixed).f.nativeElement as HTMLElement;
+    expect(el.querySelector('.price')?.textContent).toContain('400');
+    expect(el.querySelector('s')?.textContent).toContain('520');
+    expect(el.textContent).not.toContain('450');
+  });
+
+  it('a guest line says "החל מ-" when the card shows a price range', () => {
+    const store = setup();
+    store.restore(null);
+    const el = render(store, { ...card, hasPriceRange: true }).f.nativeElement as HTMLElement;
+    expect(el.querySelector('.member-line')?.textContent?.replace(/\s+/g, ' ')).toContain('חברי מועדון: החל מ-');
+  });
 });
 
 describe('member price on the product page', () => {
   const variant = { price: 100_000, compareAtPrice: null, memberPrice: 90_000 } as VariantDetail;
 
-  function render(store: CustomerStore) {
+  function render(v: VariantDetail = variant) {
     const f = TestBed.createComponent(PriceBlock);
-    f.componentRef.setInput('variant', variant);
+    f.componentRef.setInput('variant', v);
     f.detectChanges();
     return f.nativeElement as HTMLElement;
   }
 
   it('regular only until known; member price main for a member', () => {
     const store = setup();
-    expect(render(store).textContent).not.toContain('900');
+    expect(render().textContent).not.toContain('900');
     store.restore(customerMe());
-    const el = render(store);
+    const el = render();
     expect(el.querySelector('.price-now')?.textContent).toContain('900');
     expect(el.querySelector('s')?.textContent).toContain('1,000');
     expect(el.textContent).toContain('מחיר מועדון');
+  });
+
+  it('a guest keeps the red sale price when the variant also has a member price (decision 63)', () => {
+    const store = setup();
+    store.restore(null);
+    const el = render({ price: 80_000, compareAtPrice: 100_000, memberPrice: 70_000 } as VariantDetail);
+    expect(el.querySelector('.price-now')?.classList.contains('sale')).toBe(true);
+    expect(el.querySelector('.price-now')?.textContent).toContain('800');
+    expect(el.querySelector('s')?.textContent).toContain('במקום');
   });
 
   it('a guest gets a box with a join link carrying the product url', () => {

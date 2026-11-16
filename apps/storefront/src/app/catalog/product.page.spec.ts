@@ -84,6 +84,7 @@ const card = (id: number): ProductCard => ({
   compareAtFrom: null,
   discountPercent: null,
   memberPriceFrom: null,
+  memberPriceFromRegular: null,
   hasPriceRange: false,
   swatches: [],
   image: null,

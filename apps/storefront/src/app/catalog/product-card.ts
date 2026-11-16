@@ -51,7 +51,7 @@ const MAX_SWATCHES = 4;
         </h3>
         @let pv = priceView();
         <p class="price-row">
-          <span class="price" [class.sale]="!pv.memberLine && p.compareAtFrom">
+          <span class="price" [class.sale]="pv.memberLine?.kind !== 'member' && p.compareAtFrom">
             @if (p.hasPriceRange) {
               <span class="from">החל מ-</span>
             }
@@ -59,7 +59,7 @@ const MAX_SWATCHES = 4;
           </span>
           @if (pv.struck) {
             <s class="old-price num"
-              ><span class="visually-hidden">{{ pv.memberLine ? regularSr : 'במקום ' }}</span
+              ><span class="visually-hidden">{{ pv.memberLine?.kind === 'member' ? regularSr : 'במקום ' }}</span
               >{{ price(pv.struck) }}</s
             >
           }
@@ -67,7 +67,11 @@ const MAX_SWATCHES = 4;
         @if (pv.memberLine; as line) {
           <p class="member-line">
             @if (line.kind === 'guest') {
-              {{ guestLine }} <bdi class="num">{{ price(line.price) }}</bdi>
+              {{ guestLine }}
+              @if (p.hasPriceRange) {
+                החל מ-
+              }
+              <bdi class="num">{{ price(line.price) }}</bdi>
             } @else {
               {{ memberLabel }}
             }
@@ -269,7 +273,14 @@ export class ProductCard {
   /** The viewer is known only in the browser, so the server render shows the regular price (CLB-03). */
   protected readonly priceView = computed(() => {
     const p = this.product();
-    return memberPriceView(p.priceFrom, p.compareAtFrom, p.memberPriceFrom, this.viewer.isMember());
+    // A member strikes the regular price of the variant that gives the member price, not the cheapest variant's.
+    return memberPriceView(
+      p.priceFrom,
+      p.compareAtFrom,
+      p.memberPriceFrom,
+      this.viewer.isMember(),
+      p.memberPriceFromRegular ?? p.priceFrom,
+    );
   });
   protected readonly shownSwatches = computed(() => this.product().swatches.slice(0, MAX_SWATCHES));
   protected readonly moreSwatches = computed(() => Math.max(0, this.product().swatches.length - MAX_SWATCHES));

@@ -28,13 +28,15 @@ export interface MemberPriceView {
  * What to show for a price (option A, spec §2.2/§4.2). `isMember`: `null` while the browser does not know the viewer
  * yet (and always in the server render) — the regular price only, so nothing personal is in the HTML; `false` a guest;
  * `true` a signed-in customer. Every number is the server's (decision 68); a member price that is not lower than the
- * current price is ignored.
+ * current price is ignored. `memberRegular`: what a member sees struck — the regular price of the variant that gives the
+ * member price (a card's `memberPriceFromRegular`; the same variant's price on the product page), struck only when higher.
  */
 export function memberPriceView(
   price: number,
   compareAt: number | null,
   memberPrice: number | null,
   isMember: boolean | null,
+  memberRegular: number = price,
 ): MemberPriceView {
   const regular: MemberPriceView = {
     main: price,
@@ -43,7 +45,10 @@ export function memberPriceView(
     joinLink: false,
   };
   if (memberPrice === null || memberPrice >= price || isMember === null) return regular;
-  if (isMember) return { main: memberPrice, struck: price, memberLine: { kind: 'member' }, joinLink: false };
+  if (isMember) {
+    const struck = memberRegular > memberPrice ? memberRegular : null;
+    return { main: memberPrice, struck, memberLine: { kind: 'member' }, joinLink: false };
+  }
   return { ...regular, memberLine: { kind: 'guest', price: memberPrice }, joinLink: true };
 }
 
