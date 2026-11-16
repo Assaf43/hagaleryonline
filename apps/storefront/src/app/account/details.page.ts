@@ -146,6 +146,28 @@ export class DetailsPage {
     }
   }
 
+  /** Verifies the e-mail the account already has: a code goes to it and the code step opens. */
+  protected async verifyEmail(): Promise<void> {
+    const email = this.store.me()?.email;
+    if (!email || this.busy()) return;
+    this.busy.set(true);
+    this.status.set('');
+    this.formError.set('');
+    this.errors.set({});
+    try {
+      await this.api.changeContact({ kind: 'email', value: email });
+      this.pending = email;
+      this.codeError.set('');
+      this.confirming.set('email');
+      afterNextRender(() => this.otp()?.focus(), { injector: this.injector });
+    } catch (error) {
+      if (this.store.unauthorized(error)) return;
+      this.formError.set(accountErrorMessage(accountFailure(error)));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   protected async resend(kind: Kind): Promise<void> {
     this.formError.set('');
     try {

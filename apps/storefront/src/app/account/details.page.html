@@ -37,9 +37,20 @@
       @for (c of contacts; track c.kind) {
         <section class="stack" [attr.aria-labelledby]="'dt-' + c.kind + '-title'">
           <h3 [id]="'dt-' + c.kind + '-title'">{{ c.title }}</h3>
-          <p>
-            <bdi dir="ltr">{{ c.kind === 'phone' ? me.phone : me.email }}</bdi>
-          </p>
+          @let current = c.kind === 'phone' ? me.phone : me.email;
+          @if (current) {
+            <p>
+              <bdi dir="ltr">{{ current }}</bdi>
+            </p>
+          }
+          @if (c.kind === 'email' && me.email && !me.emailVerified && confirming() !== 'email') {
+            <p class="notice">המייל לא אומת</p>
+            <div class="actions">
+              <button type="button" class="btn btn-primary verify-email" [disabled]="busy()" (click)="verifyEmail()">
+                אמת מייל
+              </button>
+            </div>
+          }
           @if (confirming() === c.kind) {
             <div class="stack">
               <p class="notice">{{ codeSent }}</p>
@@ -57,7 +68,9 @@
           } @else {
             <form [class]="'stack ' + c.kind + '-form'" novalidate (submit)="requestChange(c.kind, $event)">
               <div class="field">
-                <label class="field-label" [for]="'dt-' + c.kind">{{ c.label }}</label>
+                <label class="field-label" [for]="'dt-' + c.kind">{{
+                  c.kind === 'email' && !me.email ? 'כתובת דוא״ל' : c.label
+                }}</label>
                 <input
                   class="input"
                   [id]="'dt-' + c.kind"
@@ -77,7 +90,9 @@
                 }
               </div>
               <div class="actions">
-                <button type="submit" class="btn btn-secondary" [disabled]="busy()">שליחת קוד</button>
+                <button type="submit" class="btn btn-secondary" [disabled]="busy()">
+                  {{ c.kind === 'email' && !me.email ? 'הוסף מייל' : 'שליחת קוד' }}
+                </button>
               </div>
             </form>
           }

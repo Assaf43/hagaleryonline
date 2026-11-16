@@ -31,6 +31,7 @@ export const routes: Routes = [
     path: 'pay/sandbox/:transactionId',
     loadComponent: () => import('./pay/sandbox-pay.page').then((m) => m.SandboxPayPage),
   },
+  { path: 'pay/done', loadComponent: () => import('./pay/pay-done.page').then((m) => m.PayDonePage) },
   { path: 'delivery/:token', loadComponent: () => import('./delivery/delivery.page').then((m) => m.DeliveryPage) },
   // Customer accounts (Phase 5c): all noindex, read in the browser after the session is known.
   { path: 'account', loadComponent: () => import('./account/sign-in.page').then((m) => m.SignInPage) },

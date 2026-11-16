@@ -169,6 +169,56 @@ describe('DetailsPage', () => {
     });
   });
 
+  describe('e-mail verification and adding', () => {
+    it('a verified e-mail shows no verify button', async () => {
+      await setup();
+      expect(text()).not.toContain('המייל לא אומת');
+      expect(el().querySelector('.verify-email')).toBeNull();
+    });
+
+    it('an unverified e-mail shows the notice and verifies its own address with a code', async () => {
+      await setup(customerMe({ emailVerified: false }));
+      expect(text()).toContain('המייל לא אומת');
+      q<HTMLButtonElement>('.verify-email').click();
+      const change = http.expectOne('/api/account/contact/change');
+      expect(change.request.body).toEqual({ kind: 'email', value: 'dana@example.com' });
+      change.flush({ sent: true });
+      await settle();
+      pasteInto(q('hg-otp-field input'), '654321');
+      await settle();
+      const confirm = http.expectOne('/api/account/contact/confirm');
+      expect(confirm.request.body).toEqual({ kind: 'email', code: '654321' });
+      confirm.flush({ customer: customerMe() });
+      await settle();
+      expect(text()).not.toContain('המייל לא אומת');
+      expect(q('[role="status"]').textContent).toContain('הדוא״ל עודכן');
+    });
+
+    it('an account without an e-mail offers to add one, and no verify button', async () => {
+      await setup(customerMe({ email: null, emailVerified: false }));
+      expect(el().querySelector('.verify-email')).toBeNull();
+      expect(text()).not.toContain('המייל לא אומת');
+      const submit = q<HTMLButtonElement>('form.email-form button[type="submit"]');
+      expect(submit.textContent?.trim()).toBe('הוסף מייל');
+      typeInto(q('#dt-email'), 'new@example.com');
+      submit.click();
+      const change = http.expectOne('/api/account/contact/change');
+      expect(change.request.body).toEqual({ kind: 'email', value: 'new@example.com' });
+      change.flush({ sent: true });
+      await settle();
+      expect(el().querySelector('hg-otp-field')).not.toBeNull();
+    });
+
+    it('email_taken shows its message on the field', async () => {
+      await setup(customerMe({ email: null, emailVerified: false }));
+      typeInto(q('#dt-email'), 'taken@example.com');
+      q<HTMLButtonElement>('form.email-form button[type="submit"]').click();
+      failWith(http.expectOne('/api/account/contact/change'), 409, 'email_taken');
+      await settle();
+      expect(q('#dt-email').getAttribute('aria-invalid')).toBe('true');
+    });
+  });
+
   describe('password', () => {
     it('with a password already set, asks for the current one and sends both', async () => {
       await setup();
