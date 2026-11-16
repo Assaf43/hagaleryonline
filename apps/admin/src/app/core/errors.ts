@@ -185,12 +185,29 @@ const ORDER_FIELDS: Record<string, string> = {
   body: NOTE_MESSAGE,
   status: 'הסטטוס לא תקין.',
   returnWindowDays: RETURN_WINDOW_MESSAGE,
-  // Store details (Phase 6).
+};
+
+/**
+ * 400 `invalid_input` fields of the store details page only (Phase 6): a bare `phone` or `address` means something
+ * else on other screens, so they are not in `ORDER_FIELDS`.
+ */
+const STORE_SETTINGS_FIELDS: Record<string, string> = {
   nameHe: STORE_NAME_MESSAGE,
   address: STORE_TEXT_MESSAGE,
   hoursHe: STORE_TEXT_MESSAGE,
   phone: STORE_TEXT_MESSAGE,
 };
+
+/** The store details page's error text: its own field messages, then the general ones. */
+export function storeSettingsErrorMessage(error: unknown): string {
+  if (error instanceof HttpErrorResponse) {
+    const body = (error.error ?? {}) as { code?: string; field?: string };
+    if (body.code === 'invalid_input' && body.field && STORE_SETTINGS_FIELDS[body.field]) {
+      return STORE_SETTINGS_FIELDS[body.field];
+    }
+  }
+  return errorMessage(error);
+}
 
 /** 400 `invalid` of the promotions API on a field the form has no input of its own for. */
 const PROMOTION_FIELDS: Record<string, string> = {

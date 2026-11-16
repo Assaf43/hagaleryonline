@@ -69,6 +69,16 @@ describe('StoreSettingsPage ("החנות")', () => {
     expect(field('nameHe').value).toBe('סלון נסטו');
   });
 
+  it('keeps the store text message for a server 400 on the phone field (this page only)', async () => {
+    const { fixture, el, submit } = await open();
+    await submit();
+    http
+      .expectOne(URL)
+      .flush({ statusCode: 400, code: 'invalid_input', field: 'phone' }, { status: 400, statusText: 'Bad Request' });
+    await settle(fixture);
+    expect(el.querySelector('[role=alert]')?.textContent).toContain('עד 200 תווים');
+  });
+
   it('refuses an empty or too long name and too long other fields before sending', async () => {
     const { el, type, submit } = await open();
     for (const value of ['', '   ', 'א'.repeat(81)]) {

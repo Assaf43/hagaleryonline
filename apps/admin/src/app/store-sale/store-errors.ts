@@ -24,11 +24,21 @@ const STORE_CODES: Record<string, string> = {
   unknown_locality: 'היישוב לא נמצא. בחרו יישוב מהרשימה.',
 };
 
+/** 400 `invalid_input` by field on this screen: the phone lookup and the new customer's name and e-mail. */
+const STORE_FIELDS: Record<string, string> = {
+  phone: 'מספר הנייד לא תקין',
+  email: 'כתובת המייל לא תקינה',
+  'newCustomer.email': 'כתובת המייל לא תקינה',
+  newCustomer: 'יש להזין שם מלא ומייל',
+  'newCustomer.fullName': 'יש להזין שם מלא ומייל',
+};
+
 /** Hebrew for the store sale screen's errors (its own wording where a code means something else elsewhere). */
 export function storeErrorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return errorMessage(error);
   if (error.status === 429) return 'יותר מדי ניסיונות בזמן קצר. המתינו רגע ונסו שוב.';
-  const body = (error.error ?? {}) as { code?: string; messageHe?: string };
+  const body = (error.error ?? {}) as { code?: string; field?: string; messageHe?: string };
+  if (body.code === 'invalid_input' && body.field && STORE_FIELDS[body.field]) return STORE_FIELDS[body.field];
   if (body.code === 'invalid_field' && body.messageHe) return body.messageHe;
   if (body.code === 'coupon_invalid' && body.messageHe) return body.messageHe;
   if (body.code && STORE_CODES[body.code]) return STORE_CODES[body.code];

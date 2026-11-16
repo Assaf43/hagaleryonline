@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { errorMessage, STORE_NAME_MESSAGE, STORE_TEXT_MESSAGE } from '../core/errors';
+import { storeSettingsErrorMessage, STORE_NAME_MESSAGE, STORE_TEXT_MESSAGE } from '../core/errors';
 import { StoreApi } from '../core/store.api';
 
 /** The limits the API checks (`parseStoreInput`): a name of 1–80 characters, the other fields up to 200. */
@@ -64,7 +64,7 @@ export class StoreSettingsPage {
       this.fill(await this.api.save(input));
       this.snack.open('נשמר', 'סגירה', { duration: 4000 });
     } catch (e) {
-      this.error.set(errorMessage(e));
+      this.error.set(storeSettingsErrorMessage(e));
     } finally {
       this.busy.set(false);
     }
@@ -83,7 +83,7 @@ export class StoreSettingsPage {
       this.fill(await this.api.get());
       this.loaded.set(true);
     } catch (e) {
-      this.error.set(errorMessage(e));
+      this.error.set(storeSettingsErrorMessage(e));
     }
   }
 }
