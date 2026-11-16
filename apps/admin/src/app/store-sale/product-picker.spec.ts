@@ -116,4 +116,17 @@ describe('store sale product picker', () => {
     await settle(fixture);
     expect(el().querySelector<HTMLInputElement>('.line input')!.value).toBe('5');
   });
+
+  it('Enter in the coupon field applies the coupon like the button', async () => {
+    fixture.componentRef.setInput('cart', cart(1));
+    fixture.detectChanges();
+    const input = el().querySelector<HTMLInputElement>('input[name="coupon"]')!;
+    input.value = 'SAVE10';
+    input.dispatchEvent(new Event('input'));
+    input.closest('form')!.dispatchEvent(new Event('submit'));
+    const req = http.expectOne('/api/admin/store-cart/coupon');
+    expect(req.request.body).toEqual({ code: 'SAVE10' });
+    req.flush(cart(1));
+    await settle(fixture);
+  });
 });

@@ -167,4 +167,35 @@ describe('store sale customer step', () => {
     await settle(fixture);
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('מספר הנייד לא תקין');
   });
+
+  it('Enter in the new-customer fields sends the code like the button', async () => {
+    await lookup('0509999999', { exists: false });
+    type('fullName', 'רון לוי');
+    type('email', 'ron@example.test');
+    el().querySelector('input[name="email"]')!.closest('form')!.dispatchEvent(new Event('submit'));
+    const req = http.expectOne('/api/admin/store-cart/customer/code');
+    expect(req.request.body).toEqual({
+      phone: '0509999999',
+      channel: 'sms',
+      newCustomer: { fullName: 'רון לוי', email: 'ron@example.test' },
+    });
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('Enter in the e-mail field of an account without e-mail sends the SMS code', async () => {
+    await lookup('0501234567', { exists: true, fullName: 'דנה', maskedEmail: null, emailVerified: false });
+    type('email', 'dana@example.test');
+    el().querySelector('input[name="email"]')!.closest('form')!.dispatchEvent(new Event('submit'));
+    const req = http.expectOne('/api/admin/store-cart/customer/code');
+    expect(req.request.body.channel).toBe('sms');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('Enter does nothing while a request is running', async () => {
+    await lookup('0509999999', { exists: false });
+    const form = el().querySelector('input[name="email"]')!.closest('form')!;
+    form.dispatchEvent(new Event('submit'));
+    form.dispatchEvent(new Event('submit'));
+    http.expectOne('/api/admin/store-cart/customer/code').flush(null, { status: 204, statusText: 'No Content' });
+  });
 });

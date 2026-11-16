@@ -68,48 +68,57 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
               · <bdi dir="ltr">{{ f.maskedEmail }}</bdi>
             }
           </p>
-          @if (!f.maskedEmail) {
-            <label>
-              <span>מייל (אין מייל בחשבון, יישמר כלא מאומת)</span>
-              <input
-                name="email"
-                type="email"
-                dir="ltr"
-                autocomplete="off"
-                [value]="email()"
-                (input)="email.set(valueOf($event))"
-              />
-            </label>
-          }
-          <div class="actions">
-            <button matButton="filled" type="button" [disabled]="busy()" (click)="send('sms')">שלח קוד ב-SMS</button>
-            @if (f.emailVerified) {
-              <button matButton="outlined" type="button" [disabled]="busy()" (click)="send('email')">
-                שלח קוד למייל
-              </button>
+          <form (submit)="sendSms($event)">
+            @if (!f.maskedEmail) {
+              <label>
+                <span>מייל (אין מייל בחשבון, יישמר כלא מאומת)</span>
+                <input
+                  name="email"
+                  type="email"
+                  dir="ltr"
+                  autocomplete="off"
+                  [value]="email()"
+                  (input)="email.set(valueOf($event))"
+                />
+              </label>
             }
-          </div>
+            <div class="actions">
+              <button matButton="filled" type="submit" [disabled]="busy()">שלח קוד ב-SMS</button>
+              @if (f.emailVerified) {
+                <button matButton="outlined" type="button" [disabled]="busy()" (click)="send('email')">
+                  שלח קוד למייל
+                </button>
+              }
+            </div>
+          </form>
         } @else {
-          <div class="row">
-            <label>
-              <span>שם מלא</span>
-              <input name="fullName" autocomplete="off" [value]="fullName()" (input)="fullName.set(valueOf($event))" />
-            </label>
-            <label>
-              <span>מייל</span>
-              <input
-                name="email"
-                type="email"
-                dir="ltr"
-                autocomplete="off"
-                [value]="email()"
-                (input)="email.set(valueOf($event))"
-              />
-            </label>
-          </div>
-          <div class="actions">
-            <button matButton="filled" type="button" [disabled]="busy()" (click)="send('sms')">שלח קוד</button>
-          </div>
+          <form (submit)="sendSms($event)">
+            <div class="row">
+              <label>
+                <span>שם מלא</span>
+                <input
+                  name="fullName"
+                  autocomplete="off"
+                  [value]="fullName()"
+                  (input)="fullName.set(valueOf($event))"
+                />
+              </label>
+              <label>
+                <span>מייל</span>
+                <input
+                  name="email"
+                  type="email"
+                  dir="ltr"
+                  autocomplete="off"
+                  [value]="email()"
+                  (input)="email.set(valueOf($event))"
+                />
+              </label>
+            </div>
+            <div class="actions">
+              <button matButton="filled" type="submit" [disabled]="busy()">שלח קוד</button>
+            </div>
+          </form>
         }
       }
 
@@ -201,6 +210,13 @@ export class CustomerStep {
         if (seq === this.seq) throw e;
       }
     });
+  }
+
+  /** Enter in a field of the code form: the same as its SMS button (same busy rule). */
+  protected async sendSms(event: Event) {
+    event.preventDefault();
+    if (this.busy()) return;
+    await this.send('sms');
   }
 
   protected async send(channel: StoreCodeChannel) {
