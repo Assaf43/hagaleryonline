@@ -167,6 +167,8 @@ export function accountErrorMessage(failure: AccountFailure): string {
       return 'כתובת הדוא״ל הזאת כבר רשומה';
     case 'address_limit':
       return 'אפשר לשמור עד 20 כתובות';
+    case 'email_not_verified':
+      return 'כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל';
     case 'invalid_field':
       return failure.messageHe ?? GENERIC_ERROR_MESSAGE_HE;
     case 'not_found':

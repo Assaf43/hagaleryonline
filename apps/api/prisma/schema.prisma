@@ -1060,6 +1060,8 @@ model MarketingConsentEvent {
   actorCustomerId String?                 @map("actor_customer_id") @db.Uuid
   actorSellerId   Int?                    @map("actor_seller_id")
   ip              String?
+  /// The e-mail tool's event id of a `provider_unsubscribed` event: a repeated webhook event records nothing new.
+  providerEventId String?                 @unique @map("provider_event_id")
   at              DateTime                @default(now())
 
   contact MarketingContact @relation(fields: [contactId], references: [id], onDelete: Restrict)

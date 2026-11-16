@@ -231,6 +231,7 @@ describe('Store cart (e2e, ADM-18)', () => {
       email: null,
       emailVerified: false,
       isNew: true,
+      marketingStatus: null,
     });
   });
 

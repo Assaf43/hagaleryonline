@@ -35,3 +35,5 @@ export const tooManyAttempts = (retryAfterSeconds: number) =>
 /** The IP is over a per-IP limit. */
 export const tooManyRequests = (retryAfterSeconds: number) =>
   new AccountError(HttpStatus.TOO_MANY_REQUESTS, 'too_many_requests', { retryAfterSeconds });
+/** Marketing consent on the account page needs the account's e-mail verified first (decision 95). */
+export const emailNotVerified = () => new AccountError(HttpStatus.CONFLICT, 'email_not_verified');

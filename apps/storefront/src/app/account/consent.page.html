@@ -21,11 +21,6 @@
           ההסכמה ניתנה ב־<bdi class="num">{{ date(me.marketingConsentAt) }}</bdi>
         </p>
       }
-      @if (!me.marketingConsent && result()?.marketingWithdrawnAt; as withdrawn) {
-        <p class="hint">
-          ההסכמה בוטלה ב־<bdi class="num">{{ date(withdrawn) }}</bdi>
-        </p>
-      }
       <p class="notice" role="status">{{ status() }}</p>
       <p class="form-error" role="alert">{{ error() }}</p>
     </div>

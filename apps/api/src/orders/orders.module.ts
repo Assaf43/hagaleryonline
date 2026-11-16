@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { CartModule } from '../cart/cart.module.js';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { CustomerSessionModule } from '../customers/customer-session.module.js';
+import { MarketingModule } from '../marketing/marketing.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PAYMENT_PROVIDER, selectPaymentProvider } from '../payments/payment-provider.js';
 import { PaymentsController } from '../payments/payments.controller.js';
@@ -39,6 +40,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     CatalogModule,
     CartModule,
     CustomerSessionModule,
+    MarketingModule,
     PromotionsModule,
     ShippingModule,
     WriteThrottleModule,

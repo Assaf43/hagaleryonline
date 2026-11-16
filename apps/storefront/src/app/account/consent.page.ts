@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, PLATFORM_ID, inject, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import type { AccountConsent } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { formatDate } from '../core/format';
 import { AccountNav } from './account-nav';
@@ -9,8 +8,8 @@ import { CustomerStore } from './customer.store';
 
 /**
  * `/account/consent` (ACC-05, CLAUDE.md §4.4): the marketing consent. One checkbox that saves at once, so giving it
- * and withdrawing it are each one click; the result is announced in a status line. The server records the time and
- * the source (`account`).
+ * and withdrawing it are each one click; the result is announced in a status line. The server records the change in
+ * the e-mail's marketing contact and its history (source `account`, decision 95).
  */
 @Component({
   selector: 'hg-account-consent-page',
@@ -26,8 +25,6 @@ export class ConsentPage {
   protected readonly busy = signal(false);
   protected readonly status = signal('');
   protected readonly error = signal('');
-  /** The last answer of the server (with the consent's time). */
-  protected readonly result = signal<AccountConsent | null>(null);
   protected readonly date = formatDate;
 
   constructor() {
@@ -53,16 +50,10 @@ export class ConsentPage {
     try {
       while (this.wanted !== (this.store.me()?.marketingConsent ?? false)) {
         const saved = await this.api.setConsent(this.wanted);
-        this.result.set(saved);
+        const subscribed = saved.status === 'subscribed';
         const me = this.store.me();
-        if (me) {
-          this.store.restore({
-            ...me,
-            marketingConsent: saved.marketingConsent,
-            marketingConsentAt: saved.marketingConsentAt,
-          });
-        }
-        this.status.set(saved.marketingConsent ? 'ההסכמה לדיוור נשמרה' : 'ההסכמה לדיוור בוטלה');
+        if (me) this.store.restore({ ...me, marketingConsent: subscribed, marketingConsentAt: saved.consentAt });
+        this.status.set(subscribed ? 'ההסכמה לדיוור נשמרה' : 'ההסכמה לדיוור בוטלה');
       }
     } catch (failure) {
       if (this.store.unauthorized(failure)) return;

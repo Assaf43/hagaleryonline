@@ -15,6 +15,9 @@ export const OUTBOX_JOB_TYPES = [
   'email.ticket_received',
   'email.ticket_alert',
   'email.store_welcome',
+  'email.newsletter_confirm',
+  'sms.store_consent',
+  'marketing.sync',
 ] as const;
 
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPES)[number];
@@ -32,6 +35,9 @@ export const OUTBOX_JOB_LABELS_HE: Record<OutboxJobType, string> = {
   'email.ticket_received': 'אישור פנייה במייל',
   'email.ticket_alert': 'התראה על פנייה חדשה',
   'email.store_welcome': 'מייל פתיחת חשבון',
+  'email.newsletter_confirm': 'מייל אישור הרשמה לדיוור',
+  'sms.store_consent': 'SMS אישור קבלת עדכונים',
+  'marketing.sync': 'סנכרון לכלי הדיוור',
 };
 
 /** One row of GET /api/admin/jobs/failed (permission orders.manage). */

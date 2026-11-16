@@ -11,6 +11,7 @@ import {
 } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import { OrderStatus, type Prisma } from '../generated/prisma/client.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import { CheckoutService, parseOrderFields } from '../orders/checkout.service.js';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service.js';
 import {
@@ -95,6 +96,7 @@ export class StoreOrdersService {
     private readonly storeCarts: StoreCartService,
     private readonly store: StoreService,
     private readonly audit: AuditService,
+    private readonly marketing: MarketingService,
   ) {}
 
   /**
@@ -155,10 +157,24 @@ export class StoreOrdersService {
         },
         afterCreate: async (tx, created) => {
           if (input.saveAddress) await saveAddress(tx, customer.id, input.address);
-          // A quick account gives its marketing consent at its first store order (source `store`), whichever cart or
-          // seller that is: an account made at the store, with no paid order, whose consent was never recorded (a
-          // withdrawn one keeps its time). Any other account's consent is its own (the order keeps the checkbox).
-          // TODO(Task 2): MarketingService records the quick account's consent (source store).
+          // The seller's marketing box (decision 96, CLB-08): the order keeps the box, and the customer gets an SMS link;
+          // consent is recorded only when they open it and confirm (source `store`). An e-mail already subscribed gets
+          // nothing. The contact is linked to the account only when the account verified the e-mail.
+          if (input.marketingConsent) {
+            const now = await tx.customer.findUniqueOrThrow({
+              where: { id: customer.id },
+              select: { email: true, emailVerifiedAt: true, phone: true },
+            });
+            if (now.email)
+              await this.marketing.requestConfirmation(tx, {
+                email: now.email,
+                customerId: now.emailVerifiedAt ? customer.id : null,
+                source: 'store',
+                channel: 'sms',
+                phone: now.phone,
+                actor: { sellerId, ip: actor.ip },
+              });
+          }
           await this.audit.record(
             {
               actorId: sellerId,

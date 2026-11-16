@@ -14,6 +14,7 @@ const customer: StoreCustomer = {
   email: 'dana@example.test',
   emailVerified: true,
   isNew: false,
+  marketingStatus: null,
 };
 
 const line = {

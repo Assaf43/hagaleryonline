@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CustomerMe, OtpChannel } from '@hg/models';
-import { Prisma, type Customer } from '../generated/prisma/client.js';
+import { MarketingStatus, Prisma, type Customer } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from '../auth/passwords.js';
 import { CartService } from '../cart/cart.service.js';
+import { MarketingService } from '../marketing/marketing.service.js';
 import { maskEmail } from '../notifications/masking.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -58,7 +59,10 @@ export interface SignedIn {
   token: string;
 }
 
-export function toMe(c: Customer): CustomerMe {
+/** The part of the account's marketing contact `CustomerMe` shows (null: none). */
+export type MeConsent = { status: MarketingStatus; consentAt: Date | null } | null;
+
+export function toMe(c: Customer, contact: MeConsent): CustomerMe {
   return {
     id: c.id,
     fullName: c.fullName,
@@ -67,9 +71,9 @@ export function toMe(c: Customer): CustomerMe {
     phoneVerified: c.phoneVerifiedAt !== null,
     emailVerified: c.emailVerifiedAt !== null,
     hasPassword: c.passwordHash !== null,
-    // TODO(Task 2): MarketingService; until then every customer reads as having no consent.
-    marketingConsent: false,
-    marketingConsentAt: null,
+    marketingConsent: contact?.status === MarketingStatus.SUBSCRIBED,
+    marketingConsentAt:
+      contact?.status === MarketingStatus.SUBSCRIBED ? (contact.consentAt?.toISOString() ?? null) : null,
   };
 }
 
@@ -95,7 +99,13 @@ export class CustomerAuthService {
     private readonly otp: OtpService,
     private readonly cart: CartService,
     private readonly audit: AuditService,
+    private readonly marketing: MarketingService,
   ) {}
+
+  /** `CustomerMe` with the consent of the account's marketing contact. */
+  async me(customer: Customer): Promise<CustomerMe> {
+    return toMe(customer, await this.marketing.contactFor(customer));
+  }
 
   // ---------- Codes ----------
 
@@ -211,7 +221,7 @@ export class CustomerAuthService {
       data: { passwordHash: await hashPassword(next) },
     });
     await this.sessions.endAll(customer.id, session.id);
-    return toMe(updated);
+    return this.me(updated);
   }
 
   /**
@@ -232,7 +242,11 @@ export class CustomerAuthService {
     });
   }
 
-  /** Saves the new (or the own unverified) phone or e-mail as verified and signs out every other session. */
+  /**
+   * Saves the new (or the own unverified) phone or e-mail as verified and signs out every other session. A new e-mail
+   * releases the old one's marketing contact (its consent never moves to the new address, spec §5.3) and links the new
+   * one's contact, if any, to the account.
+   */
   async confirmContactChange(
     { customer, session }: ResolvedCustomer,
     kind: 'phone' | 'email',
@@ -245,13 +259,21 @@ export class CustomerAuthService {
       kind === 'phone' ? { phone: row.target, phoneVerifiedAt: now } : { email: row.target, emailVerifiedAt: now };
     let updated: Customer;
     try {
-      updated = await this.prisma.customer.update({ where: { id: customer.id }, data });
+      updated = await this.prisma.$transaction(async (tx) => {
+        const saved = await tx.customer.update({ where: { id: customer.id }, data });
+        if (kind === 'email') {
+          if (customer.email && customer.email !== row.target)
+            await this.marketing.releaseEmail(tx, customer.email, 'changed');
+          await this.marketing.linkVerifiedEmail(tx, row.target, customer.id);
+        }
+        return saved;
+      });
     } catch (error) {
       if (isUniqueViolation(error)) throw kind === 'phone' ? phoneTaken() : emailTaken();
       throw error;
     }
     await this.sessions.endAll(customer.id, session.id);
-    return toMe(updated);
+    return this.me(updated);
   }
 
   // ---------- Forgotten password ----------
@@ -285,13 +307,16 @@ export class CustomerAuthService {
    * Both contacts were verified by the ticket (decision 80). An account that holds the e-mail unverified (a store quick
    * account) loses it in the same transaction, audited (decision 85); it still signs in by its phone. The release
    * matches only a still-unverified holder, so one verified meanwhile makes the create fail on the unique e-mail
-   * (then `assertFree` answers `email_taken`).
+   * (then `assertFree` answers `email_taken`). The released e-mail's marketing contact is released too (its consent
+   * never moves to the new account, spec §5.3). The new account's e-mail is verified: with the marketing box it is
+   * subscribed at once (source `signup`), otherwise an existing contact of it is only linked to the account.
    */
   private async create(details: NewCustomer, client: ClientInfo): Promise<SignedIn> {
     const now = new Date();
     const passwordHash = details.password ? await hashPassword(details.password) : null;
     try {
       const customer = await this.prisma.$transaction(async (tx) => {
+        let releasedHolder = false;
         const holder = await tx.customer.findFirst({
           where: { email: details.email, emailVerifiedAt: null },
           select: { id: true },
@@ -301,7 +326,8 @@ export class CustomerAuthService {
             where: { id: holder.id, email: details.email, emailVerifiedAt: null },
             data: { email: null },
           });
-          if (released.count === 1)
+          if (released.count === 1) {
+            releasedHolder = true;
             await this.audit.record(
               {
                 actorId: null,
@@ -312,8 +338,9 @@ export class CustomerAuthService {
               },
               tx,
             );
+          }
         }
-        return tx.customer.create({
+        const created = await tx.customer.create({
           data: {
             fullName: details.fullName,
             phone: details.phone,
@@ -321,9 +348,19 @@ export class CustomerAuthService {
             passwordHash,
             phoneVerifiedAt: now,
             emailVerifiedAt: now,
-            // TODO(Task 2): MarketingService records details.marketingConsent (source signup).
           },
         });
+        // The marketing lock is the last lock (locks.ts): after the customer insert.
+        if (releasedHolder) await this.marketing.releaseEmail(tx, details.email, 'released');
+        if (details.marketingConsent)
+          await this.marketing.subscribeVerified(tx, {
+            email: details.email,
+            customerId: created.id,
+            source: 'signup',
+            actor: { customerId: created.id, ip: client.ip },
+          });
+        else await this.marketing.linkVerifiedEmail(tx, details.email, created.id);
+        return created;
       });
       return await this.signedIn(customer, client);
     } catch (error) {
@@ -373,7 +410,7 @@ export class CustomerAuthService {
     await this.cart.attachToCustomer(client.cartToken, customer.id);
     await this.sessions.endByToken(client.previousToken);
     const token = await this.sessions.start(customer.id, { ip: client.ip, userAgent: client.userAgent });
-    return { customer: toMe(customer), token };
+    return { customer: await this.me(customer), token };
   }
 
   /** Reads every part of a ticket (each a live, unused token of one contact); 400 `invalid_token` otherwise. */

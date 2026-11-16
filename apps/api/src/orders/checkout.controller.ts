@@ -25,7 +25,7 @@ export class CheckoutController {
     @Req() req: Request,
     @OptionalCustomer() customer: ResolvedCustomer | null,
   ): Promise<CheckoutResponse> {
-    return this.checkout.checkout(cartTokenOf(req), body, customerIdOf(customer));
+    return this.checkout.checkout(cartTokenOf(req), body, customerIdOf(customer), { ip: req.ip });
   }
 
   /** The account's contact and saved addresses; 204 for a guest. Personal: never cached. */

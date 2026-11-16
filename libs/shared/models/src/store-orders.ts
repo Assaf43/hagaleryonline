@@ -1,5 +1,6 @@
 /** Seller-assisted store orders (Phase 6, ADM-18, spec §4.4–§4.6). */
 import type { CartView } from './cart.js';
+import type { MarketingStatus } from './marketing.js';
 import type { CheckoutAddress, OrderStatus } from './orders.js';
 import type { ShippingMethod } from './shipping.js';
 
@@ -20,6 +21,11 @@ export interface StoreCustomer {
   email: string | null;
   emailVerified: boolean;
   isNew: boolean;
+  /**
+   * The marketing contact of the customer's e-mail (decision 96): null when it has none. The seller's marketing box
+   * needs an e-mail (`email` null → disabled); `pending` waits for the customer's SMS link, `subscribed` needs none.
+   */
+  marketingStatus: MarketingStatus | null;
 }
 
 /** The store cart: the website cart's view plus the attached customer. */
@@ -70,7 +76,10 @@ export interface StoreOrderRequest {
   acceptTerms: true;
   /** Agorot: the total on the seller screen (the store cart view plus the chosen shipping method). */
   expectedTotal: number;
-  /** Ticked by the customer, never pre-checked. */
+  /**
+   * Ticked for the customer, never pre-checked; stored on the order. The customer gets an SMS link and consent is
+   * recorded only when they confirm it (source `store`, decision 96); an already subscribed e-mail gets nothing.
+   */
   marketingConsent?: boolean;
   saveAddress?: boolean;
 }

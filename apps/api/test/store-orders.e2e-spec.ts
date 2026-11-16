@@ -20,8 +20,10 @@ import { AppModule } from './../src/app.module.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import {
+  ConsentAction,
   DiscountType,
   MarketingConsentSource,
+  MarketingStatus,
   OrderActorType,
   OrderChannel,
   OrderStatus,
@@ -35,9 +37,11 @@ import {
   type SmsProvider,
 } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
+import { MarketingService } from './../src/marketing/marketing.service.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteMarketingContacts } from './test-marketing.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
 
@@ -149,6 +153,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     await prisma.otpCode.deleteMany({});
     await prisma.promotion.deleteMany({ where: { name: { startsWith: 'ZZ' } } });
     await prisma.customer.deleteMany({ where: { fullName: { startsWith: 'ZZ' } } });
+    await deleteMarketingContacts(prisma, { email: { endsWith: DOMAIN } });
   };
 
   beforeAll(async () => {
@@ -243,11 +248,14 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
       contact: { fullName: 'ZZ רון כהן', phone: customer.phone, email: customer.newCustomer.email },
       marketingConsent: true,
     });
-    // The customer created in this sale gives their consent with the source `store`.
-    expect(await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).toMatchObject({
-      marketingConsent: true,
-      marketingConsentSource: MarketingConsentSource.STORE,
+    // The seller's box asks the customer by SMS (decision 96): pending until they confirm, source `store`; the
+    // quick account's e-mail is unverified, so the contact is not linked to it.
+    expect(await prisma.marketingContact.findUnique({ where: { email: customer.newCustomer.email } })).toMatchObject({
+      status: MarketingStatus.PENDING,
+      source: MarketingConsentSource.STORE,
+      customerId: null,
     });
+    expect(await prisma.outboxJob.count({ where: { type: 'sms.store_consent' } })).toBe(1);
     // The delivery address is saved to the account, as its default (it had none).
     expect(await prisma.customerAddress.findMany({ where: { customerId: customer.id } })).toEqual([
       expect.objectContaining({ ...address, isDefault: true }),
@@ -311,7 +319,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(await prisma.outboxJob.count({ where: { type: 'email.store_welcome' } })).toBe(1);
   });
 
-  it("a quick account's first store order records its store consent even from a later cart; a released e-mail gets no welcome", async () => {
+  it("a quick account's store order asks for consent by SMS even from a later cart; a released e-mail gets no welcome", async () => {
     // The quick account is opened in one sale, whose basket is then dropped for a new one (another cart).
     await newSale(sellerA, [[plenty, 1]]);
     const customer = await quickAccount(sellerA);
@@ -319,9 +327,10 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     await confirm(sellerA, customer.phone);
     const first = await placeStore(sellerA, { marketingConsent: true });
     expect(first.status, JSON.stringify(first.body)).toBe(201);
-    expect(await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).toMatchObject({
-      marketingConsent: true,
-      marketingConsentSource: MarketingConsentSource.STORE,
+    const email = customer.newCustomer.email;
+    expect(await prisma.marketingContact.findUnique({ where: { email } })).toMatchObject({
+      status: MarketingStatus.PENDING,
+      source: MarketingConsentSource.STORE,
     });
 
     // Paid; then a verified website sign-up takes the e-mail (released): the welcome is skipped, never sent to the
@@ -338,18 +347,25 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
       state: 'DONE',
     });
 
-    // After a paid order, or once withdrawn, a store order never records the account's consent again.
-    await prisma.customer.update({
-      where: { id: customer.id },
-      data: { email: customer.newCustomer.email, marketingConsent: false, marketingWithdrawnAt: new Date() },
-    });
+    // Withdrawn, then the box ticked at a later sale: a new SMS request, never a recorded consent by itself.
+    await prisma.customer.update({ where: { id: customer.id }, data: { email } });
+    await prisma.$transaction((tx) => app.get(MarketingService).withdraw(tx, { email, source: 'account', actor: {} }));
     await newSale(sellerA, [[plenty, 1]]);
     await confirm(sellerA, customer.phone);
     expect((await placeStore(sellerA, { marketingConsent: true })).status).toBe(201);
-    expect((await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).marketingConsent).toBe(false);
+    const contact = await prisma.marketingContact.findUniqueOrThrow({
+      where: { email },
+      include: { events: { orderBy: { id: 'asc' } } },
+    });
+    expect(contact.status).toBe(MarketingStatus.PENDING);
+    expect(contact.events.map((e) => e.action)).toEqual([
+      ConsentAction.REQUESTED,
+      ConsentAction.WITHDRAWN,
+      ConsentAction.REQUESTED,
+    ]);
   });
 
-  it('existing customer sale: the account is the customer, a known address is not saved twice, consent untouched', async () => {
+  it('existing customer sale: the account is the customer, a known address is not saved twice, consent asked by SMS', async () => {
     const customer = await existingAccount();
     await prisma.customerAddress.create({ data: { customerId: customer.id, ...address, isDefault: true } });
     await newSale(sellerA, [[plenty, 1]]);
@@ -364,8 +380,15 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
       marketingConsent: true,
     });
     expect(await prisma.customerAddress.count({ where: { customerId: customer.id } })).toBe(1);
-    // Not created in this sale: the order keeps its checkbox, the account's consent is the customer's own business.
-    expect((await prisma.customer.findUniqueOrThrow({ where: { id: customer.id } })).marketingConsent).toBe(false);
+    // Any confirmed store customer with an e-mail gets the SMS link (decision 96); its verified e-mail links the contact.
+    expect(await prisma.marketingContact.findUnique({ where: { email: customer.email! } })).toMatchObject({
+      status: MarketingStatus.PENDING,
+      source: MarketingConsentSource.STORE,
+      customerId: customer.id,
+    });
+    expect(
+      await prisma.outboxJob.findFirst({ where: { type: 'sms.store_consent' }, select: { payload: true } }),
+    ).toMatchObject({ payload: { phone: customer.phone } });
 
     // saveAddress false: a new address stays on the order only.
     await newSale(sellerA, [[plenty, 1]]);

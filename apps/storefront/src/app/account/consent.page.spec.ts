@@ -49,10 +49,10 @@ describe('ConsentPage', () => {
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual({ marketingConsent: true });
     req.flush({
-      marketingConsent: true,
-      marketingConsentAt: '2026-11-12T10:00:00.000Z',
-      marketingConsentSource: 'account',
-      marketingWithdrawnAt: null,
+      status: 'subscribed',
+      source: 'account',
+      consentAt: '2026-11-12T10:00:00.000Z',
+      emailVerified: true,
     });
     await settle();
     expect(TestBed.inject(CustomerStore).me()?.marketingConsent).toBe(true);
@@ -66,10 +66,10 @@ describe('ConsentPage', () => {
     const req = http.expectOne('/api/account/consent');
     expect(req.request.body).toEqual({ marketingConsent: false });
     req.flush({
-      marketingConsent: false,
-      marketingConsentAt: '2026-11-12T10:00:00.000Z',
-      marketingConsentSource: 'signup',
-      marketingWithdrawnAt: '2026-11-13T10:00:00.000Z',
+      status: 'unsubscribed',
+      source: 'signup',
+      consentAt: null,
+      emailVerified: true,
     });
     await settle();
     expect(TestBed.inject(CustomerStore).me()?.marketingConsent).toBe(false);
@@ -85,10 +85,10 @@ describe('ConsentPage', () => {
     expect(box().disabled).toBe(false);
     expect(document.activeElement).toBe(box());
     http.expectOne('/api/account/consent').flush({
-      marketingConsent: true,
-      marketingConsentAt: '2026-11-12T10:00:00.000Z',
-      marketingConsentSource: 'account',
-      marketingWithdrawnAt: null,
+      status: 'subscribed',
+      source: 'account',
+      consentAt: '2026-11-12T10:00:00.000Z',
+      emailVerified: true,
     });
     await settle();
   });
@@ -123,5 +123,15 @@ describe('ConsentPage', () => {
     expect(box().checked).toBe(false);
     const alerts = [...el().querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(' ');
     expect(alerts).toContain('ביצעתם יותר מדי ניסיונות');
+  });
+
+  it('an unverified e-mail (409 email_not_verified) restores the checkbox and asks to verify first', async () => {
+    await setup(false);
+    box().click();
+    failWith(http.expectOne('/api/account/consent'), 409, 'email_not_verified');
+    await settle();
+    expect(box().checked).toBe(false);
+    const alerts = [...el().querySelectorAll('[role="alert"]')].map((a) => a.textContent).join(' ');
+    expect(alerts).toContain('יש לאמת קודם את כתובת הדוא״ל');
   });
 });
