@@ -18,6 +18,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 
 const DETAIL: AdminOrderDetail = {
   number: 100002,
+  channel: 'web',
+  seller: null,
   status: 'paid',
   createdAt: '2026-11-09T10:00:00.000Z',
   reservedUntil: '2026-11-09T10:20:00.000Z',

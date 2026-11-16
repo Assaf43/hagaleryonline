@@ -3,7 +3,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { AdminOrderDetail, AdminOrderPage, OneTimeLink, ProvidersStatus } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
-import { OrderShippingMethod, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
+import { OrderChannel, OrderShippingMethod, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, adminBrowser, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
@@ -28,7 +28,13 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
   const makeOrder = async (
     key: string,
     status: OrderStatus,
-    opts: { reservedUntil?: Date; createdAt?: Date; stockShortage?: boolean; rawStatus?: string } = {},
+    opts: {
+      reservedUntil?: Date;
+      createdAt?: Date;
+      stockShortage?: boolean;
+      rawStatus?: string;
+      store?: { sellerId: number; storeId: number };
+    } = {},
   ) => {
     const paid = status === OrderStatus.PAID;
     const order = await prisma.order.create({
@@ -57,6 +63,9 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
         reservedUntil: opts.reservedUntil ?? new Date(Date.now() + 20 * MINUTE),
         createdAt: opts.createdAt,
         stockShortage: opts.stockShortage ?? paid,
+        ...(opts.store
+          ? { channel: OrderChannel.STORE, sellerId: opts.store.sellerId, storeId: opts.store.storeId }
+          : {}),
         items: {
           create: [
             {
@@ -146,6 +155,8 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
       itemCount: 2,
       needsAttention: true,
       attentionReasons: ['stock_shortage'],
+      channel: 'web',
+      seller: null,
     });
     expect(mine.slice(0, 3).map((i) => i.needsAttention)).toEqual([false, false, false]);
   });
@@ -160,6 +171,34 @@ describe('Admin orders and providers (e2e, ADM-13)', () => {
     expect(await names('payment_failed')).toEqual(['ZZ failed']);
     expect(await names('expired')).toEqual(['ZZ stale']);
     await viewer.get('/orders?status=bogus').expect(400);
+  });
+
+  it('shows the channel and seller, and filters by channel (ADM-18)', async () => {
+    const sellerRow = await prisma.adminUser.findUniqueOrThrow({ where: { email: 'seller@example.test' } });
+    const store = await prisma.store.findFirstOrThrow({ where: { active: true }, orderBy: { id: 'asc' } });
+    try {
+      await makeOrder('store', OrderStatus.PAID, {
+        stockShortage: false,
+        store: { sellerId: sellerRow.id, storeId: store.id },
+      });
+      const names = async (query: string) =>
+        ((await viewer.get(`/orders${query}`).expect(200)).body as AdminOrderPage).items.filter((i) =>
+          i.customerName.startsWith('ZZ'),
+        );
+      const onlyStore = await names('?channel=store');
+      expect(onlyStore.map((i) => i.customerName)).toEqual(['ZZ store']);
+      expect(onlyStore[0]).toMatchObject({ channel: 'store', seller: { id: sellerRow.id, name: 'מוכר' } });
+      const web = await names('?channel=web');
+      expect(web.map((i) => i.customerName)).not.toContain('ZZ store');
+      expect(web.every((i) => i.channel === 'web' && i.seller === null)).toBe(true);
+      expect((await names('')).map((i) => i.customerName)).toContain('ZZ store');
+      const detail = (await viewer.get(`/orders/${numbers.store}`).expect(200)).body as AdminOrderDetail;
+      expect(detail).toMatchObject({ channel: 'store', seller: { id: sellerRow.id, name: 'מוכר' } });
+      expect(((await viewer.get(`/orders/${numbers.paid}`).expect(200)).body as AdminOrderDetail).seller).toBeNull();
+      await viewer.get('/orders?channel=bogus').expect(400);
+    } finally {
+      await deleteOrders(prisma, { contact: { path: ['fullName'], string_starts_with: 'ZZ store' } });
+    }
   });
 
   it('filters by each lifecycle status (Phase 5a)', async () => {

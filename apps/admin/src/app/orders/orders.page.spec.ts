@@ -26,6 +26,8 @@ const PAGE: AdminOrderPage = {
       itemCount: 2,
       needsAttention: true,
       attentionReasons: ['paid_twice'],
+      channel: 'web',
+      seller: null,
     },
     {
       number: 100001,
@@ -37,6 +39,8 @@ const PAGE: AdminOrderPage = {
       itemCount: 1,
       needsAttention: false,
       attentionReasons: [],
+      channel: 'store',
+      seller: { id: 7, name: 'יוסי המוכר' },
     },
   ],
   total: 2,
@@ -46,6 +50,8 @@ const PAGE: AdminOrderPage = {
 
 const DETAIL: AdminOrderDetail = {
   number: 100002,
+  channel: 'web',
+  seller: null,
   status: 'paid',
   createdAt: '2026-11-09T10:00:00.000Z',
   reservedUntil: '2026-11-09T10:20:00.000Z',
@@ -152,6 +158,50 @@ describe('admin orders screens', () => {
     expect(rows[1].querySelector('.attention')).toBeNull();
   });
 
+  it('shows the channel of every order and the seller of a store order', async () => {
+    const fixture = TestBed.createComponent(OrdersPage);
+    fixture.detectChanges();
+    http.expectOne('/api/admin/orders?page=1').flush(PAGE);
+    await settle(fixture);
+    const rows = [...(fixture.nativeElement as HTMLElement).querySelectorAll('.order')];
+    expect(rows[0].querySelector('.channel')?.textContent?.trim()).toBe('אתר');
+    expect(rows[1].querySelector('.channel')?.textContent).toContain('חנות');
+    expect(rows[1].querySelector('.channel')?.textContent).toContain('יוסי המוכר');
+  });
+
+  it('filters by channel and keeps the choice in the URL', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const fixture = TestBed.createComponent(OrdersPage);
+    fixture.detectChanges();
+    http.expectOne('/api/admin/orders?page=1').flush(PAGE);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    const labels = [...el.querySelectorAll('.channel-filter')].map((b) => b.textContent?.trim());
+    expect(labels).toEqual(['כל הערוצים', 'אתר', 'חנות']);
+    el.querySelectorAll<HTMLButtonElement>('.channel-filter')[2].click();
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: expect.objectContaining({ channel: 'store', page: null }) }),
+    );
+    fixture.componentRef.setInput('channel', 'store');
+    fixture.detectChanges();
+    http.expectOne((r) => r.params.get('channel') === 'store' && r.params.get('page') === '1').flush(PAGE);
+    await settle(fixture);
+  });
+
+  it('shows the channel and the seller on the order page', async () => {
+    const fixture = TestBed.createComponent(OrderDetailPage);
+    fixture.componentRef.setInput('number', '100002');
+    fixture.detectChanges();
+    http
+      .expectOne('/api/admin/orders/100002')
+      .flush({ ...DETAIL, channel: 'store', seller: { id: 7, name: 'יוסי המוכר' } });
+    await settle(fixture);
+    const text = (fixture.nativeElement as HTMLElement).querySelector('.channel-info')?.textContent ?? '';
+    expect(text).toContain('חנות');
+    expect(text).toContain('יוסי המוכר');
+  });
+
   it('offers a filter for every order status', async () => {
     const fixture = TestBed.createComponent(OrdersPage);
     fixture.detectChanges();
@@ -176,17 +226,17 @@ describe('admin orders screens', () => {
     button.click();
     expect(navigate).toHaveBeenLastCalledWith([], {
       relativeTo: expect.anything(),
-      queryParams: { status: 'payment_failed', attention: null, page: null },
+      queryParams: { status: 'payment_failed', attention: null, channel: null, page: null },
     });
     el.querySelector<HTMLButtonElement>('.attention-filter')!.click();
     expect(navigate).toHaveBeenLastCalledWith([], {
       relativeTo: expect.anything(),
-      queryParams: { status: null, attention: 'true', page: null },
+      queryParams: { status: null, attention: 'true', channel: null, page: null },
     });
     el.querySelectorAll<HTMLButtonElement>('.pager button')[1].click();
     expect(navigate).toHaveBeenLastCalledWith([], {
       relativeTo: expect.anything(),
-      queryParams: { status: null, attention: null, page: 2 },
+      queryParams: { status: null, attention: null, channel: null, page: 2 },
     });
 
     // The router binds the query parameters (back and forward too): the page loads what they say.

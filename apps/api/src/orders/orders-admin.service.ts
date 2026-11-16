@@ -6,6 +6,8 @@ import type {
   AdminPaymentStatus,
   AdminRefund,
   OrderAddressView,
+  OrderChannel as OrderChannelView,
+  OrderSeller,
   OrderActorType as OrderActorView,
   OrderAttentionReason,
   OrderStatus as OrderStatusView,
@@ -17,6 +19,7 @@ import type {
 import {
   DeliverySlotState,
   OrderActorType,
+  OrderChannel,
   OrderShippingMethod,
   OrderStatus,
   OutboxJobState,
@@ -57,6 +60,11 @@ const ACTOR_VIEW: Record<OrderActorType, OrderActorView> = {
   CUSTOMER: 'customer',
   SYSTEM: 'system',
 };
+const CHANNEL_VIEW: Record<OrderChannel, OrderChannelView> = { WEB: 'web', STORE: 'store' };
+const SELLER = { seller: { select: { id: true, name: true } } } as const;
+const sellerView = (seller: { id: number; name: string } | null): OrderSeller | null =>
+  seller ? { id: seller.id, name: seller.name } : null;
+
 const PAYMENT_VIEW: Record<PaymentStatus, AdminPaymentStatus> = {
   PENDING: 'pending',
   SUCCEEDED: 'succeeded',
@@ -77,6 +85,10 @@ export const ORDER_STATUS_FILTERS = [
   'cancelled',
 ] as const;
 export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
+
+/** The `channel` query values. */
+export const ORDER_CHANNEL_FILTERS = ['web', 'store'] as const;
+export type OrderChannelFilter = (typeof ORDER_CHANNEL_FILTERS)[number];
 
 /**
  * The where clause of a status filter. A pending order past its reservation reads as expired (the same rule the
@@ -164,11 +176,17 @@ export class OrdersAdminService {
     @Inject(SHIPPING_PROVIDER) private readonly shipping: ShippingProvider,
   ) {}
 
-  async list(status: OrderStatusFilter | undefined, page: number, attention = false): Promise<AdminOrderPage> {
+  async list(
+    status: OrderStatusFilter | undefined,
+    page: number,
+    attention = false,
+    channel?: OrderChannelFilter,
+  ): Promise<AdminOrderPage> {
     const now = new Date();
-    const where: Prisma.OrderWhereInput = attention
-      ? { AND: [statusWhere(status, now), ATTENTION_WHERE] }
-      : statusWhere(status, now);
+    const and: Prisma.OrderWhereInput[] = [statusWhere(status, now)];
+    if (attention) and.push(ATTENTION_WHERE);
+    if (channel) and.push({ channel: channel === 'store' ? OrderChannel.STORE : OrderChannel.WEB });
+    const where: Prisma.OrderWhereInput = { AND: and };
     const [total, rows] = await Promise.all([
       this.prisma.order.count({ where }),
       this.prisma.order.findMany({
@@ -179,6 +197,7 @@ export class OrdersAdminService {
         include: {
           items: { select: { quantity: true } },
           payments: { select: { rawStatus: true } },
+          ...SELLER,
           ...FAILED_JOBS,
         },
       }),
@@ -197,6 +216,8 @@ export class OrdersAdminService {
           itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
           needsAttention: reasons.length > 0,
           attentionReasons: reasons,
+          channel: CHANNEL_VIEW[o.channel],
+          seller: sellerView(o.seller),
         };
       }),
       total,
@@ -217,6 +238,7 @@ export class OrdersAdminService {
         events: { orderBy: { id: 'asc' } },
         refunds: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         ...ORDER_INVOICES,
+        ...SELLER,
         ...FAILED_JOBS,
       },
     });
@@ -243,6 +265,8 @@ export class OrdersAdminService {
     }));
     return {
       number: order.number,
+      channel: CHANNEL_VIEW[order.channel],
+      seller: sellerView(order.seller),
       status: STATUS_VIEW[effectiveStatus(order)],
       createdAt: order.createdAt.toISOString(),
       reservedUntil: order.reservedUntil.toISOString(),

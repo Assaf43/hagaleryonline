@@ -16,7 +16,24 @@
   cursor: pointer;
 }
 
-.filter.active {
+.channel-filter {
+  min-block-size: var(--control-height-sm);
+  padding-inline: var(--space-4);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.channel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.filter.active,
+.channel-filter.active {
   color: var(--color-on-accent);
   background: var(--color-accent);
   border-color: var(--color-accent);
@@ -136,7 +153,7 @@
 
 @media (width >= 768px) {
   .order-link {
-    grid-template-columns: 6rem 9rem minmax(0, 1fr) 6rem 7rem 9rem auto;
+    grid-template-columns: 6rem 9rem minmax(0, 1fr) 6rem 7rem 8rem 9rem auto;
     gap: var(--space-3);
   }
 

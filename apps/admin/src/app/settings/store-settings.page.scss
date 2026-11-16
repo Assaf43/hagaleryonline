@@ -1,0 +1,51 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  max-inline-size: 32rem;
+}
+
+h1,
+.page-intro {
+  margin: 0;
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p,
+.error {
+  margin: 0;
+}
+
+.error {
+  color: var(--color-danger);
+}
+
+.settings {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.settings button {
+  justify-self: start;
+}
+
+label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+input {
+  min-block-size: var(--control-height-sm);
+  padding-inline: var(--space-3);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}

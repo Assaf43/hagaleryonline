@@ -116,7 +116,7 @@
         </a>
         <a
           class="nav-link"
-          routerLink="/settings/store"
+          routerLink="/settings/return-window"
           routerLinkActive="active"
           (click)="isPhone() && drawer.close()"
         >
@@ -154,6 +154,15 @@
         <a class="nav-link" routerLink="/settings/vat" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucidePercent></svg>
           מע"מ
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/settings/store"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideStore></svg>
+          החנות
         </a>
       }
       @if (canSeeAudit()) {

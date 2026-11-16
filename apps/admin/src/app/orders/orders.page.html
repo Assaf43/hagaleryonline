@@ -1,5 +1,5 @@
 <h1>הזמנות</h1>
-<p class="page-intro">כל ההזמנות שנוצרו באתר, מהחדשה לישנה.</p>
+<p class="page-intro">כל ההזמנות, מהאתר ומהחנות, מהחדשה לישנה.</p>
 
 <div class="filters" role="group" aria-label="סינון לפי מצב">
   @for (f of filters; track f.label) {
@@ -24,6 +24,20 @@
   </button>
 </div>
 
+<div class="filters" role="group" aria-label="סינון לפי ערוץ">
+  @for (f of channelFilters; track f.label) {
+    <button
+      type="button"
+      class="channel-filter"
+      [class.active]="channel() === f.channel"
+      [attr.aria-pressed]="channel() === f.channel"
+      (click)="filterChannel(f.channel)"
+    >
+      {{ f.label }}
+    </button>
+  }
+</div>
+
 @if (error()) {
   <div class="form-error" role="alert">
     <p>{{ error() }}</p>
@@ -46,6 +60,12 @@
           </span>
           <span class="items">{{ itemsLabel(o.itemCount) }}</span>
           <span class="total">{{ formatPrice(o.total) }}</span>
+          <span class="channel"
+            >{{ channelLabels[o.channel] }}
+            @if (o.seller; as s) {
+              · {{ s.name }}
+            }
+          </span>
           <span class="status" [attr.data-status]="o.status">{{ statusLabels[o.status] }}</span>
           @if (o.needsAttention) {
             <span class="attention"

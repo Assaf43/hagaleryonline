@@ -156,6 +156,10 @@ export const VAT_RATE_MESSAGE = 'שיעור המע"מ חייב להיות גדו
 /** 400 `returnWindowDays` of the store settings; the page shows it for a bad number before sending. */
 export const RETURN_WINDOW_MESSAGE = 'מספר ימי ההחזרה צריך להיות מספר שלם בין 1 ל־60.';
 
+/** 400 on the store details: `nameHe`, and the other fields; the store page shows them before sending. */
+export const STORE_NAME_MESSAGE = 'שם החנות הוא שדה חובה (עד 80 תווים).';
+export const STORE_TEXT_MESSAGE = 'כתובת, שעות וטלפון: עד 200 תווים בכל שדה.';
+
 /** 400 `body` of a ticket note; the ticket page shows it for an empty note before sending. */
 export const NOTE_MESSAGE = 'יש לכתוב הערה (עד 2000 תווים).';
 
@@ -181,6 +185,11 @@ const ORDER_FIELDS: Record<string, string> = {
   body: NOTE_MESSAGE,
   status: 'הסטטוס לא תקין.',
   returnWindowDays: RETURN_WINDOW_MESSAGE,
+  // Store details (Phase 6).
+  nameHe: STORE_NAME_MESSAGE,
+  address: STORE_TEXT_MESSAGE,
+  hoursHe: STORE_TEXT_MESSAGE,
+  phone: STORE_TEXT_MESSAGE,
 };
 
 /** 400 `invalid` of the promotions API on a field the form has no input of its own for. */
