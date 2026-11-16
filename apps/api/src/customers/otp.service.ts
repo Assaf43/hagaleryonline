@@ -5,7 +5,8 @@ import { hashToken, randomToken, safeEqual } from '../auth/crypto.js';
 import { maskEmail, maskPhone } from '../notifications/masking.js';
 import { tooManyRequests } from './account-errors.js';
 
-export type OtpPurposeCode = 'sign_in' | 'sign_up' | 'verify_contact' | 'reset_password';
+/** `store_confirm`: the store tablet's customer confirmation (Phase 6), separate from every website purpose. */
+export type OtpPurposeCode = 'sign_in' | 'sign_up' | 'verify_contact' | 'reset_password' | 'store_confirm';
 
 /** Spec §6.2: 6 digits, valid 10 minutes, up to 5 attempts; at most 3 codes per target per 10 minutes. */
 export const OTP_TTL_MS = 10 * 60_000;

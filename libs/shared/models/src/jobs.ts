@@ -14,6 +14,7 @@ export const OUTBOX_JOB_TYPES = [
   'refund.late_payment',
   'email.ticket_received',
   'email.ticket_alert',
+  'email.store_welcome',
 ] as const;
 
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPES)[number];
@@ -30,6 +31,7 @@ export const OUTBOX_JOB_LABELS_HE: Record<OutboxJobType, string> = {
   'refund.late_payment': 'החזר תשלום מאוחר',
   'email.ticket_received': 'אישור פנייה במייל',
   'email.ticket_alert': 'התראה על פנייה חדשה',
+  'email.store_welcome': 'מייל פתיחת חשבון',
 };
 
 /** One row of GET /api/admin/jobs/failed (permission orders.manage). */

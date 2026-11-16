@@ -73,6 +73,6 @@ import { WriteThrottleModule } from './write-throttle.module.js';
         }),
     },
   ],
-  exports: [PAYMENT_PROVIDER, PaymentsService, OrdersService, OrderLifecycleService],
+  exports: [PAYMENT_PROVIDER, PaymentsService, OrdersService, OrderLifecycleService, CheckoutService],
 })
 export class OrdersModule {}

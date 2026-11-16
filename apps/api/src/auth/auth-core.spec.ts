@@ -95,7 +95,7 @@ describe('effective permissions (decision 49)', () => {
   const base = { isSuperAdmin: false, extraPermissions: [], removedPermissions: [] };
 
   it('uses the template, plus added, minus removed', () => {
-    expect(effectivePermissions({ ...base, template: 'store_seller' })).toEqual(['orders.view']);
+    expect(effectivePermissions({ ...base, template: 'store_seller' })).toEqual(['orders.view', 'orders.store']);
     expect(
       effectivePermissions({
         ...base,

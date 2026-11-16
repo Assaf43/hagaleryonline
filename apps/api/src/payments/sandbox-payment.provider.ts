@@ -39,6 +39,11 @@ export class SandboxPaymentProvider implements PaymentProvider {
   private readonly siteUrl: string;
   /** Succeeded refunds by idempotency key: the same key gives the same result (a failure is not remembered). */
   private readonly refunds = new Map<string, RefundResult>();
+  /**
+   * The return path asked for each payment page, as a real provider keeps the return URL of a transaction. In this
+   * process only: after a restart `returnPath` answers null and the caller derives it from the order again.
+   */
+  private readonly returnPaths = new Map<string, string>();
 
   constructor(config: ConfigService) {
     if (config.get<string>('NODE_ENV') === 'production')
@@ -61,9 +66,14 @@ export class SandboxPaymentProvider implements PaymentProvider {
   }
 
   createPaymentPage(order: OrderSummary): Promise<{ redirectUrl: string; transactionId: string }> {
-    void order;
     const transactionId = `sbx_${randomBytes(16).toString('hex')}`;
+    this.returnPaths.set(transactionId, order.returnPath);
     return Promise.resolve({ transactionId, redirectUrl: `${this.siteUrl}/pay/sandbox/${transactionId}` });
+  }
+
+  /** Where the sandbox page returns after the payment (`OrderSummary.returnPath`), or null when not known here. */
+  returnPath(transactionId: string): string | null {
+    return this.returnPaths.get(transactionId) ?? null;
   }
 
   /** The signed webhook a real provider would send: the body and its headers. */

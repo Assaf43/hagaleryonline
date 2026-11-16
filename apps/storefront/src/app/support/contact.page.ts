@@ -97,7 +97,7 @@ export class ContactPage {
             ...v,
             fullName: v.fullName || me.fullName,
             phone: v.phone || me.phone,
-            email: v.email || me.email,
+            email: v.email || me.email || '',
           }));
         }
       });

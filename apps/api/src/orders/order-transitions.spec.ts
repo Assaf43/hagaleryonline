@@ -38,6 +38,13 @@ describe('order transitions (spec §4.1)', () => {
       expect(canCancel(from, 'admin')).toBe(false);
   });
 
+  it('lets the seller cancel an unpaid or failed store order, never a paid one', () => {
+    for (const from of [S.PENDING_PAYMENT, S.PAYMENT_FAILED]) expect(canCancel(from, 'seller')).toBe(true);
+    for (const from of [S.PAID, S.PROCESSING, S.DELIVERY_SCHEDULED, S.SHIPPED, S.DELIVERED, S.CANCELLED, S.EXPIRED])
+      expect(canCancel(from, 'seller')).toBe(false);
+    expect(canCancel(S.PAYMENT_FAILED, 'customer')).toBe(false);
+  });
+
   it('lists the next statuses', () => {
     expect(nextStatuses(S.PAID)).toEqual([S.PROCESSING, S.DELIVERY_SCHEDULED, S.SHIPPED, S.DELIVERED]);
     expect(nextStatuses(S.SHIPPED)).toEqual([S.DELIVERED]);

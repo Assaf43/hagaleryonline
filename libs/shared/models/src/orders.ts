@@ -159,7 +159,10 @@ export interface CheckoutResponse {
  * - `superseded` (409): a newer order was placed from the same cart — pay that one instead;
  * - `invalid_transition` (409): the move is not allowed from the order's status (or the customer cannot cancel it);
  * - `not_found` (404): unknown order or transaction, or the token does not match;
- * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook.
+ * - `invalid_input` (400): a malformed sandbox request; `invalid_signature` (401) / `invalid_payload` (400): webhook;
+ * - store orders (Phase 6): `customer_not_confirmed` (409) — the store cart has no live customer confirmation;
+ *   `customer_email_required` (409) — the confirmed account has no e-mail; `order_pending` (409) — the sale already has
+ *   an order waiting for its payment, `number` (retry it instead of placing a second order).
  */
 export type CheckoutErrorCode =
   | 'invalid_field'
@@ -181,6 +184,9 @@ export type CheckoutErrorCode =
   | 'refund_exceeds_paid'
   | 'already_answered'
   | 'slot_closed'
+  | 'customer_not_confirmed'
+  | 'customer_email_required'
+  | 'order_pending'
   | 'not_found';
 
 /** 400 of POST /api/checkout: the first invalid field. */
@@ -341,7 +347,10 @@ export interface SandboxCompleteRequest {
 }
 
 export interface SandboxCompleteResponse {
-  /** Relative storefront URL of the confirmation page: /order/{number}?t={token}. */
+  /**
+   * Relative storefront URL the provider returns to: the confirmation page /order/{number}?t={token} for a website
+   * order, `/pay/done` (no personal data) for a store order paid on the shared tablet (Phase 6, spec §4.7).
+   */
   confirmationUrl: string;
 }
 

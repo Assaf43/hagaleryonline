@@ -10,10 +10,17 @@ export interface CustomerMe {
   fullName: string;
   /** Normalized 05XXXXXXXX. */
   phone: string;
-  /** Lower-case. */
-  email: string;
+  /**
+   * Lower-case. Null for an account without one (a store quick account whose e-mail a website sign-up took, decision
+   * 85); it adds one through `contact/change` + `contact/confirm`.
+   */
+  email: string | null;
   /** A code sent to it was entered (decision 80). */
   phoneVerified: boolean;
+  /**
+   * False for a store quick account until it confirms its e-mail with `contact/change` (its own e-mail is accepted).
+   * An unverified e-mail never signs in (decision 85). Always false when `email` is null.
+   */
   emailVerified: boolean;
   hasPassword: boolean;
   marketingConsent: boolean;
@@ -146,7 +153,9 @@ export type AccountErrorCode =
   | 'too_many_requests'
   | 'forbidden'
   | 'not_found'
-  | 'address_limit';
+  | 'address_limit'
+  /** Store confirmation (Phase 6): a code to an e-mail the account has not verified (decision 85). */
+  | 'email_not_verified';
 
 // ---------- Account data (Phase 5c Task 12, spec §6.3, ACC-03, ACC-04, ACC-05) ----------
 
@@ -207,7 +216,7 @@ export interface ConsentBody {
   marketingConsent: boolean;
 }
 
-export type MarketingConsentSource = 'signup' | 'checkout' | 'account';
+export type MarketingConsentSource = 'signup' | 'checkout' | 'account' | 'store';
 
 export interface AccountConsent {
   marketingConsent: boolean;

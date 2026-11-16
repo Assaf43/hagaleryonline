@@ -132,4 +132,22 @@ describe('support e-mail templates (spec §7.1)', () => {
     expect(contact.subject).toBe('פנייה חדשה 5003: פנייה כללית');
     expect(contact.text).not.toContain('הזמנה');
   });
+
+  it('store_welcome: how a quick account signs in, with the masked phone and the link, never the store', () => {
+    const m = renderEmail('store_welcome', {
+      customerName: 'רון <b>כהן</b>',
+      phoneMasked: '050-***-4567',
+      link: 'https://shop.test/account',
+    });
+    expect(m.subject).toBe('החשבון שלך בנסטו מוכן');
+    expect(m.html).toContain('dir="rtl"');
+    expect(m.html).toContain('<bdi>050-***-4567</bdi>');
+    expect(m.html).toContain('https://shop.test/account');
+    expect(m.html).not.toContain('<b>כהן</b>');
+    expect(m.text).toContain('050-***-4567');
+    expect(m.text).toContain('קוד ב־SMS');
+    expect(m.text).toContain('להגדיר סיסמה');
+    expect(m.text).toContain('https://shop.test/account');
+    for (const part of [m.subject, m.html, m.text]) expect(part).not.toMatch(/חנות|מוכר|סניף/);
+  });
 });

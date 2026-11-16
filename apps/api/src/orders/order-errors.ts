@@ -36,3 +36,9 @@ export const orderNotFound = () => new CheckoutError(HttpStatus.NOT_FOUND, 'not_
 export const invalidInput = () => new CheckoutError(HttpStatus.BAD_REQUEST, 'invalid_input');
 /** 400 naming the bad body field of an admin write: `{ code: 'invalid_input', field }`. */
 export const badField = (field: string) => new CheckoutError(HttpStatus.BAD_REQUEST, 'invalid_input', { field });
+/** A store order (Phase 6): the store cart has no live customer confirmation (none, lapsed, or changed meanwhile). */
+export const customerNotConfirmed = () => new CheckoutError(HttpStatus.CONFLICT, 'customer_not_confirmed');
+/** A store order: the confirmed account has no e-mail (an order's contact always has one, spec §4.3). */
+export const customerEmailRequired = () => new CheckoutError(HttpStatus.CONFLICT, 'customer_email_required');
+/** A store order: the sale already has an order waiting for its payment (`number`): retry it, never a second order. */
+export const orderPending = (number: number) => new CheckoutError(HttpStatus.CONFLICT, 'order_pending', { number });

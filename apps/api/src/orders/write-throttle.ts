@@ -8,7 +8,8 @@ import { CheckoutError } from './order-errors.js';
 /**
  * The public write endpoints that are rate limited per IP (a window of 15 minutes each). `lookup_number` and
  * `support_order` are keyed by the order number instead of the IP ("my order status" and the support requests about
- * an order, together with `lookup` / `support` per IP).
+ * an order, together with `lookup` / `support` per IP). `store_otp`, `store_lookup` and `store_verify` are keyed by the seller (`seller:<id>`): the
+ * store's one public IP must never lock out sales (spec §4.3).
  */
 export type ThrottleBucket =
   | 'checkout'
@@ -23,10 +24,13 @@ export type ThrottleBucket =
   | 'lookup'
   | 'lookup_number'
   | 'support'
-  | 'support_order';
+  | 'support_order'
+  | 'store_otp'
+  | 'store_lookup'
+  | 'store_verify';
 
 const WINDOW_MS = 15 * 60_000;
-/** Production defaults per IP per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
+/** Production defaults per key (mostly the IP) per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
 const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   checkout: 20,
   retry: 20,
@@ -45,6 +49,12 @@ const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   // Support requests (spec §7.1): per IP, and returns / damaged products also per order number.
   support: 5,
   support_order: 5,
+  // Store customer confirmation codes (Phase 6, spec §4.3): per seller, never per IP.
+  store_otp: 30,
+  // Store customer lookups (phone → name), per seller.
+  store_lookup: 60,
+  // Store code checks, per seller (every call, so their refusals are no unthrottled oracle).
+  store_verify: 60,
 };
 
 /**
@@ -59,7 +69,10 @@ export class WriteThrottle {
 
   constructor(private readonly config: ConfigService) {}
 
-  /** Records a request; false when the key (the IP, or the order number of `lookup_number` / `support_order`) is over the bucket's limit. */
+  /**
+   * Records a request; false when the key (the IP, the order number of `lookup_number` / `support_order`, or
+   * `seller:<id>` of the `store_*` buckets) is over the bucket's limit.
+   */
   allow(bucket: ThrottleBucket, key: string | undefined): boolean {
     return this.bucket(bucket).allow(key ?? 'unknown');
   }
