@@ -267,6 +267,14 @@ export class PromotionsService {
   }
 
   /** Paid order: one more use of its promotion, even past the limit (the order is honored, Review Focus 5). */
+  /**
+   * The account's uses of a promotion (members-only coupons, once per account, decision 94), minus the excluded
+   * orders: the payment retry asks with its own order excluded.
+   */
+  accountUses(db: Db, customerId: string, promotionId: number, exclude: UsageExclusion = {}): Promise<number> {
+    return accountUses(db, customerId, promotionId, exclude);
+  }
+
   async countUse(tx: Prisma.TransactionClient, promotionId: number): Promise<void> {
     await tx.promotion.updateMany({ where: { id: promotionId }, data: { usedCount: { increment: 1 } } });
   }

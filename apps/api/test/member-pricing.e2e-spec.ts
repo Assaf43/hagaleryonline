@@ -487,4 +487,47 @@ describe('Member pricing (e2e, CLB-03, CLB-05, decisions 91–92, 94)', () => {
     const view = (await seller.post('/store-cart/coupon', { code: 'ZZMEMBERS' }).expect(201)).body as StoreCartView;
     expect(view.discount).toMatchObject({ amount: 10_000, code: 'ZZMEMBERS' });
   });
+
+  it('a payment retry cannot use a members-only coupon a second time (decision 94)', async () => {
+    await promotion({
+      name: 'ZZ קופון חברים',
+      kind: PromotionKind.COUPON,
+      code: 'ZZMEMBERS',
+      value: 10,
+      membersOnly: true,
+    });
+    const { customer, b } = await member();
+
+    // A store order holds the coupon, and its payment fails.
+    await seller.post('/store-cart').expect(201);
+    await seller.post('/store-cart/items', { variantId: table, quantity: 1 }).expect(201);
+    await seller.post('/store-cart/customer/code', { phone: customer.phone, channel: 'sms' }).expect(204);
+    await seller
+      .post('/store-cart/customer/verify', { phone: customer.phone, channel: 'sms', code: smsCode(customer.phone) })
+      .expect(200);
+    await seller.post('/store-cart/coupon', { code: 'ZZMEMBERS' }).expect(201);
+    const body = { address: { ...checkoutBody().address }, method: 'curbside', acceptTerms: true };
+    const probe = await seller.post('/store-orders', { ...body, expectedTotal: 0 }).expect(409);
+    const store = await seller.post('/store-orders', { ...body, expectedTotal: probe.body.total as number });
+    expect(store.status, JSON.stringify(store.body)).toBe(201);
+    const storeOrder = store.body as StoreOrderCreated;
+    await http()
+      .post(`/api/payments/sandbox/${txOf(storeOrder.redirectUrl)}/complete`)
+      .set('Origin', ORIGIN)
+      .send({ outcome: 'failure', installments: 1 })
+      .expect(200);
+
+    // The failed order no longer holds it: the same account pays a website order with the coupon.
+    await b.add(table, 1);
+    await b.apply('ZZMEMBERS').expect(200);
+    const web = await b.checkout(await b.expectedTotal());
+    expect(web.status, JSON.stringify(web.body)).toBe(201);
+    await pay(txOf((web.body as CheckoutResponse).redirectUrl));
+
+    // The seller's retry of the store order would be a second use: refused like an ended promotion.
+    const retry = await seller.post(`/store-orders/${storeOrder.number}/retry`).expect(409);
+    expect(retry.body).toMatchObject({ code: 'promotion_ended' });
+    const order = await prisma.order.findUniqueOrThrow({ where: { number: storeOrder.number } });
+    expect(order.status).toBe(OrderStatus.PAYMENT_FAILED);
+  });
 });
