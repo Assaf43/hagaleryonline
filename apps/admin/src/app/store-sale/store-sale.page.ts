@@ -17,7 +17,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { SHIPPING_METHOD_LABELS_HE } from '@hg/models';
 import type { StoreCartView, StoreOrderRequest, StorePendingOrder } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
-import { errorCode, storeErrorMessage } from '../core/errors';
+import { errorCode, storeErrorMessage } from './store-errors';
 import { StoreOrdersApi } from '../core/store-orders.api';
 import { ConfirmDialog } from '../orders/confirm-dialog';
 import { CustomerStep } from './customer-step';
@@ -27,9 +27,11 @@ import { ProductPicker } from './product-picker';
 import { STEPS, STEP_LABELS, canEnter, stepAfterError, type DeliveryChoice, type SaleStep } from './steps';
 
 /** Order statuses where the payment did not go through: the seller may try again. */
-const FAILED = new Set(['payment_failed', 'expired', 'cancelled']);
+const FAILED = new Set(['payment_failed']);
+/** Orders that cannot be paid any more: the seller starts a new sale. */
+const CLOSED = new Set(['expired', 'cancelled']);
 
-type PaymentState = 'waiting' | 'paid' | 'failed';
+type PaymentState = 'waiting' | 'paid' | 'failed' | 'closed';
 
 /** How often the status of the order is asked while the page is visible. */
 export const POLL_MS = 5000;
@@ -217,7 +219,7 @@ export class StoreSalePage {
   private openPayment(url: string) {
     this.payUrl.set(url);
     // A blocked pop-up leaves the link on screen.
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener');
   }
 
   private beginStatus() {
@@ -256,7 +258,7 @@ export class StoreSalePage {
       await this.api.cancel(number);
       if (this.orderNumber() === number) {
         this.stopPolling();
-        this.payment.set('failed');
+        this.payment.set('closed');
       }
       await this.loadPending();
     } catch (e) {
@@ -292,7 +294,7 @@ export class StoreSalePage {
       const { status } = await this.api.status(number);
       if (status === 'pending_payment') return;
       this.stopPolling();
-      this.payment.set(FAILED.has(status) ? 'failed' : 'paid');
+      this.payment.set(FAILED.has(status) ? 'failed' : CLOSED.has(status) ? 'closed' : 'paid');
       void this.loadPending();
     } catch (e) {
       this.error.set(storeErrorMessage(e));

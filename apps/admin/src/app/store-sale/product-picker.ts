@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, output, si
 import { MatButtonModule } from '@angular/material/button';
 import type { ProductDetail, SearchSuggestions, StoreCartView, VariantDetail } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
-import { storeErrorMessage } from '../core/errors';
+import { storeErrorMessage } from './store-errors';
 import { StoreOrdersApi } from '../core/store-orders.api';
 import { FORM_STYLES } from './form.styles';
 
@@ -221,6 +221,9 @@ export class ProductPicker {
     const n = Number(valueOf(event));
     if (!Number.isInteger(n) || n < 1) return;
     await this.change(() => this.api.setQuantity(variantId, n));
+    // The server may clamp or refuse: the field shows the quantity the cart really holds.
+    const held = this.cart()?.lines.find((l) => l.variantId === variantId)?.quantity;
+    if (held !== undefined) (event.target as HTMLInputElement).value = String(held);
   }
 
   protected async remove(variantId: number) {

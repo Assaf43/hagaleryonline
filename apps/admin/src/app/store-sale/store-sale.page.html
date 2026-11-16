@@ -22,7 +22,7 @@
   </ol>
 </nav>
 
-@if (error() && (step() === 'summary' || step() === 'status')) {
+@if (error()) {
   <p class="error" role="alert">{{ error() }}</p>
 }
 
@@ -127,6 +127,12 @@
                 התשלום לא הושלם · הזמנה <bdi>{{ orderNumber() }}</bdi>
               </p>
             }
+            @case ('closed') {
+              <p class="error">
+                ההזמנה בוטלה או שפג תוקפה · הזמנה <bdi>{{ orderNumber() }}</bdi
+                >. להמשך, התחילו מכירה חדשה.
+              </p>
+            }
           }
         </div>
         @if (payment() === 'waiting' && payUrl()) {
@@ -137,7 +143,7 @@
             >
           </p>
         }
-        @if (payment() !== 'paid') {
+        @if (payment() === 'waiting' || payment() === 'failed') {
           <div class="actions">
             <button matButton="filled" type="button" class="retry" [disabled]="busy()" (click)="retryPayment()">
               נסה שוב

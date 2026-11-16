@@ -7,7 +7,7 @@ import type {
   StoreCustomerLookup,
   StoreVerifyRequest,
 } from '@hg/models';
-import { errorCode, storeErrorMessage } from '../core/errors';
+import { errorCode, storeErrorMessage } from './store-errors';
 import { StoreOrdersApi } from '../core/store-orders.api';
 import { FORM_STYLES } from './form.styles';
 import { isCompleteCode, sanitizeCode } from './steps';
@@ -49,7 +49,7 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
             autocomplete="off"
             dir="ltr"
             [value]="phone()"
-            (input)="phone.set(valueOf($event))"
+            (input)="setPhone($event)"
           />
         </label>
         <button matButton="filled" type="submit" [disabled]="busy() || !phone().trim()">בדיקה</button>
@@ -166,6 +166,13 @@ export class CustomerStep {
   protected readonly valueOf = valueOf;
   /** What the pending code was sent for: the verify call repeats it with the code. */
   private pending: StoreCodeRequest | null = null;
+
+  /** A new phone needs a fresh lookup: the old result, codes and prompts belong to the old number. */
+  protected setPhone(event: Event) {
+    this.phone.set(valueOf(event));
+    this.reset();
+    this.status.set('');
+  }
 
   protected setCode(event: Event) {
     const clean = sanitizeCode(valueOf(event));

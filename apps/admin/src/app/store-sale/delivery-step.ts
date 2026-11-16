@@ -3,7 +3,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { SHIPPING_METHOD_LABELS_HE, MAX_FLOOR } from '@hg/models';
 import type { CheckoutAddress, CustomerAddressView, LocalityOption, ShippingMethod, ShippingQuote } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
-import { storeErrorMessage } from '../core/errors';
+import { storeErrorMessage } from './store-errors';
 import { StoreOrdersApi } from '../core/store-orders.api';
 import { FORM_STYLES } from './form.styles';
 import type { DeliveryChoice } from './steps';

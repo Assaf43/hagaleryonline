@@ -1,5 +1,5 @@
 import type { CheckoutAddress, ShippingMethod, StoreCartView } from '@hg/models';
-import { errorCode } from '../core/errors';
+import { errorCode } from './store-errors';
 
 export type SaleStep = 'products' | 'customer' | 'delivery' | 'summary' | 'status';
 

@@ -154,7 +154,7 @@ describe('store sale page', () => {
     req.flush({ number: 100050, redirectUrl: 'https://pay.example.test/x' });
     await settle(fixture);
     http.expectOne('/api/admin/store-orders/pending').flush([]);
-    expect(opened).toHaveBeenCalledWith('https://pay.example.test/x', '_blank');
+    expect(opened).toHaveBeenCalledWith('https://pay.example.test/x', '_blank', 'noopener');
     expect(fixture.componentInstance.step()).toBe('status');
     expect(flat(el(fixture).querySelector('.payment-status')?.textContent)).toContain('ממתיןלתשלום');
     // The polling shows "שולם" with the order number once the order is paid.
@@ -171,12 +171,36 @@ describe('store sale page', () => {
     fixture.componentInstance.orderNumber.set(100051);
     fixture.componentInstance.goTo('status');
     const polling = fixture.componentInstance.poll();
-    http.expectOne('/api/admin/store-orders/100051').flush({ number: 100051, status: 'expired', total: 1 });
+    http.expectOne('/api/admin/store-orders/100051').flush({ number: 100051, status: 'payment_failed', total: 1 });
     await polling;
     http.expectOne('/api/admin/store-orders/pending').flush([]);
     await settle(fixture);
     expect(el(fixture).querySelector('.payment-status')?.textContent).toContain('התשלום לא הושלם');
     expect(el(fixture).querySelector('.retry')?.textContent).toContain('נסה שוב');
+  });
+
+  it('offers only a new sale (no retry) for an expired or cancelled order', async () => {
+    const fixture = await toSummary();
+    fixture.componentInstance.orderNumber.set(100052);
+    fixture.componentInstance.goTo('status');
+    const polling = fixture.componentInstance.poll();
+    http.expectOne('/api/admin/store-orders/100052').flush({ number: 100052, status: 'expired', total: 1 });
+    await polling;
+    http.expectOne('/api/admin/store-orders/pending').flush([]);
+    await settle(fixture);
+    expect(el(fixture).querySelector('.payment-status')?.textContent).toContain('התחילו מכירה חדשה');
+    expect(el(fixture).querySelector('.retry')).toBeNull();
+  });
+
+  it('shows an error from a failed new sale on any step', async () => {
+    const fixture = await open();
+    el(fixture).querySelector<HTMLButtonElement>('.new-sale')!.click();
+    http
+      .expectOne((r) => r.method === 'POST' && r.url === '/api/admin/store-cart')
+      .flush({ statusCode: 500 }, { status: 500, statusText: 'Server Error' });
+    await settle(fixture);
+    expect(fixture.componentInstance.step()).toBe('products');
+    expect(el(fixture).querySelector('p.error[role="alert"]')).not.toBeNull();
   });
 
   it('returns to the customer step when the API says customer_not_confirmed', async () => {

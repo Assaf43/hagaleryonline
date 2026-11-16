@@ -103,6 +103,20 @@ describe('store sale customer step', () => {
     req.flush(null, { status: 204, statusText: 'No Content' });
   });
 
+  it('drops the lookup result when the phone is edited, so a fresh lookup is needed', async () => {
+    await lookup('0501234567', {
+      exists: true,
+      fullName: 'דנה',
+      maskedEmail: 'd***@example.test',
+      emailVerified: true,
+    });
+    expect(labels()).toContain('שלח קוד ב-SMS');
+    type('phone', '0507654321');
+    fixture.detectChanges();
+    expect(labels()).not.toContain('שלח קוד ב-SMS');
+    expect(labels()).not.toContain('שלח קוד');
+  });
+
   it('shows the confirmed customer with the phone inside bdi', async () => {
     fixture.componentRef.setInput('cart', {
       lines: [],
