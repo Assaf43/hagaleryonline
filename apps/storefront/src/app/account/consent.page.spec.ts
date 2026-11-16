@@ -61,9 +61,10 @@ describe('ConsentPage', () => {
     expect(box().checked).toBe(false);
   });
 
-  it('a pending contact says it waits for the e-mail and can be cancelled with PUT false', async () => {
+  it('a pending contact says it waits for the link (whatever channel sent it) and can be cancelled with PUT false', async () => {
     await setup(consentOf({ status: 'pending', source: 'checkout' }));
-    expect(text()).toContain('ממתין לאישור במייל');
+    expect(text()).toContain('ממתין לאישור דרך הקישור ששלחנו');
+    expect(text()).not.toContain('במייל');
     expect(box()).toBeNull();
     el().querySelector<HTMLButtonElement>('button.cancel-pending')!.click();
     const req = http.expectOne('/api/account/consent');
@@ -71,7 +72,7 @@ describe('ConsentPage', () => {
     expect(req.request.body).toEqual({ marketingConsent: false });
     req.flush(consentOf({ status: 'unsubscribed', source: 'checkout' }));
     await settle();
-    expect(text()).not.toContain('ממתין לאישור במייל');
+    expect(text()).not.toContain('ממתין לאישור');
     expect(box().checked).toBe(false);
     expect(el().querySelector('[role="status"]')?.textContent).toContain('בוטלה');
   });
@@ -81,6 +82,34 @@ describe('ConsentPage', () => {
     expect(box()).toBeNull();
     expect(text()).toContain('כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל');
     expect(el().querySelector('a.verify-link')?.textContent).toContain('אימות הדוא״ל');
+  });
+
+  it('unverified + subscribed shows the withdraw control: unticking saves false, then the verify prompt', async () => {
+    // A store quick account (decision 96) can be subscribed with an e-mail it never verified.
+    await setup(consentOf({ status: 'subscribed', source: 'store', emailVerified: false }));
+    expect(box().checked).toBe(true);
+    expect(text()).not.toContain('כדי לקבל דיוור יש לאמת קודם');
+    box().click();
+    const req = http.expectOne('/api/account/consent');
+    expect(req.request.body).toEqual({ marketingConsent: false });
+    req.flush(consentOf({ status: 'unsubscribed', source: 'store', emailVerified: false }));
+    await settle();
+    expect(el().querySelector('[role="status"]')?.textContent).toContain('בוטלה');
+    // Giving consent again needs a verified e-mail.
+    expect(box()).toBeNull();
+    expect(text()).toContain('כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל');
+  });
+
+  it('unverified + pending shows cancel', async () => {
+    await setup(consentOf({ status: 'pending', source: 'store', emailVerified: false }));
+    expect(text()).toContain('ממתין לאישור דרך הקישור ששלחנו');
+    expect(text()).not.toContain('כדי לקבל דיוור יש לאמת קודם');
+    el().querySelector<HTMLButtonElement>('button.cancel-pending')!.click();
+    const req = http.expectOne('/api/account/consent');
+    expect(req.request.body).toEqual({ marketingConsent: false });
+    req.flush(consentOf({ status: 'unsubscribed', source: 'store', emailVerified: false }));
+    await settle();
+    expect(el().querySelector('[role="status"]')?.textContent).toContain('בוטלה');
   });
 
   it('giving consent saves at once and says so', async () => {

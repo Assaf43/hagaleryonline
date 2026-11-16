@@ -27,7 +27,12 @@ export class NewsletterApi {
     return firstValueFrom(this.http.post<object>('/api/newsletter', body));
   }
 
-  /** `{ email }` is already masked by the API. */
+  /** Reads a confirmation link without using it: `{ email }` (masked by the API), or 404 `link_invalid`. */
+  preview(token: string) {
+    return firstValueFrom(this.http.post<{ email: string }>('/api/newsletter/confirm/preview', { token }));
+  }
+
+  /** Confirms (the customer's click): `{ email }` is already masked by the API. */
   confirm(token: string) {
     return firstValueFrom(this.http.post<{ email: string }>('/api/newsletter/confirm', { token }));
   }

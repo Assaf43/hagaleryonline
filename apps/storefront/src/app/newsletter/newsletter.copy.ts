@@ -12,6 +12,9 @@ export const NEWSLETTER_COPY = {
   failed: 'משהו השתבש. נסו שוב.',
 
   confirmTitle: 'אישור הרשמה לדיוור',
+  checking: 'בודקים את הקישור…',
+  confirmFor: 'הדיוור יישלח לכתובת:',
+  confirmButton: 'אישור ההרשמה',
   confirming: 'מאשרים…',
   confirmed: 'ההרשמה לדיוור אושרה',
   confirmedFor: 'הכתובת שאושרה:',

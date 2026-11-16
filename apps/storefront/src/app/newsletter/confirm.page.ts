@@ -9,16 +9,19 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { CONSENT_TEXT_HE } from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { NewsletterApi, newsletterFailure } from './newsletter.api';
 import { NEWSLETTER_COPY as COPY } from './newsletter.copy';
 
-type State = 'loading' | 'ok' | 'invalid' | 'error';
+type State = 'loading' | 'ask' | 'confirming' | 'ok' | 'invalid' | 'error';
 
 /**
- * `/newsletter/confirm?t=` (MKT-01, CLB-02): the link in the confirmation e-mail. The token is sent from the browser
- * after hydration, so the server-rendered HTML holds no address; on success the API's already masked address is shown.
- * An unknown, used or expired token (404) reads "invalid or expired link"; any other failure offers a retry. The focus
+ * `/newsletter/confirm?t=` (MKT-01, CLB-02, spec §4.4): the link in the confirmation e-mail or the store's SMS. On load
+ * the browser only previews the token (`confirm/preview`, after hydration, so the server-rendered HTML holds no
+ * address): the page names the already masked address the updates go to, shows the consent text and asks for a click;
+ * only the click confirms. A mail scanner that opens the link therefore confirms nothing. An unknown, used or expired
+ * token (404) reads "invalid or expired link"; any other failure offers a retry of the step that failed. The focus
  * moves to the heading when the state changes, so screen readers announce it. noindex.
  */
 @Component({
@@ -30,6 +33,18 @@ type State = 'loading' | 'ok' | 'invalid' | 'error';
       <h1 tabindex="-1">{{ title() }}</h1>
       @switch (state()) {
         @case ('loading') {
+          <p role="status">{{ copy.checking }}</p>
+        }
+        @case ('ask') {
+          <p>
+            {{ copy.confirmFor }} <bdi dir="ltr">{{ masked() }}</bdi>
+          </p>
+          <p>{{ consentText }}</p>
+          <p>
+            <button type="button" class="btn btn-primary confirm" (click)="confirm()">{{ copy.confirmButton }}</button>
+          </p>
+        }
+        @case ('confirming') {
           <p role="status">{{ copy.confirming }}</p>
         }
         @case ('ok') {
@@ -77,9 +92,12 @@ export class NewsletterConfirmPage {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   protected readonly copy = COPY;
+  protected readonly consentText = CONSENT_TEXT_HE;
   protected readonly state = signal<State>('loading');
   protected readonly masked = signal('');
   protected readonly title = signal<string>(COPY.confirmTitle);
+  /** The step a retry repeats: the preview until it answered, then the confirm. */
+  private step: 'preview' | 'confirm' = 'preview';
 
   constructor() {
     inject(PageMeta).set({
@@ -88,20 +106,46 @@ export class NewsletterConfirmPage {
       path: '/newsletter/confirm',
       noindex: true,
     });
-    // Browser only: afterNextRender never runs on the server.
-    afterNextRender(() => void this.confirm());
+    // Browser only: afterNextRender never runs on the server. It only reads; nothing is confirmed without the click.
+    afterNextRender(() => void this.preview());
   }
 
   protected retry(): void {
-    this.state.set('loading');
-    void this.confirm();
+    if (this.step === 'confirm') {
+      void this.confirm();
+    } else {
+      this.state.set('loading');
+      void this.preview();
+    }
+  }
+
+  /** The "confirm" button. */
+  protected async confirm(): Promise<void> {
+    const token = this.t();
+    if (!token || this.state() === 'confirming') return;
+    this.step = 'confirm';
+    this.state.set('confirming');
+    try {
+      const result = await this.api.confirm(token);
+      this.masked.set(result.email);
+      this.title.set(COPY.confirmed);
+      this.state.set('ok');
+    } catch (error) {
+      this.fail(error);
+    }
+    this.focusHeading();
   }
 
   private focusHeading(): void {
     afterNextRender(() => this.host.nativeElement.querySelector('h1')?.focus(), { injector: this.injector });
   }
 
-  private async confirm(): Promise<void> {
+  /** Only an unknown, used or expired link is "invalid"; a server, throttle or network problem can be retried. */
+  private fail(error: unknown): void {
+    this.state.set(newsletterFailure(error).status === 404 ? 'invalid' : 'error');
+  }
+
+  private async preview(): Promise<void> {
     const token = this.t();
     if (!token) {
       this.state.set('invalid');
@@ -109,13 +153,12 @@ export class NewsletterConfirmPage {
       return;
     }
     try {
-      const result = await this.api.confirm(token);
+      const result = await this.api.preview(token);
       this.masked.set(result.email);
-      this.title.set(COPY.confirmed);
-      this.state.set('ok');
+      this.step = 'confirm';
+      this.state.set('ask');
     } catch (error) {
-      // Only an unknown or expired link is "invalid"; a server, throttle or network problem can be retried.
-      this.state.set(newsletterFailure(error).status === 404 ? 'invalid' : 'error');
+      this.fail(error);
     }
     this.focusHeading();
   }

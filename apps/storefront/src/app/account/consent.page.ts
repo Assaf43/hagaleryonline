@@ -11,8 +11,10 @@ import { CustomerStore } from './customer.store';
 /**
  * `/account/consent` (ACC-05, CLAUDE.md §4.4): the marketing consent, read from the account e-mail's marketing contact
  * (`GET /api/account/consent`). One checkbox that saves at once, so giving it and withdrawing it are each one click;
- * the result is announced in a status line. A request waiting for the customer's e-mail link shows as pending with a
- * cancel button; an unverified e-mail shows the verify prompt instead of the checkbox (decision 95).
+ * the result is announced in a status line. The state decides first: a subscribed contact always shows the checkbox
+ * (untick to withdraw) and a request waiting for the customer's link (sent by e-mail, or by SMS from the store) shows as
+ * pending with a cancel button, even when the account's e-mail is unverified (a store quick account, decision 96);
+ * only giving consent needs a verified e-mail, so the verify prompt replaces the checkbox otherwise (decision 95).
  */
 @Component({
   selector: 'hg-account-consent-page',

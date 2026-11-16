@@ -87,7 +87,7 @@
       </div>
       <label class="check">
         <input type="checkbox" id="su-consent" [checked]="consent()" (change)="setConsent($event)" />
-        אני מאשר/ת קבלת דיוור ועדכונים שיווקיים
+        {{ consentText }}
       </label>
       <p class="hint">בהמשך נשלח קוד לטלפון ולדוא״ל כדי לאמת אותם.</p>
       <p class="form-error" role="alert">{{ formError() }}</p>

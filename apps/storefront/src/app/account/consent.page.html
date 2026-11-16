@@ -5,14 +5,14 @@
 
   @if (store.me() && consent(); as c) {
     <div class="stack">
-      @if (!c.emailVerified) {
-        <p class="notice" role="note">כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל.</p>
-        <p><a class="verify-link" routerLink="/account/details">אימות הדוא״ל בפרטים שלי</a></p>
-      } @else if (pending()) {
-        <p class="notice">ממתין לאישור במייל. שלחנו קישור אישור, והדיוור יתחיל רק אחרי האישור.</p>
+      @if (pending()) {
+        <p class="notice">ממתין לאישור דרך הקישור ששלחנו. הדיוור יתחיל רק אחרי האישור.</p>
         <p>
           <button type="button" class="btn btn-secondary cancel-pending" (click)="cancelPending()">ביטול הבקשה</button>
         </p>
+      } @else if (!subscribed() && !c.emailVerified) {
+        <p class="notice" role="note">כדי לקבל דיוור יש לאמת קודם את כתובת הדוא״ל.</p>
+        <p><a class="verify-link" routerLink="/account/details">אימות הדוא״ל בפרטים שלי</a></p>
       } @else {
         <label class="check">
           <input
