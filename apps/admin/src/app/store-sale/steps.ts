@@ -34,6 +34,9 @@ export interface SaleState {
 
 const hasLines = (cart: StoreCartView | null) => !!cart && cart.lines.some((l) => l.available);
 
+/** A confirmed customer the order confirmation can be sent to: no e-mail, no delivery step (M3). */
+export const hasCustomerEmail = (cart: StoreCartView | null) => !!cart?.customer && cart.customer.email !== null;
+
 /** Whether a step may be opened: each one needs what the earlier ones produce (spec §4.1). */
 export function canEnter(step: SaleStep, state: SaleState): boolean {
   if (state.locked && step !== 'status') return false;
@@ -43,9 +46,9 @@ export function canEnter(step: SaleStep, state: SaleState): boolean {
     case 'customer':
       return hasLines(state.cart);
     case 'delivery':
-      return hasLines(state.cart) && !!state.cart?.customer;
+      return hasLines(state.cart) && hasCustomerEmail(state.cart);
     case 'summary':
-      return hasLines(state.cart) && !!state.cart?.customer && !!state.delivery;
+      return hasLines(state.cart) && hasCustomerEmail(state.cart) && !!state.delivery;
     case 'status':
       return state.orderNumber !== null;
   }

@@ -1,6 +1,8 @@
 <div class="head">
   <h1>מכירה בחנות</h1>
-  <button matButton="filled" type="button" class="new-sale" [disabled]="busy()" (click)="newSale()">מכירה חדשה</button>
+  <button matButton="filled" type="button" class="new-sale" [disabled]="busy()" (click)="onNewSale()">
+    מכירה חדשה
+  </button>
 </div>
 
 <nav aria-label="שלבי המכירה">
@@ -91,6 +93,11 @@
             <p class="muted">
               {{ cu.fullName }} · <bdi dir="ltr">{{ cu.phone }}</bdi>
             </p>
+            @if (cu.email) {
+              <p class="muted">
+                אישור ההזמנה יישלח אל <bdi dir="ltr">{{ cu.email }}</bdi>
+              </p>
+            }
           }
         }
         <label class="check">
@@ -136,12 +143,21 @@
           }
         </div>
         @if (payment() === 'waiting' && payUrl()) {
-          <p class="muted">
-            דף התשלום נפתח בלשונית חדשה.
-            <a [href]="payUrl()" target="_blank" rel="noopener"
-              >פתיחה שוב<span class="sr-only"> (נפתח בלשונית חדשה)</span></a
-            >
-          </p>
+          @if (popupBlocked()) {
+            <p class="muted">הדפדפן לא פתח את דף התשלום. אפשר לפתוח אותו בכפתור.</p>
+            <div class="actions">
+              <a matButton="filled" class="open-pay" [href]="payUrl()" target="_blank" rel="noopener"
+                >פתיחת דף התשלום<span class="sr-only"> (נפתח בלשונית חדשה)</span></a
+              >
+            </div>
+          } @else {
+            <p class="muted">
+              דף התשלום נפתח בלשונית חדשה.
+              <a [href]="payUrl()" target="_blank" rel="noopener"
+                >פתיחה שוב<span class="sr-only"> (נפתח בלשונית חדשה)</span></a
+              >
+            </p>
+          }
         }
         @if (payment() === 'waiting' || payment() === 'failed') {
           <div class="actions">
@@ -153,5 +169,10 @@
       }
     }
   </section>
-  <hga-pending-orders [orders]="pending()" (retry)="retryPayment($event)" (cancel)="cancelOrder($event)" />
+  <hga-pending-orders
+    [orders]="pending()"
+    [busy]="busy()"
+    (retry)="retryPayment($event)"
+    (cancel)="cancelOrder($event)"
+  />
 }

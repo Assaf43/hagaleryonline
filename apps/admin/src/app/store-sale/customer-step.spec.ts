@@ -126,4 +126,45 @@ describe('store sale customer step', () => {
     expect(el().querySelector('bdi[dir="ltr"]')?.textContent).toBe('0501234567');
     expect(labels()).toContain('המשך למשלוח');
   });
+
+  it('blocks "המשך למשלוח" and explains it for a confirmed customer without an e-mail', async () => {
+    const withEmail = (email: string | null) =>
+      ({
+        lines: [],
+        customer: { id: 'c', fullName: 'דנה', phone: '0501234567', email, emailVerified: false, isNew: false },
+      }) as unknown as StoreCartView;
+    fixture.componentRef.setInput('cart', withEmail(null));
+    fixture.detectChanges();
+    const next = () =>
+      [...el().querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.includes('המשך למשלוח'))!;
+    expect(next().disabled).toBe(true);
+    expect(el().querySelector('[role="alert"]')?.textContent).toContain(
+      'ללקוח אין מייל. יש להחליף לקוח או לאמת עם מייל.',
+    );
+    fixture.componentRef.setInput('cart', withEmail('dana@example.test'));
+    fixture.detectChanges();
+    expect(next().disabled).toBe(false);
+    expect(el().querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('ignores a lookup answer that arrives after the phone was edited', async () => {
+    type('phone', '0501234567');
+    el().querySelector('form')!.dispatchEvent(new Event('submit'));
+    const stale = http.expectOne('/api/admin/store-cart/customer/lookup');
+    type('phone', '0507654321');
+    stale.flush({ exists: true, fullName: 'דנה', maskedEmail: 'd***@example.test', emailVerified: true });
+    await settle(fixture);
+    expect(labels()).not.toContain('שלח קוד ב-SMS');
+    expect(el().querySelector('strong')).toBeNull();
+  });
+
+  it('names a bad phone on lookup instead of the store-settings text', async () => {
+    type('phone', '05012');
+    el().querySelector('form')!.dispatchEvent(new Event('submit'));
+    http
+      .expectOne('/api/admin/store-cart/customer/lookup')
+      .flush({ statusCode: 400, code: 'invalid_input', field: 'phone' }, { status: 400, statusText: 'Bad Request' });
+    await settle(fixture);
+    expect(el().querySelector('[role="alert"]')?.textContent).toContain('מספר הנייד לא תקין');
+  });
 });

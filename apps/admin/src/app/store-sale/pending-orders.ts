@@ -23,10 +23,26 @@ import { FORM_STYLES } from './form.styles';
               </span>
               <span class="actions">
                 @if (o.actions.includes('retry')) {
-                  <button matButton="filled" type="button" (click)="retry.emit(o.number)">נסה שוב</button>
+                  <button
+                    matButton="filled"
+                    type="button"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'נסה שוב, הזמנה ' + o.number"
+                    (click)="retry.emit(o.number)"
+                  >
+                    נסה שוב
+                  </button>
                 }
                 @if (o.actions.includes('cancel')) {
-                  <button matButton="outlined" type="button" (click)="cancel.emit(o.number)">בטל</button>
+                  <button
+                    matButton="outlined"
+                    type="button"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'בטל, הזמנה ' + o.number"
+                    (click)="cancel.emit(o.number)"
+                  >
+                    בטל
+                  </button>
                 }
               </span>
             </li>
@@ -38,6 +54,8 @@ import { FORM_STYLES } from './form.styles';
 })
 export class PendingOrders {
   readonly orders = input<StorePendingOrder[]>([]);
+  /** A request is in flight: the buttons wait, so a double tap never opens two payment pages. */
+  readonly busy = input(false);
   readonly retry = output<number>();
   readonly cancel = output<number>();
   protected readonly price = formatPrice;

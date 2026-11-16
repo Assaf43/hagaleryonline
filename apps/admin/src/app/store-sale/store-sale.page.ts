@@ -68,6 +68,8 @@ export class StoreSalePage {
   readonly payment = signal<PaymentState>('waiting');
   readonly pending = signal<StorePendingOrder[]>([]);
   protected readonly payUrl = signal<string | null>(null);
+  /** The browser refused to open the payment page: the seller opens it with a button (M1). */
+  protected readonly popupBlocked = signal(false);
   protected readonly acceptTerms = signal(false);
   protected readonly marketing = signal(false);
   protected readonly error = signal('');
@@ -87,7 +89,12 @@ export class StoreSalePage {
   });
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.stopPolling());
+    inject(DestroyRef).onDestroy(() => {
+      this.stopPolling();
+      document.removeEventListener('visibilitychange', this.onShown);
+    });
+    // Back on this tab (e.g. from the payment page): the pending list may have changed meanwhile (M5).
+    document.addEventListener('visibilitychange', this.onShown);
     // Move the focus to the heading of each new step (not on the first render).
     let first = true;
     effect(() => {
@@ -107,7 +114,8 @@ export class StoreSalePage {
 
   private async load() {
     try {
-      this.cart.set(await this.api.cart());
+      // No open cart (first visit, after a paid sale): a sale starts at once, so adding a product works (I2).
+      this.cart.set((await this.api.cart()) ?? (this.locked() ? null : await this.api.startSale()));
     } catch (e) {
       this.error.set(storeErrorMessage(e));
     }
@@ -153,8 +161,29 @@ export class StoreSalePage {
     this.step.set('summary');
   }
 
+  /** The "מכירה חדשה" button: asks first when the open sale has lines or a customer and no order yet (I4). */
+  async onNewSale() {
+    const cart = this.cart();
+    const hasWork = !!cart && (cart.lines.length > 0 || !!cart.customer);
+    if (!this.locked() && hasWork) {
+      const sure = await this.confirm('להתחיל מכירה חדשה? העגלה והלקוח של המכירה הנוכחית יימחקו.');
+      if (!sure) return;
+    }
+    await this.newSale();
+  }
+
+  private confirm(message: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) =>
+      this.dialog
+        .open(ConfirmDialog, { data: { message } })
+        .afterClosed()
+        .subscribe((v) => resolve(v === true)),
+    );
+  }
+
   async newSale() {
     this.stopPolling();
+    this.pollFailed = false;
     this.busy.set(true);
     try {
       this.cart.set(await this.api.startSale());
@@ -162,6 +191,7 @@ export class StoreSalePage {
       this.orderNumber.set(null);
       this.locked.set(false);
       this.payUrl.set(null);
+      this.popupBlocked.set(false);
       this.acceptTerms.set(false);
       this.marketing.set(false);
       this.payment.set('waiting');
@@ -188,6 +218,7 @@ export class StoreSalePage {
     if (!delivery || !this.acceptTerms() || this.busy()) return;
     this.busy.set(true);
     this.error.set('');
+    const linesBefore = this.lineKey();
     const request: StoreOrderRequest = {
       address: delivery.address,
       method: delivery.method,
@@ -215,17 +246,31 @@ export class StoreSalePage {
       } else {
         this.error.set(storeErrorMessage(e));
         this.onFailed(e);
-        if (errorCode(e) === 'price_changed') await this.refreshCart();
+        if (errorCode(e) === 'price_changed') {
+          await this.refreshCart();
+          // Other lines or quantities mean another shipping total: the delivery is chosen again (M6).
+          if (this.lineKey() !== linesBefore) {
+            this.delivery.set(null);
+            this.step.set('delivery');
+          }
+        }
       }
     } finally {
       this.busy.set(false);
     }
   }
 
+  /** What the order depends on in the cart lines: a change means the delivery quote is stale. */
+  private lineKey(): string {
+    return JSON.stringify((this.cart()?.lines ?? []).map((l) => [l.variantId, l.quantity, l.available, l.lineTotal]));
+  }
+
   private openPayment(url: string) {
     this.payUrl.set(url);
-    // A blocked pop-up leaves the link on screen.
-    window.open(url, '_blank', 'noopener');
+    // `noopener` would hide whether the tab opened, so the opener link is cut right after opening instead.
+    const opened = window.open(url, '_blank');
+    if (opened) opened.opener = null;
+    this.popupBlocked.set(!opened);
   }
 
   private beginStatus() {
@@ -253,13 +298,9 @@ export class StoreSalePage {
   }
 
   async cancelOrder(number: number) {
-    const sure = await new Promise<boolean>((resolve) =>
-      this.dialog
-        .open(ConfirmDialog, { data: { message: `לבטל את הזמנה ${number}? הלקוח לא יחויב.` } })
-        .afterClosed()
-        .subscribe((v) => resolve(v === true)),
-    );
+    const sure = await this.confirm(`לבטל את הזמנה ${number}? הלקוח לא יחויב.`);
     if (!sure) return;
+    this.busy.set(true);
     try {
       await this.api.cancel(number);
       if (this.orderNumber() === number) {
@@ -269,16 +310,28 @@ export class StoreSalePage {
       await this.loadPending();
     } catch (e) {
       this.error.set(storeErrorMessage(e));
+    } finally {
+      this.busy.set(false);
     }
   }
 
+  private pendingLoading = false;
+
   async loadPending() {
+    if (this.pendingLoading) return;
+    this.pendingLoading = true;
     try {
       this.pending.set(await this.api.pending());
     } catch {
       // The list is a convenience; the sale itself does not depend on it.
+    } finally {
+      this.pendingLoading = false;
     }
   }
+
+  private readonly onShown = () => {
+    if (document.visibilityState === 'visible') void this.loadPending();
+  };
 
   private readonly onVisible = () => {
     if (document.visibilityState === 'visible') void this.poll();
@@ -309,6 +362,8 @@ export class StoreSalePage {
     this.polling = true;
     try {
       const { status } = await this.api.status(number);
+      // Another order was opened meanwhile (a new sale, a retry from the pending list): this answer is not for it.
+      if (this.orderNumber() !== number) return;
       if (this.pollFailed) {
         this.pollFailed = false;
         this.error.set('');
@@ -318,6 +373,7 @@ export class StoreSalePage {
       this.payment.set(FAILED.has(status) ? 'failed' : CLOSED.has(status) ? 'closed' : 'paid');
       void this.loadPending();
     } catch (e) {
+      if (this.orderNumber() !== number) return;
       this.pollFailed = true;
       this.error.set(storeErrorMessage(e));
     } finally {

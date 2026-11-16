@@ -36,4 +36,17 @@ describe('store sale pending orders', () => {
     expect(cancel).toHaveBeenCalledWith(2);
     expect(rows[0].querySelector('bdi')?.textContent).toBe('1');
   });
+
+  it('names each button with its order number and disables them while busy', () => {
+    const fixture = TestBed.createComponent(PendingOrders);
+    fixture.componentRef.setInput('orders', [order(100050, ['retry', 'cancel'])]);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const buttons = () => [...el.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons().map((b) => b.getAttribute('aria-label'))).toEqual(['נסה שוב, הזמנה 100050', 'בטל, הזמנה 100050']);
+    expect(buttons().every((b) => !b.disabled)).toBe(true);
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+    expect(buttons().every((b) => b.disabled)).toBe(true);
+  });
 });

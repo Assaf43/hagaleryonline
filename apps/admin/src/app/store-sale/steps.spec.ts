@@ -5,7 +5,14 @@ import { canEnter, isCompleteCode, sanitizeCode, stepAfterError, type SaleState 
 const line = { variantId: 1, available: true } as StoreCartView['lines'][number];
 const cart = (customer: StoreCartView['customer'] = null): StoreCartView =>
   ({ lines: [line], customer }) as unknown as StoreCartView;
-const customer = { id: 'c', fullName: 'דנה', phone: '0501234567', email: null, emailVerified: false, isNew: false };
+const customer = {
+  id: 'c',
+  fullName: 'דנה',
+  phone: '0501234567',
+  email: 'dana@example.test',
+  emailVerified: false,
+  isNew: false,
+};
 const state = (over: Partial<SaleState>): SaleState => ({
   cart: null,
   delivery: null,
@@ -20,6 +27,12 @@ describe('store sale step machine', () => {
     expect(canEnter('customer', state({ cart: cart() }))).toBe(true);
     expect(canEnter('delivery', state({ cart: cart() }))).toBe(false);
     expect(canEnter('delivery', state({ cart: cart(customer) }))).toBe(true);
+  });
+
+  it('does not open delivery or summary for a customer without an e-mail', () => {
+    const noEmail = { ...customer, email: null };
+    expect(canEnter('delivery', state({ cart: cart(noEmail) }))).toBe(false);
+    expect(canEnter('summary', state({ cart: cart(noEmail), delivery: {} as never }))).toBe(false);
   });
 
   it('needs a delivery choice before the summary and an order before the status', () => {

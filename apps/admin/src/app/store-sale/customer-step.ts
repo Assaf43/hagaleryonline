@@ -33,9 +33,14 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
             <span class="muted"> · לקוח חדש</span>
           }
         </span>
+        @if (c.email === null) {
+          <span class="error" role="alert">ללקוח אין מייל. יש להחליף לקוח או לאמת עם מייל.</span>
+        }
         <span class="actions">
           <button matButton="outlined" type="button" (click)="change()">החלפת לקוח</button>
-          <button matButton="filled" type="button" (click)="next.emit()">המשך למשלוח</button>
+          <button matButton="filled" type="button" [disabled]="c.email === null" (click)="next.emit()">
+            המשך למשלוח
+          </button>
         </span>
       </section>
     } @else {
@@ -166,6 +171,8 @@ export class CustomerStep {
   protected readonly valueOf = valueOf;
   /** What the pending code was sent for: the verify call repeats it with the code. */
   private pending: StoreCodeRequest | null = null;
+  /** Bumped whenever the shown result is dropped (a new phone, a reset): older lookups are ignored. */
+  private seq = 0;
 
   /** A new phone needs a fresh lookup: the old result, codes and prompts belong to the old number. */
   protected setPhone(event: Event) {
@@ -184,7 +191,16 @@ export class CustomerStep {
   protected async lookup(event: Event) {
     event.preventDefault();
     this.reset();
-    await this.run(async () => this.found.set(await this.api.lookup(this.phone().trim())));
+    // An answer that arrives after the phone was edited belongs to the old number: it is dropped (T6-M1).
+    const seq = this.seq;
+    await this.run(async () => {
+      try {
+        const answer = await this.api.lookup(this.phone().trim());
+        if (seq === this.seq) this.found.set(answer);
+      } catch (e) {
+        if (seq === this.seq) throw e;
+      }
+    });
   }
 
   protected async send(channel: StoreCodeChannel) {
@@ -246,6 +262,7 @@ export class CustomerStep {
   }
 
   private reset() {
+    this.seq++;
     this.found.set(null);
     this.sent.set(false);
     this.emailTaken.set(false);
