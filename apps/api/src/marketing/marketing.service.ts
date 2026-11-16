@@ -66,6 +66,13 @@ interface ContactState {
 
 const normalize = (email: string) => email.trim().toLowerCase();
 
+/** A contact whose confirmation link still works: pending, with a token that has not expired. */
+const isLiveConfirmation = (c: MarketingContact): boolean =>
+  c.status === MarketingStatus.PENDING &&
+  c.confirmTokenHash !== null &&
+  c.confirmExpiresAt !== null &&
+  c.confirmExpiresAt.getTime() > Date.now();
+
 /**
  * One transaction-scoped advisory lock per e-mail: every change of a contact takes it first, so two changes of one
  * address run one after the other (and two first requests make one contact). It is the LAST lock of any transaction
@@ -161,7 +168,10 @@ export class MarketingService {
       source,
       consentAt: null,
     });
-    const event = await this.event(tx, contact.id, ConsentAction.REQUESTED, source, input.actor);
+    // A seller-made request (the store box) shows the customer no text: its event records none. The text they agree
+    // to is on the link page, so the `confirmed` event after their click carries the version.
+    const textShown = input.source !== 'store';
+    const event = await this.event(tx, contact.id, ConsentAction.REQUESTED, source, input.actor, { textShown });
     const key = String(event.id);
     await this.outbox.enqueue(
       tx,
@@ -182,7 +192,18 @@ export class MarketingService {
   }
 
   /**
-   * The confirmation link (`/newsletter/confirm?t=`): a `pending` contact whose token is live becomes `subscribed`
+   * The link page's first, read-only call (`/newsletter/confirm?t=` on load): the address of a `pending` contact whose
+   * token is live, so the page can name it next to the consent text and ask for the click. Changes nothing and never
+   * uses the token: a mail scanner that opens the link confirms nothing. Unknown, used or expired → null.
+   */
+  async previewConfirmation(token: string): Promise<{ email: string } | null> {
+    if (typeof token !== 'string' || token.length === 0 || token.length > TOKEN_MAX) return null;
+    const contact = await this.prisma.marketingContact.findUnique({ where: { confirmTokenHash: hashToken(token) } });
+    return contact && isLiveConfirmation(contact) ? { email: contact.email } : null;
+  }
+
+  /**
+   * The customer's click on the link page (`/newsletter/confirm?t=`): a `pending` contact whose token is live becomes `subscribed`
    * with a `confirmed` event, and the token is cleared (the link works once). Unknown, used or expired → null.
    */
   async confirm(token: string, meta: ConsentMeta): Promise<{ email: string } | null> {
@@ -193,14 +214,7 @@ export class MarketingService {
       if (!seen) return null;
       await lockEmail(tx, seen.email);
       const contact = await tx.marketingContact.findUnique({ where: { id: seen.id } });
-      if (
-        !contact ||
-        contact.status !== MarketingStatus.PENDING ||
-        contact.confirmTokenHash !== hash ||
-        !contact.confirmExpiresAt ||
-        contact.confirmExpiresAt.getTime() <= Date.now()
-      )
-        return null;
+      if (!contact || contact.confirmTokenHash !== hash || !isLiveConfirmation(contact)) return null;
       const updated = await tx.marketingContact.update({
         where: { id: contact.id },
         data: {
@@ -254,7 +268,7 @@ export class MarketingService {
         const found = await tx.marketingContact.findUnique({ where: { email: address } });
         if (!found) return;
         if (found.status === MarketingStatus.UNSUBSCRIBED) {
-          await this.event(tx, found.id, ConsentAction.PROVIDER_UNSUBSCRIBED, null, {}, eventId);
+          await this.event(tx, found.id, ConsentAction.PROVIDER_UNSUBSCRIBED, null, {}, { providerEventId: eventId });
           return;
         }
         await this.unsubscribe(tx, found, ConsentAction.PROVIDER_UNSUBSCRIBED, null, {}, { providerEventId: eventId });
@@ -311,9 +325,11 @@ export class MarketingService {
     });
     if (!seen) return;
     await lockEmail(tx, seen.email);
-    // Re-read under the lock: the contact may have changed (or been unlinked) meanwhile.
-    const contact = await tx.marketingContact.findUnique({ where: { customerId: order.customerId } });
-    if (contact?.status !== MarketingStatus.SUBSCRIBED) return;
+    // Re-read under the lock, by the e-mail locked: the contact may have changed or been unlinked meanwhile. If the
+    // account now links another e-mail's contact, that contact is not ours to change without its own lock: skip. The
+    // change that re-linked it synced it already (a link of a subscribed contact enqueues a sync).
+    const contact = await tx.marketingContact.findUnique({ where: { email: seen.email } });
+    if (contact?.customerId !== order.customerId || contact.status !== MarketingStatus.SUBSCRIBED) return;
     const updated = await tx.marketingContact.update({
       where: { id: contact.id },
       data: { syncVersion: { increment: 1 } },
@@ -397,7 +413,7 @@ export class MarketingService {
         ...(opts.unlink ? { customerId: null } : {}),
       },
     });
-    await this.event(tx, contact.id, action, source, actor, opts.providerEventId);
+    await this.event(tx, contact.id, action, source, actor, { providerEventId: opts.providerEventId });
     await this.sync(tx, updated);
   }
 
@@ -434,15 +450,16 @@ export class MarketingService {
     action: ConsentAction,
     source: MarketingConsentSource | null,
     actor: ConsentActor,
-    providerEventId?: string,
+    opts: { providerEventId?: string; textShown?: boolean } = {},
   ) {
-    const consent = action === ConsentAction.REQUESTED || action === ConsentAction.CONFIRMED;
+    const { providerEventId, textShown = true } = opts;
+    const consent = textShown && (action === ConsentAction.REQUESTED || action === ConsentAction.CONFIRMED);
     return tx.marketingConsentEvent.create({
       data: {
         contactId,
         action,
         source,
-        // The checkbox text the customer agreed to; a withdrawal or release shows no text.
+        // The checkbox text the customer agreed to; a withdrawal, a release or a seller-made request shows no text.
         textVersion: consent ? CONSENT_TEXT_VERSION : null,
         actorCustomerId: actor.customerId ?? null,
         actorSellerId: actor.sellerId ?? null,

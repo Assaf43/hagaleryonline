@@ -72,7 +72,7 @@ export class StoreSalePage {
   protected readonly popupBlocked = signal(false);
   protected readonly acceptTerms = signal(false);
   protected readonly marketing = signal(false);
-  /** The seller ticked the marketing box on the order that was placed: the customer got an SMS link (CLB-08). */
+  /** The placed order queued the marketing SMS link for the customer (CLB-08): the box was ticked and it was sent. */
   protected readonly marketingAsked = signal(false);
   /** No e-mail, no marketing offer (decision 96). */
   protected readonly marketingNoEmail = computed(() => !!this.cart()?.customer && !this.cart()?.customer?.email);
@@ -238,7 +238,8 @@ export class StoreSalePage {
       const created = await this.api.createOrder(request);
       this.orderNumber.set(created.number);
       this.locked.set(true);
-      this.marketingAsked.set(request.marketingConsent === true);
+      // Only when the server queued the SMS: an already subscribed e-mail or a dropped request sends nothing.
+      this.marketingAsked.set(created.consentSmsSent === true);
       this.openPayment(created.redirectUrl);
       this.beginStatus();
       void this.loadPending();

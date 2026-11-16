@@ -57,6 +57,7 @@ describe('Newsletter (e2e, MKT-01, CLB-02)', () => {
   beforeEach(() => {
     emailSpy.mockClear();
     throttle.setLimit('newsletter', RELAXED);
+    throttle.setLimit('newsletter_unsubscribe', RELAXED);
   });
   afterEach(cleanData);
   afterAll(async () => {
@@ -124,6 +125,39 @@ describe('Newsletter (e2e, MKT-01, CLB-02)', () => {
     expect((await post('/confirm', {})).status).toBe(404);
   });
 
+  it('preview reads the link without using it: masked address, the contact stays pending, the token still confirms', async () => {
+    const email = newEmail();
+    await post('', { email, consent: true });
+    await outbox.runDue(100);
+    const token = linkIn(email, 'confirm');
+    const before = await contactOf(email);
+
+    for (let i = 0; i < 2; i++) {
+      const preview = await post('/confirm/preview', { token });
+      expect(preview.status).toBe(200);
+      expect(preview.body).toEqual({ email: expect.stringContaining('*') });
+      expect(preview.body.email).not.toBe(email);
+      expect(preview.headers['cache-control']).toBe('no-store');
+    }
+    // Nothing changed: no new event, the same token hash, still pending.
+    const after = await contactOf(email);
+    expect(after).toMatchObject({ status: MarketingStatus.PENDING, confirmTokenHash: before!.confirmTokenHash });
+    expect(after!.events).toHaveLength(before!.events.length);
+    expect(after!.syncVersion).toBe(before!.syncVersion);
+
+    // The click confirms with the same token; afterwards the preview and the confirm answer 404.
+    const confirm = await post('/confirm', { token });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body).toEqual({ email: expect.stringContaining('*') });
+    expect(await contactOf(email)).toMatchObject({ status: MarketingStatus.SUBSCRIBED });
+    const used = await post('/confirm/preview', { token });
+    expect(used.status).toBe(404);
+    expect(used.body).toMatchObject({ code: 'link_invalid' });
+    expect((await post('/confirm/preview', { token: 'nope' })).status).toBe(404);
+    expect((await post('/confirm/preview', {})).status).toBe(404);
+    expect((await post('/confirm/preview', { token }, 'http://evil.example')).status).toBe(403);
+  });
+
   it('unsubscribe by token → 204 and unsubscribed; an unknown token → 204 too', async () => {
     const email = newEmail();
     await post('', { email, consent: true });
@@ -141,12 +175,23 @@ describe('Newsletter (e2e, MKT-01, CLB-02)', () => {
     expect((await post('/confirm', { token: 'x' }, 'http://evil.example')).status).toBe(403);
   });
 
-  it('per IP: over the newsletter limit → 429 with Retry-After, on all three endpoints', async () => {
+  it('per IP: sign-up, preview and confirm share the newsletter bucket → 429 with Retry-After', async () => {
     throttle.setLimit('newsletter', 2);
     expect((await post('', { email: newEmail(), consent: true })).status).toBe(202);
-    expect((await post('/confirm', { token: 'x' })).status).toBe(404);
+    expect((await post('/confirm/preview', { token: 'x' })).status).toBe(404);
+    const res = await post('/confirm', { token: 'x' });
+    expect(res.status).toBe(429);
+    expect(res.headers['retry-after']).toBeDefined();
+    // Unsubscribing has its own bucket: a shared IP over the sign-up limit can still leave the list.
+    expect((await post('/unsubscribe', { token: 'x' })).status).toBe(204);
+  });
+
+  it('per IP: unsubscribe over its own newsletter_unsubscribe limit → 429', async () => {
+    throttle.setLimit('newsletter_unsubscribe', 1);
+    expect((await post('/unsubscribe', { token: 'x' })).status).toBe(204);
     const res = await post('/unsubscribe', { token: 'x' });
     expect(res.status).toBe(429);
     expect(res.headers['retry-after']).toBeDefined();
+    expect((await post('', { email: newEmail(), consent: true })).status).toBe(202);
   });
 });

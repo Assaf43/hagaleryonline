@@ -22,13 +22,16 @@ import { MarketingService } from './marketing.service.js';
 type Body_ = Record<string, unknown>;
 const asBody = (raw: unknown): Body_ => (typeof raw === 'object' && raw !== null ? (raw as Body_) : {});
 const badField = (field: string) => new BadRequestException({ statusCode: 400, code: 'invalid_input', field });
+const linkInvalid = () => new NotFoundException({ statusCode: 404, code: 'link_invalid' });
 
 /**
  * The newsletter (spec §4.4, §6, MKT-01, CLB-02, decision 95): `POST /api/newsletter` asks for a confirmation link
  * and answers 202 `{}` whether or not the address is known, subscribed or over its daily limit (nothing to probe);
- * `confirm` and `unsubscribe` are the calls of the link pages. Storefront origin only; all three count in the
- * `newsletter` bucket per IP (`THROTTLE_NEWSLETTER_LIMIT`) and are never cached. A filled honeypot `website` answers
- * 202 `{}` and saves nothing.
+ * `confirm/preview`, `confirm` and `unsubscribe` are the calls of the link pages. The link page only previews on load
+ * (read-only: the masked address of a live link) and confirms on the customer's click, so a mail scanner that opens
+ * the link confirms nothing. Storefront origin only and never cached; sign-up, preview and confirm count in the
+ * `newsletter` bucket per IP (`THROTTLE_NEWSLETTER_LIMIT`), unsubscribe in its own `newsletter_unsubscribe`
+ * (`THROTTLE_NEWSLETTER_UNSUBSCRIBE_LIMIT`). A filled honeypot `website` answers 202 `{}` and saves nothing.
  */
 @Controller('newsletter')
 @UseGuards(StorefrontOriginGuard, WriteThrottleGuard)
@@ -59,6 +62,18 @@ export class NewsletterController {
     return {};
   }
 
+  /** Read-only: changes nothing and never uses the token. 200 `{ email }` (masked) or 404 `link_invalid`. */
+  @Post('confirm/preview')
+  @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
+  @Throttled('newsletter')
+  async preview(@Body() body: unknown): Promise<{ email: string }> {
+    const token = asBody(body).token;
+    const found = typeof token === 'string' ? await this.marketing.previewConfirmation(token) : null;
+    if (!found) throw linkInvalid();
+    return { email: maskEmail(found.email) };
+  }
+
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
@@ -66,14 +81,14 @@ export class NewsletterController {
   async confirm(@Body() body: unknown, @Req() req: Request): Promise<{ email: string }> {
     const token = asBody(body).token;
     const confirmed = typeof token === 'string' ? await this.marketing.confirm(token, { ip: req.ip }) : null;
-    if (!confirmed) throw new NotFoundException({ statusCode: 404, code: 'link_invalid' });
+    if (!confirmed) throw linkInvalid();
     return { email: maskEmail(confirmed.email) };
   }
 
   @Post('unsubscribe')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Header('Cache-Control', 'no-store')
-  @Throttled('newsletter')
+  @Throttled('newsletter_unsubscribe')
   async unsubscribe(@Body() body: unknown, @Req() req: Request): Promise<void> {
     const token = asBody(body).token;
     if (typeof token === 'string') await this.marketing.unsubscribeByToken(token, { ip: req.ip });

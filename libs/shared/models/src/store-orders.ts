@@ -88,6 +88,11 @@ export interface StoreOrderRequest {
 export interface StoreOrderCreated {
   number: number;
   redirectUrl: string;
+  /**
+   * The marketing box asked the customer by SMS (`requestConfirmation` → `sent`). False when the box was not ticked,
+   * the e-mail is already subscribed or its daily request limit was reached: the seller screen then claims no SMS.
+   */
+  consentSmsSent: boolean;
 }
 
 /** `GET /api/admin/store-orders/:number` — the seller's own store order (404 for any other). */

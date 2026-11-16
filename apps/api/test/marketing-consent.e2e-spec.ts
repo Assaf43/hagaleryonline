@@ -4,7 +4,14 @@ import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import type { AccountConsent, CartView, CustomerMe, ShippingQuote, StoreCartView } from '@hg/models';
+import {
+  CONSENT_TEXT_VERSION,
+  type AccountConsent,
+  type CartView,
+  type CustomerMe,
+  type ShippingQuote,
+  type StoreCartView,
+} from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { hashToken } from './../src/auth/crypto.js';
 import { CacheStore } from './../src/cache/cache-store.js';
@@ -335,15 +342,24 @@ describe('Marketing consent (e2e, CLB-02, CLB-08, ACC-05)', () => {
       marketingConsent: true,
     };
     const probe = await seller.post('/store-orders', { ...body, expectedTotal: 0 }).expect(409);
-    await seller.post('/store-orders', { ...body, expectedTotal: probe.body.total as number }).expect(201);
+    const created = await seller
+      .post('/store-orders', { ...body, expectedTotal: probe.body.total as number })
+      .expect(201);
+    // The answer says the SMS was queued, so the seller screen claims it only then.
+    expect(created.body).toMatchObject({ consentSmsSent: true });
     let contact = await contactOf(email);
     expect(contact).toMatchObject({
       status: MarketingStatus.PENDING,
       source: MarketingConsentSource.STORE,
       customerId: null,
     });
+    // The seller ticked the box; the customer saw no text yet (the confirmed event carries it).
     expect(contact!.events).toEqual([
-      expect.objectContaining({ action: ConsentAction.REQUESTED, actorSellerId: expect.any(Number) }),
+      expect.objectContaining({
+        action: ConsentAction.REQUESTED,
+        actorSellerId: expect.any(Number),
+        textVersion: null,
+      }),
     ]);
 
     smsSpy.mockClear();
@@ -356,6 +372,10 @@ describe('Marketing consent (e2e, CLB-02, CLB-08, ACC-05)', () => {
     expect(await marketing.confirm(token, {})).toEqual({ email });
     contact = await contactOf(email);
     expect(contact).toMatchObject({ status: MarketingStatus.SUBSCRIBED, source: MarketingConsentSource.STORE });
+    expect(contact!.events.at(-1)).toMatchObject({
+      action: ConsentAction.CONFIRMED,
+      textVersion: CONSENT_TEXT_VERSION,
+    });
 
     // A second store order with the box: already subscribed, no event and no SMS.
     await seller.post('/store-cart').expect(201);
@@ -366,7 +386,10 @@ describe('Marketing consent (e2e, CLB-02, CLB-08, ACC-05)', () => {
       .expect(200);
     expect((again.body as StoreCartView).customer).toMatchObject({ marketingStatus: 'subscribed' });
     const probe2 = await seller.post('/store-orders', { ...body, expectedTotal: 0 }).expect(409);
-    await seller.post('/store-orders', { ...body, expectedTotal: probe2.body.total as number }).expect(201);
+    const second = await seller
+      .post('/store-orders', { ...body, expectedTotal: probe2.body.total as number })
+      .expect(201);
+    expect(second.body).toMatchObject({ consentSmsSent: false });
     expect((await contactOf(email))!.events).toHaveLength(2);
     expect(await prisma.outboxJob.count({ where: { type: 'sms.store_consent', state: 'PENDING' } })).toBe(0);
   });

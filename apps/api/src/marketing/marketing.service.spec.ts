@@ -1,3 +1,4 @@
+import { CONSENT_TEXT_VERSION } from '@hg/models';
 import { hashToken } from '../auth/crypto.js';
 import { ConsentAction, MarketingConsentSource, MarketingStatus } from '../generated/prisma/client.js';
 import type { OutboxService } from '../outbox/outbox.service.js';
@@ -263,5 +264,79 @@ describe('MarketingService (decision 95, CLB-02)', () => {
     expect(t.events.filter((e) => e.action === ConsentAction.PROVIDER_UNSUBSCRIBED)).toEqual([
       expect.objectContaining({ providerEventId: 'evt-1' }),
     ]);
+  });
+  it('a seller-made (store) request records no text version; the confirmed event after the page click does', async () => {
+    const t = setup();
+    await t.service.requestConfirmation(t.tx, {
+      email: 'dana@example.test',
+      source: 'store',
+      channel: 'sms',
+      phone: '0501234567',
+      actor: { sellerId: 7 },
+    });
+    // The customer saw no consent text at the store: the seller ticked the box.
+    expect(t.events[0]).toMatchObject({ action: ConsentAction.REQUESTED, textVersion: null });
+    t.contacts[0].confirmTokenHash = hashToken('store-token');
+    t.contacts[0].confirmExpiresAt = new Date(Date.now() + DAY_MS);
+    await t.service.confirm('store-token', {});
+    // The link page shows CONSENT_TEXT_HE next to the button the customer clicks.
+    expect(t.events[1]).toMatchObject({ action: ConsentAction.CONFIRMED, textVersion: CONSENT_TEXT_VERSION });
+
+    // A request the customer made next to the text (checkout, newsletter) records its version.
+    await t.service.requestConfirmation(t.tx, {
+      email: 'gil@example.test',
+      source: 'checkout',
+      channel: 'email',
+      actor: {},
+    });
+    expect(t.events[2]).toMatchObject({ action: ConsentAction.REQUESTED, textVersion: CONSENT_TEXT_VERSION });
+  });
+
+  it('previewConfirmation reads a live link without using it: no change, no event, the token still confirms', async () => {
+    const t = setup();
+    t.contacts.push(
+      contact({ confirmTokenHash: hashToken('live-token'), confirmExpiresAt: new Date(Date.now() + DAY_MS) }),
+    );
+    const before = { ...t.contacts[0] };
+    expect(await t.service.previewConfirmation('live-token')).toEqual({ email: 'dana@example.test' });
+    expect(await t.service.previewConfirmation('live-token')).toEqual({ email: 'dana@example.test' });
+    expect(t.contacts[0]).toEqual(before);
+    expect(t.events).toEqual([]);
+    expect(t.enqueue).not.toHaveBeenCalled();
+    // Unknown, too long, expired or no longer pending → null.
+    expect(await t.service.previewConfirmation('unknown')).toBeNull();
+    expect(await t.service.previewConfirmation('x'.repeat(200))).toBeNull();
+    expect(await t.service.confirm('live-token', {})).toEqual({ email: 'dana@example.test' });
+    expect(await t.service.previewConfirmation('live-token')).toBeNull();
+    t.contacts.push(
+      contact({
+        id: 'c-old',
+        email: 'old@example.test',
+        confirmTokenHash: hashToken('old-token'),
+        confirmExpiresAt: new Date(Date.now() - 1000),
+      }),
+    );
+    expect(await t.service.previewConfirmation('old-token')).toBeNull();
+  });
+
+  it('orderPaid syncs only the contact of the e-mail it locked (a re-link meanwhile is skipped)', async () => {
+    const t = setup();
+    t.contacts.push(contact({ status: MarketingStatus.SUBSCRIBED, customerId: 'cust-1', consentAt: new Date() }));
+    await t.service.orderPaid(t.tx, { customerId: 'cust-1' });
+    expect(t.jobs('marketing.sync')).toHaveLength(1);
+
+    // Between the unlocked read and the lock, the account moved to another e-mail's contact.
+    t.enqueue.mockClear();
+    t.contacts.push(
+      contact({ id: 'c-new', email: 'new@example.test', status: MarketingStatus.SUBSCRIBED, consentAt: new Date() }),
+    );
+    t.db.$executeRaw.mockImplementationOnce(() => {
+      t.contacts[0].customerId = null;
+      t.contacts[1].customerId = 'cust-1';
+      return Promise.resolve(1);
+    });
+    await t.service.orderPaid(t.tx, { customerId: 'cust-1' });
+    expect(t.jobs('marketing.sync')).toHaveLength(0);
+    expect(t.contacts[1].syncVersion).toBe(1);
   });
 });

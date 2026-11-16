@@ -125,6 +125,7 @@ export class StoreOrdersService {
     if (!customer || !isConfirmationLive(cart)) throw customerNotConfirmed();
     if (!customer.email) throw customerEmailRequired();
     const contact = { fullName: customer.fullName, phone: customer.phone, email: customer.email };
+    let consentSmsSent = false;
 
     const order = await this.checkout.placeOrder(
       { token: undefined, customerId: null, store: { sellerId, cartId: open.id } },
@@ -156,25 +157,8 @@ export class StoreOrdersService {
           if (!still?.email) throw customerEmailRequired();
         },
         afterCreate: async (tx, created) => {
+          consentSmsSent = false;
           if (input.saveAddress) await saveAddress(tx, customer.id, input.address);
-          // The seller's marketing box (decision 96, CLB-08): the order keeps the box, and the customer gets an SMS link;
-          // consent is recorded only when they open it and confirm (source `store`). An e-mail already subscribed gets
-          // nothing. The contact is linked to the account only when the account verified the e-mail.
-          if (input.marketingConsent) {
-            const now = await tx.customer.findUniqueOrThrow({
-              where: { id: customer.id },
-              select: { email: true, emailVerifiedAt: true, phone: true },
-            });
-            if (now.email)
-              await this.marketing.requestConfirmation(tx, {
-                email: now.email,
-                customerId: now.emailVerifiedAt ? customer.id : null,
-                source: 'store',
-                channel: 'sms',
-                phone: now.phone,
-                actor: { sellerId, ip: actor.ip },
-              });
-          }
           await this.audit.record(
             {
               actorId: sellerId,
@@ -186,10 +170,35 @@ export class StoreOrdersService {
             },
             tx,
           );
+          // Last (locks.ts): the marketing e-mail lock is the last lock of the transaction.
+          // The seller's marketing box (decision 96, CLB-08): the order keeps the box, and the customer gets an SMS link;
+          // consent is recorded only when they open it and confirm (source `store`). An e-mail already subscribed gets
+          // nothing. The contact is linked to the account only when the account verified the e-mail.
+          if (input.marketingConsent) {
+            const now = await tx.customer.findUniqueOrThrow({
+              where: { id: customer.id },
+              select: { email: true, emailVerifiedAt: true, phone: true },
+            });
+            if (now.email) {
+              const result = await this.marketing.requestConfirmation(tx, {
+                email: now.email,
+                customerId: now.emailVerifiedAt ? customer.id : null,
+                source: 'store',
+                channel: 'sms',
+                phone: now.phone,
+                actor: { sellerId, ip: actor.ip },
+              });
+              consentSmsSent = result === 'sent';
+            }
+          }
         },
       },
     );
-    return { number: order.number, redirectUrl: await this.payments.openPaymentPage(order, 'store') };
+    return {
+      number: order.number,
+      redirectUrl: await this.payments.openPaymentPage(order, 'store'),
+      consentSmsSent,
+    };
   }
 
   /** GET /api/admin/store-orders/pending — this seller's store orders not paid yet, newest first. */
