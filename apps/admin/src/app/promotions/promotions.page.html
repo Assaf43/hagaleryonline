@@ -29,6 +29,12 @@
           @if (p.isWelcome) {
             <span class="welcome-chip">הטבת הצטרפות</span>
           }
+          @if (p.membersOnly) {
+            <span class="welcome-chip">חברים בלבד</span>
+          }
+          @if (p.appliesToMemberPrices) {
+            <span class="welcome-chip">גם על מחירי מועדון</span>
+          }
         </span>
         @if (p.code) {
           <span class="code"

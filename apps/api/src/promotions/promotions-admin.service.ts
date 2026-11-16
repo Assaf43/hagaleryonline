@@ -111,7 +111,9 @@ export class PromotionsAdminService {
     return this.inTx(input, async (tx) => {
       if (input.isWelcome) await this.takeWelcome(tx, null, meta);
       await this.check(tx, input, null);
-      const row = await tx.promotion.create({ data: toData(input, input.isWelcome === true) });
+      const row = await tx.promotion.create({
+        data: toData(input, input.isWelcome === true, input.membersOnly ?? false, input.appliesToMemberPrices ?? false),
+      });
       const view = (await this.views(tx, [row]))[0];
       await this.audit.record(
         { ...meta, action: 'promotion.create', entityType: 'promotion', entityId: row.id, after: auditView(view) },
@@ -131,7 +133,12 @@ export class PromotionsAdminService {
       const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'automatic');
       // Losing the mark also turns it off: an active ex-welcome promotion would otherwise become an automatic
       // discount for every shopper (staff turn it on again in a later save if that is what they want).
-      const data = toData(input, isWelcome);
+      const data = toData(
+        input,
+        isWelcome,
+        input.membersOnly ?? existing.membersOnly,
+        input.appliesToMemberPrices ?? existing.appliesToMemberPrices,
+      );
       if (existing.isWelcome && !isWelcome) data.active = false;
       const row = await tx.promotion.update({ where: { id }, data });
       const view = (await this.views(tx, [row]))[0];
@@ -282,6 +289,8 @@ export class PromotionsAdminService {
         usedCount: r.usedCount,
         active: r.active,
         isWelcome: r.isWelcome,
+        membersOnly: r.membersOnly,
+        appliesToMemberPrices: r.appliesToMemberPrices,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       };
@@ -289,7 +298,7 @@ export class PromotionsAdminService {
   }
 }
 
-function toData(input: AdminPromotionInput, isWelcome: boolean) {
+function toData(input: AdminPromotionInput, isWelcome: boolean, membersOnly: boolean, appliesToMemberPrices: boolean) {
   return {
     name: input.name,
     kind: KIND_TO_DB[input.kind],
@@ -304,6 +313,8 @@ function toData(input: AdminPromotionInput, isWelcome: boolean) {
     usageLimit: input.usageLimit,
     active: input.active,
     isWelcome,
+    membersOnly,
+    appliesToMemberPrices,
   };
 }
 
@@ -328,5 +339,7 @@ export function auditView(p: AdminPromotion): AuditView {
     'מגבלת שימוש': p.usageLimit === null ? 'ללא הגבלה' : String(p.usageLimit),
     פעיל: p.active ? 'כן' : 'לא',
     [WELCOME_LABEL]: p.isWelcome ? 'כן' : 'לא',
+    'חברי מועדון בלבד': p.membersOnly ? 'כן' : 'לא',
+    'חל גם על מחירי מועדון': p.appliesToMemberPrices ? 'כן' : 'לא',
   };
 }

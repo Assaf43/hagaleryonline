@@ -11,6 +11,7 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { CartView } from '@hg/models';
@@ -18,6 +19,7 @@ import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { OptionalCustomer, OptionalCustomerGuard, customerCookieOptions } from '../customers/customer-session.guard.js';
 import type { ResolvedCustomer } from '../customers/customer-session.service.js';
+import { NoStoreInterceptor } from '../customers/customer-auth.controller.js';
 import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
 import { CartError, CartService, type CartOwner, type CartResult } from './cart.service.js';
 
@@ -30,6 +32,8 @@ const MAX_REQUEST_QUANTITY = 999;
  */
 @Controller('cart')
 @UseGuards(StorefrontOriginGuard, OptionalCustomerGuard)
+// The cart carries member pricing for a signed-in customer: never cached by a shared cache.
+@UseInterceptors(NoStoreInterceptor)
 export class CartController {
   constructor(
     private readonly cart: CartService,

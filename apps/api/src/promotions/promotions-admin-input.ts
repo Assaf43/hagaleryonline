@@ -118,6 +118,13 @@ export function parsePromotionInput(body: unknown): AdminPromotionInput {
   if (isWelcome !== undefined && (typeof isWelcome !== 'boolean' || (isWelcome && kind !== 'automatic')))
     throw invalid('isWelcome');
 
+  // Club switches (decision 92): either kind, welcome included. Missing: unchanged on an edit (false on create).
+  const membersOnly = b.membersOnly ?? undefined;
+  if (membersOnly !== undefined && typeof membersOnly !== 'boolean') throw invalid('membersOnly');
+  const appliesToMemberPrices = b.appliesToMemberPrices ?? undefined;
+  if (appliesToMemberPrices !== undefined && typeof appliesToMemberPrices !== 'boolean')
+    throw invalid('appliesToMemberPrices');
+
   return {
     name,
     kind,
@@ -132,5 +139,7 @@ export function parsePromotionInput(body: unknown): AdminPromotionInput {
     usageLimit,
     active: b.active,
     isWelcome,
+    membersOnly,
+    appliesToMemberPrices,
   };
 }
