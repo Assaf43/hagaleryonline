@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import type { CartDiscount, DiscountType, PromotionKind, PromotionTarget, WelcomeBenefit } from '@hg/models';
-import type { ComputedLine } from '../cart/cart-lines.js';
 import {
   OrderStatus,
   DiscountType as DbDiscountType,
@@ -59,6 +58,12 @@ export interface WelcomeCustomer {
 
 export interface EvaluateContext extends UsageExclusion {
   customer?: WelcomeCustomer | null;
+  /**
+   * The cart is a member's (decision 90: a signed-in account, or a store cart's confirmed customer): members-only
+   * promotions are candidates (decision 94). A members-only coupon is then limited to one use per account when
+   * `customer` is given (a guest's "what a member would pay" hint passes no customer).
+   */
+  isMember?: boolean;
 }
 
 /**
@@ -101,14 +106,9 @@ export function toRule(p: Promotion): PromotionRule {
     usedCount: p.usedCount,
     active: p.active,
     isWelcome: p.isWelcome,
+    membersOnly: p.membersOnly,
+    appliesToMemberPrices: p.appliesToMemberPrices,
   };
-}
-
-/** The available lines of a cart as the engine sees them: current price × the quantity that can be bought. */
-export function discountLines(lines: ComputedLine[], quantity: (l: ComputedLine) => number): DiscountLine[] {
-  return lines
-    .filter((l) => l.available)
-    .map((l) => ({ productId: l.productId, categoryPathIds: l.categoryPathIds, lineTotal: l.unitPrice * quantity(l) }));
 }
 
 export function discountInfo(result: DiscountResult): DiscountInfo | null {
@@ -135,11 +135,22 @@ export function discountInfo(result: DiscountResult): DiscountInfo | null {
 export class PromotionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** The coupon with this (normalized) code with its uses, or null. */
-  async coupon(db: Db, code: string | null, exclude: UsageExclusion = {}): Promise<PromotionRule | null> {
+  /**
+   * The coupon with this (normalized) code with its uses, or null. With `customerId`, a members-only coupon also gets
+   * the account's own uses (`usedByAccount`, once per account, decision 94).
+   */
+  async coupon(
+    db: Db,
+    code: string | null,
+    exclude: UsageExclusion = {},
+    customerId: string | null = null,
+  ): Promise<PromotionRule | null> {
     if (!code) return null;
     const found = await db.promotion.findUnique({ where: { code } });
-    return found ? (await this.withUses(db, [toRule(found)], exclude))[0] : null;
+    if (!found) return null;
+    const [rule] = await this.withUses(db, [toRule(found)], exclude);
+    if (!rule.membersOnly || !customerId) return rule;
+    return { ...rule, usedByAccount: await accountUses(db, customerId, rule.id, exclude) };
   }
 
   /**
@@ -205,9 +216,13 @@ export class PromotionsService {
     // With `welcome` (any signed-in checkout), the active welcome promotion too (in the same id order), so it cannot
     // change until commit and a webhook paying a welcome order (it locks the row for its use +1) is waited for before
     // the checkout reads `hasPaidOrder` (CheckoutService).
+    // A members-only coupon too (once per account, decision 94): the webhook paying an order that holds it locks the
+    // row for its use +1, so the account's uses read after this lock see that order paid, or still pending. Two
+    // checkouts of one account are already one after the other (the welcome advisory lock, taken first).
     await tx.$queryRaw`
       SELECT id FROM promotions
       WHERE (usage_limit IS NOT NULL AND (code = ${couponCode} OR (kind = 'automatic' AND active)))
+         OR (members_only AND code = ${couponCode})
          OR (${welcome} AND is_welcome AND active)
       ORDER BY id FOR UPDATE`;
   }
@@ -241,16 +256,25 @@ export class PromotionsService {
       if (row && (await this.welcomeHeld(db, customer.customerId, row.id, context))) welcomeHeld = true;
       else if (row) automatic.push(...(await this.withUses(db, [toRule(row)], context)));
     }
-    const coupon = await this.coupon(db, couponCode, context);
+    const isMember = context.isMember === true;
+    const coupon = await this.coupon(db, couponCode, context, isMember ? (customer?.customerId ?? null) : null);
     if (couponCode && coupon?.kind !== 'coupon') {
       // An entered code that names no coupon (any more): the automatic promotions alone, the code is unknown.
-      const result = evaluateDiscount(lines, automatic, null, now);
+      const result = evaluateDiscount(lines, automatic, null, now, { isMember });
       return { ...result, couponOutcome: 'invalid', couponProblem: 'unknown', coupon: null, welcomeHeld };
     }
-    return { ...evaluateDiscount(lines, automatic, coupon, now), coupon, welcomeHeld };
+    return { ...evaluateDiscount(lines, automatic, coupon, now, { isMember }), coupon, welcomeHeld };
   }
 
   /** Paid order: one more use of its promotion, even past the limit (the order is honored, Review Focus 5). */
+  /**
+   * The account's uses of a promotion (members-only coupons, once per account, decision 94), minus the excluded
+   * orders: the payment retry asks with its own order excluded.
+   */
+  accountUses(db: Db, customerId: string, promotionId: number, exclude: UsageExclusion = {}): Promise<number> {
+    return accountUses(db, customerId, promotionId, exclude);
+  }
+
   async countUse(tx: Prisma.TransactionClient, promotionId: number): Promise<void> {
     await tx.promotion.updateMany({ where: { id: promotionId }, data: { usedCount: { increment: 1 } } });
   }
@@ -274,6 +298,31 @@ export class PromotionsService {
   ): Promise<boolean> {
     return (await db.order.count({ where: livePending(exclude, { customerId, promotionId }) })) > 0;
   }
+}
+
+/**
+ * The account's uses of a promotion (members-only coupons, once per account): its orders holding the promotion that
+ * were paid (paid or further along, or cancelled after being paid — as `hasPaidOrder`) plus its live pending ones,
+ * minus the excluded ones (the same exclusions as the usage limit).
+ */
+async function accountUses(db: Db, customerId: string, promotionId: number, exclude: UsageExclusion): Promise<number> {
+  const paid = [...PAID_OR_LATER];
+  const paidOrders = await db.order.count({
+    where: {
+      customerId,
+      promotionId,
+      ...(exclude.orderId ? { id: { not: exclude.orderId } } : {}),
+      OR: [
+        { status: { in: paid } },
+        {
+          status: OrderStatus.CANCELLED,
+          events: { some: { toStatus: OrderStatus.CANCELLED, fromStatus: { in: paid } } },
+        },
+      ],
+    },
+  });
+  const pending = await db.order.count({ where: livePending(exclude, { customerId, promotionId }) });
+  return paidOrders + pending;
 }
 
 /** Orders waiting for payment within their reservation, matching `extra`, minus the excluded ones. */

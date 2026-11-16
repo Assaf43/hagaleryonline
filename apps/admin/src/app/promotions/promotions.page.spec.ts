@@ -24,6 +24,8 @@ const base: AdminPromotion = {
   usageLimit: null,
   usedCount: 12,
   isWelcome: false,
+  membersOnly: false,
+  appliesToMemberPrices: false,
   active: true,
   createdAt: '2026-11-01T10:00:00.000Z',
   updatedAt: '2026-11-01T10:00:00.000Z',
@@ -151,8 +153,17 @@ describe('admin promotions screens', () => {
     it('marks the welcome benefit with a chip', async () => {
       const { el } = await list([{ ...base, isWelcome: true }, COUPON]);
       const [welcome, coupon] = [...el.querySelectorAll('.promotion')];
-      expect(welcome.querySelector('.welcome-chip')?.textContent?.trim()).toBe('הטבת הצטרפות');
-      expect(coupon.querySelector('.welcome-chip')).toBeNull();
+      expect(welcome.querySelector('.flag-chip')?.textContent?.trim()).toBe('הטבת הצטרפות');
+      expect(coupon.querySelector('.flag-chip')).toBeNull();
+    });
+
+    it('badges members-only and applies-to-member-prices promotions', async () => {
+      const { el } = await list([{ ...base, membersOnly: true, appliesToMemberPrices: true }, COUPON]);
+      const [club, plain] = [...el.querySelectorAll('.promotion')];
+      expect(club.textContent).toContain('חברים בלבד');
+      expect(club.textContent).toContain('גם על מחירי מועדון');
+      expect(plain.textContent).not.toContain('חברים בלבד');
+      expect(plain.textContent).not.toContain('גם על מחירי מועדון');
     });
 
     it('shows an empty state and a link to a new promotion', async () => {
@@ -234,6 +245,8 @@ describe('admin promotions screens', () => {
         usageLimit: 20,
         active: true,
         isWelcome: false,
+        membersOnly: false,
+        appliesToMemberPrices: false,
       });
       req.flush({ ...COUPON, id: 8 });
       await settle(fixture);
@@ -305,6 +318,44 @@ describe('admin promotions screens', () => {
       el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
       fixture.detectChanges();
       expect(el().textContent).toContain('חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.');
+    });
+
+    describe('club switches (decision 92)', () => {
+      const membersBox = () => el().querySelector<HTMLInputElement>('#promo-members-only');
+      const memberPricesBox = () => el().querySelector<HTMLInputElement>('#promo-member-prices');
+
+      it('are offered with their labels and hints, and saved when ticked', async () => {
+        await open('new');
+        expect(membersBox()?.type).toBe('checkbox');
+        expect(membersBox()?.checked).toBe(false);
+        expect(el().querySelector('label[for="promo-members-only"]')?.textContent?.trim()).toBe('חברי מועדון בלבד');
+        expect(el().querySelector('label[for="promo-member-prices"]')?.textContent?.trim()).toBe(
+          'חל גם על מחירי מועדון',
+        );
+        expect(el().textContent).toContain(
+          'רק לקוחות מחוברים שהם חברי מועדון. קופון לחברים בלבד תקף פעם אחת לכל חשבון.',
+        );
+        expect(el().textContent).toContain(
+          'כשהמתג כבוי, שורות שנמכרות במחיר מועדון לא יקבלו את ההנחה הזו (הלקוח ישלם את הסכום הנמוך מבין השניים).',
+        );
+        type('promo-name', 'קופון מועדון');
+        type('promo-code', 'CLUB5');
+        type('promo-value', '5');
+        membersBox()!.click();
+        memberPricesBox()!.click();
+        fixture.detectChanges();
+        await save();
+        const req = http.expectOne({ method: 'POST', url: '/api/admin/promotions' });
+        expect(req.request.body).toMatchObject({ membersOnly: true, appliesToMemberPrices: true });
+        req.flush({ ...COUPON, id: 8 });
+        await settle(fixture);
+      });
+
+      it('show the saved state', async () => {
+        await open('1', { ...base, membersOnly: true, appliesToMemberPrices: false });
+        expect(membersBox()?.checked).toBe(true);
+        expect(memberPricesBox()?.checked).toBe(false);
+      });
     });
 
     describe('welcome benefit toggle (decision 79)', () => {

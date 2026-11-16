@@ -43,6 +43,8 @@ const cart = (quantity: number): StoreCartView =>
     subtotal: quantity * 520_000,
     discount: null,
     couponCode: null,
+    pricing: 'regular',
+    memberSavings: null,
     customer: null,
   }) as unknown as StoreCartView;
 
@@ -115,6 +117,23 @@ describe('store sale product picker', () => {
     http.expectOne('/api/admin/store-cart/items/12').flush(cart(5));
     await settle(fixture);
     expect(el().querySelector<HTMLInputElement>('.line input')!.value).toBe('5');
+  });
+
+  it('marks a line the server priced at the member price, with its unit price (CLB-03)', () => {
+    const regular = cart(2);
+    const member = {
+      ...regular,
+      pricing: 'member',
+      lines: [{ ...regular.lines[0], unitPrice: 480_000, atMemberPrice: true, lineTotal: 960_000 }],
+    } as StoreCartView;
+    fixture.componentRef.setInput('cart', regular);
+    fixture.detectChanges();
+    expect(el().querySelector('.line')!.textContent).not.toContain('מחיר מועדון');
+    fixture.componentRef.setInput('cart', member);
+    fixture.detectChanges();
+    const tag = el().querySelector('.line .member-price')!;
+    expect(tag.textContent).toContain('מחיר מועדון:');
+    expect(tag.querySelector('bdi')!.textContent).toContain('4,800');
   });
 
   it('Enter in the coupon field applies the coupon like the button', async () => {

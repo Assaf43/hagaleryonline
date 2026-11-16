@@ -137,6 +137,14 @@ export function buildColumns(lookups: ExcelLookups): Column[] {
       help: 'רק במבצע, וגבוה מהמחיר. 0 מבטל את המחיר הקודם.',
       width: 14,
     },
+    {
+      key: 'memberPrice',
+      header: 'מחיר מועדון (₪)',
+      level: 'variant',
+      kind: 'money',
+      help: 'מחיר לחברי המועדון, נמוך מהמחיר. ריק משאיר כמו שהוא. 0 מבטל את מחיר המועדון.',
+      width: 14,
+    },
     { key: 'stock', header: 'מלאי', level: 'variant', kind: 'int', help: 'מספר שלם. ריק בווריאנט חדש: 0.', width: 8 },
     {
       key: 'fulfillment',

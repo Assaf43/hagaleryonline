@@ -42,6 +42,7 @@ export interface SnapshotVariant {
   sku: string;
   price: number;
   compareAtPrice: number | null;
+  memberPrice: number | null;
   fulfillment: FulfillmentMode;
   leadTimeDays: number;
   sortOrder: number;

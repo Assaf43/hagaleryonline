@@ -18,7 +18,8 @@ import type { AccountConsent, AccountOrdersPage, CustomerAddressView, CustomerMe
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { Throttled, WriteThrottleGuard } from '../orders/write-throttle.js';
 import { AccountService } from './account.service.js';
-import { AccountErrorFilter, NoStoreInterceptor } from './customer-auth.controller.js';
+import { NoStoreInterceptor } from '../common/no-store.interceptor.js';
+import { AccountErrorFilter } from './customer-auth.controller.js';
 import type { ResolvedCustomer } from './customer-session.service.js';
 import { CurrentCustomer, CustomerSessionGuard } from './customer-session.guard.js';
 

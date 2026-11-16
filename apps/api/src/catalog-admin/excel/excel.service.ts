@@ -177,6 +177,7 @@ export class ExcelService {
           sku: v.sku,
           price: v.price / 100,
           compareAtPrice: v.compareAtPrice === null ? null : v.compareAtPrice / 100,
+          memberPrice: v.memberPrice === null ? null : v.memberPrice / 100,
           stock: v.stock,
           fulfillment: FULFILLMENT_LABELS_HE[v.fulfillment],
           leadTimeDays: v.leadTimeDays,
@@ -558,6 +559,7 @@ async function buildInput(
     const v: AdminVariant = { ...input.variants[index], options: { ...input.variants[index].options } };
     for (const [key, value] of r.cells) {
       if (key === 'compareAtPrice') v.compareAtPrice = value === 0 ? null : (value as number);
+      else if (key === 'memberPrice') v.memberPrice = value === 0 ? null : (value as number);
       else if (key === 'fulfillment') v.fulfillment = fulfillmentOf(value as string);
       else if (key.startsWith('attr:')) {
         const a = lookups.attributes.find((x) => `attr:${x.code}` === key)!;
@@ -584,6 +586,7 @@ function newVariant(sku: string): AdminVariant {
     sku,
     price: 0,
     compareAtPrice: null,
+    memberPrice: null,
     stock: 0,
     fulfillment: 'in_stock',
     leadTimeDays: 14,

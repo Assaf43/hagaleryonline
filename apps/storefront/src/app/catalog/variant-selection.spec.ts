@@ -48,6 +48,7 @@ function variant(
     sku,
     price,
     compareAtPrice: null,
+    memberPrice: null,
     inStock: fulfillment === 'in_stock',
     fulfillment,
     leadTimeDays: 0,

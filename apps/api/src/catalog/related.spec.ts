@@ -43,6 +43,7 @@ function variant(price: number, widthCm: number, color: string): SnapshotVariant
     sku: `SKU-${variantId}`,
     price,
     compareAtPrice: null,
+    memberPrice: null,
     fulfillment: 'in_stock',
     leadTimeDays: 14,
     sortOrder: 0,

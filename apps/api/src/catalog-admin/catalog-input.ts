@@ -9,7 +9,7 @@ import type {
   FulfillmentMode,
   ImageKindCode,
 } from '@hg/models';
-import { invalid } from './catalog-errors.js';
+import { invalid, memberPriceNotLower } from './catalog-errors.js';
 import { sanitizeDescription } from '../catalog/description-html.js';
 
 /**
@@ -109,6 +109,9 @@ export function parseVariant(raw: unknown, index: number): AdminVariant {
   const compareAtPrice = optionalInt(body, 'compareAtPrice', at('compareAtPrice'), 1, MAX_PRICE);
   // A "before" price lower than the price would show a fake discount.
   if (compareAtPrice !== null && compareAtPrice <= price) throw invalid(at('compareAtPrice'));
+  const memberPrice = optionalInt(body, 'memberPrice', at('memberPrice'), 1, MAX_PRICE);
+  // The club price is a discount: it must stay below the price (the DB has the same CHECK).
+  if (memberPrice !== null && memberPrice >= price) throw memberPriceNotLower(at('memberPrice'));
 
   const fulfillment = body['fulfillment'] as FulfillmentMode;
   if (!FULFILLMENT.includes(fulfillment)) throw invalid(at('fulfillment'));
@@ -126,6 +129,7 @@ export function parseVariant(raw: unknown, index: number): AdminVariant {
     sku,
     price,
     compareAtPrice,
+    memberPrice,
     stock: int(body, 'stock', at('stock'), 0, 100_000),
     fulfillment,
     leadTimeDays: int(body, 'leadTimeDays', at('leadTimeDays'), 0, 365),

@@ -277,6 +277,14 @@ export function toCard(
       ? Math.round((1 - cheapest.price / cheapest.compareAtPrice) * 100)
       : null;
 
+  const hasMember = matching.some((v) => v.memberPrice !== null);
+  // The variant a member pays least for (lowest regular price on a tie): its price is what the member card strikes.
+  const memberBest = matching.reduce((best, v) => {
+    const pay = v.memberPrice ?? v.price;
+    const bestPay = best.memberPrice ?? best.price;
+    return pay < bestPay || (pay === bestPay && v.price < best.price) ? v : best;
+  });
+
   return {
     id: p.id,
     slug: p.slug,
@@ -285,6 +293,8 @@ export function toCard(
     priceFrom: cheapest.price,
     compareAtFrom: discount ? cheapest.compareAtPrice : null,
     discountPercent: discount,
+    memberPriceFrom: hasMember ? (memberBest.memberPrice ?? memberBest.price) : null,
+    memberPriceFromRegular: hasMember ? memberBest.price : null,
     hasPriceRange: new Set(p.variants.map((v) => v.price)).size > 1,
     swatches: swatchesOf(snapshot, p),
     image: cardImage(p, selectedColors),

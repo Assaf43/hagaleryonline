@@ -55,10 +55,11 @@ import {
 } from './variant-dialogs';
 
 /** A variant row as edited on screen: prices in shekels, and a key for tracking unsaved rows. */
-interface VariantRow extends Omit<AdminVariant, 'price' | 'compareAtPrice'> {
+interface VariantRow extends Omit<AdminVariant, 'price' | 'compareAtPrice' | 'memberPrice'> {
   key: number;
   price: number | null;
   compareAtPrice: number | null;
+  memberPrice: number | null;
 }
 
 interface Draft extends Omit<AdminProductInput, 'variants' | 'expectedUpdatedAt' | 'warrantyMonths'> {
@@ -369,6 +370,7 @@ export class ProductFormPage implements OnInit {
           if (change.pricePercent !== undefined && row.price !== null)
             row.price = Math.round(row.price * (1 + change.pricePercent / 100));
           if (change.compareAtPrice !== undefined) row.compareAtPrice = change.compareAtPrice || null;
+          if (change.memberPrice !== undefined) row.memberPrice = change.memberPrice || null;
           if (change.stock !== undefined) row.stock = change.stock;
           if (change.fulfillment !== undefined) row.fulfillment = change.fulfillment;
           if (change.leadTimeDays !== undefined) row.leadTimeDays = change.leadTimeDays;
@@ -440,10 +442,11 @@ export class ProductFormPage implements OnInit {
       },
       goesWithAutofill: this.goesWithAutofill(),
       similarAutofill: this.similarAutofill(),
-      variants: this.rows.map(({ key: _key, price, compareAtPrice, ...v }) => ({
+      variants: this.rows.map(({ key: _key, price, compareAtPrice, memberPrice, ...v }) => ({
         ...v,
         price: toAgorot(price) ?? 0,
         compareAtPrice: toAgorot(compareAtPrice),
+        memberPrice: toAgorot(memberPrice),
         productionDays: v.productionDays ?? null,
         expectedAt: v.expectedAt || null,
       })),
@@ -474,6 +477,7 @@ export class ProductFormPage implements OnInit {
       key: nextKey++,
       price: toShekels(v.price),
       compareAtPrice: toShekels(v.compareAtPrice),
+      memberPrice: toShekels(v.memberPrice),
     }));
     this.selected.set(new Set());
     this.slugTouched = true;
@@ -518,6 +522,7 @@ function emptyVariant(): Omit<VariantRow, 'key'> {
     sku: '',
     price: null,
     compareAtPrice: null,
+    memberPrice: null,
     stock: 0,
     fulfillment: 'in_stock',
     leadTimeDays: 14,

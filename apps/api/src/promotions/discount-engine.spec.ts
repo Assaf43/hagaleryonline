@@ -30,16 +30,24 @@ function rule(patch: Partial<PromotionRule> = {}): PromotionRule {
     usageLimit: null,
     usedCount: 0,
     active: true,
+    membersOnly: false,
+    appliesToMemberPrices: false,
     ...patch,
   };
 }
 const coupon = (patch: Partial<PromotionRule> = {}) => rule({ kind: 'coupon', code: 'SAVE', name: 'קופון', ...patch });
 
 /** Sofas (10) → corner sofas (11); tables (20). */
-const line = (productId: number, categoryPathIds: number[], lineTotal: number): DiscountLine => ({
+const line = (
+  productId: number,
+  categoryPathIds: number[],
+  lineTotal: number,
+  atMemberPrice = false,
+): DiscountLine => ({
   productId,
   categoryPathIds,
   lineTotal,
+  atMemberPrice,
 });
 const cornerSofa = line(1, [10, 11], 300_000);
 const table = line(2, [20], 100_000);
@@ -230,6 +238,59 @@ describe('discount engine (spec §6, CRT-03, decision 70)', () => {
       expect(couponError(coupon({ minSubtotal: 123_456 }), 0, NOW)).toBe('הקופון לא חל על המוצרים בסל');
       expect(couponError(coupon({ minSubtotal: 400_000 }), 400_000, NOW)).toBeNull();
       expect(couponProblem(coupon(), 10_000, NOW)).toBeNull();
+    });
+  });
+
+  describe('member prices and members-only promotions (decisions 92, 94)', () => {
+    /** 4,500 ₪ at its member price, plus a 1,000 ₪ table at the regular price. */
+    const memberSofa = line(1, [10, 11], 450_000, true);
+    const MIXED = [memberSofa, line(2, [20], 100_000)];
+
+    it('a line at its member price is not eligible unless the promotion applies to member prices', () => {
+      expect(eligibleSubtotal(rule(), MIXED)).toBe(100_000);
+      expect(eligibleSubtotal(rule({ appliesToMemberPrices: true }), MIXED)).toBe(550_000);
+      expect(evaluateDiscount(MIXED, [rule({ value: 20 })], null, NOW, { isMember: true }).applied?.amount).toBe(
+        20_000,
+      );
+      expect(
+        evaluateDiscount(MIXED, [rule({ value: 20, appliesToMemberPrices: true })], null, NOW, { isMember: true })
+          .applied?.amount,
+      ).toBe(110_000);
+    });
+
+    it('the minimum counts the eligible lines only', () => {
+      const min = rule({ discountType: 'fixed', value: 10_000, minSubtotal: 200_000 });
+      expect(evaluateDiscount(MIXED, [min], null, NOW, { isMember: true }).applied).toBeNull();
+      const onAll = { ...min, appliesToMemberPrices: true };
+      expect(evaluateDiscount(MIXED, [onAll], null, NOW, { isMember: true }).applied?.amount).toBe(10_000);
+      const code = coupon({ minSubtotal: 200_000 });
+      expect(evaluateDiscount(MIXED, [], code, NOW, { isMember: true }).couponProblem).toBe('below_minimum');
+    });
+
+    it('a members-only automatic promotion is ignored for a guest and applies to a member', () => {
+      const members = rule({ value: 10, membersOnly: true });
+      expect(evaluateDiscount(LINES, [members], null, NOW, { isMember: false }).applied).toBeNull();
+      expect(evaluateDiscount(LINES, [members], null, NOW).applied).toBeNull();
+      expect(evaluateDiscount(LINES, [members], null, NOW, { isMember: true }).applied?.amount).toBe(40_000);
+    });
+
+    it('a members-only coupon entered by a guest is refused with members_only', () => {
+      const code = coupon({ membersOnly: true });
+      const guest = evaluateDiscount(LINES, [], code, NOW, { isMember: false });
+      expect(guest).toMatchObject({ applied: null, couponOutcome: 'invalid', couponProblem: 'members_only' });
+      expect(evaluateDiscount(LINES, [], code, NOW, { isMember: true }).couponOutcome).toBe('applied');
+      expect(couponProblem(code, 400_000, NOW)).toBe('members_only');
+      expect(couponProblem(code, 400_000, NOW, { isMember: true })).toBeNull();
+      expect(couponError(code, 400_000, NOW)).toBe('הקופון מיועד לחברי מועדון בלבד. התחברו כדי להשתמש בו');
+    });
+
+    it('a members-only coupon works once per account', () => {
+      const used = coupon({ membersOnly: true, usedByAccount: 1 });
+      expect(couponProblem(used, 400_000, NOW, { isMember: true })).toBe('exhausted');
+      expect(evaluateDiscount(LINES, [], used, NOW, { isMember: true }).couponProblem).toBe('exhausted');
+      expect(couponProblem({ ...used, usedByAccount: 0 }, 400_000, NOW, { isMember: true })).toBeNull();
+      // Only members-only coupons are limited per account.
+      expect(couponProblem(coupon({ usedByAccount: 3 }), 400_000, NOW)).toBeNull();
     });
   });
 });

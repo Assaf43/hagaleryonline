@@ -12,8 +12,16 @@ export interface CartLine {
   /** Hebrew labels of the variant's options in axis order (color, fabric, size, chaise side). */
   optionLabels: string[];
   image: ImageRef | null;
+  /**
+   * The unit price this cart is charged (agorot): the member price when `atMemberPrice`, else the current regular
+   * price. An unavailable line shows its regular price.
+   */
   unitPrice: number;
   compareAtPrice: number | null;
+  /** The variant's club member price (decision 91), public information; null when it has none. */
+  memberPrice: number | null;
+  /** `unitPrice` is the member price: the cart is a member's and member pricing won (decision 92). */
+  atMemberPrice: boolean;
   quantity: number;
   lineTotal: number;
   /** Most units this line may hold right now (stock for in-stock variants, 10 otherwise). */
@@ -63,7 +71,20 @@ export interface CartView {
    * (below its minimum, or beaten by an automatic promotion) stays, with a `coupon` notice; null when none.
    */
   couponCode: string | null;
+  /**
+   * Which pricing the cart is charged at (decision 92): a member's cart is priced at member prices and at regular
+   * prices and the lower total wins (tie → member); a guest cart is always `regular`.
+   */
+  pricing: CartPricingKind;
+  /**
+   * Guest hint (spec §9): how much less a club member would pay for the same cart before shipping (agorot); null for a
+   * member's cart or when a member would not pay less.
+   */
+  memberSavings: number | null;
 }
+
+/** The pricing a cart or an order was charged at (decision 92). */
+export type CartPricingKind = 'regular' | 'member';
 
 export interface AddCartItemRequest {
   variantId: number;

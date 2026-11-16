@@ -3,18 +3,24 @@ import type { CartErrorCode, CartLine, CartNotice, CartView, CouponProblem, Fulf
 import { FULFILLMENT } from '../catalog/catalog.repository.js';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { couponError, couponProblemMessageHe, eligibleSubtotal } from '../promotions/discount-engine.js';
-import { discountLines, normalizeCouponCode, PromotionsService } from '../promotions/promotions.service.js';
+import { memberSavings, priceCart, regularDiscountLines, unpricedLine } from '../promotions/cart-pricing.js';
+import {
+  couponError,
+  couponProblemMessageHe,
+  eligibleSubtotal,
+  type DiscountLine,
+} from '../promotions/discount-engine.js';
+import { normalizeCouponCode, PromotionsService } from '../promotions/promotions.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingService } from '../shipping/shipping.service.js';
 import { availableStock } from './available-stock.js';
-import { computeCartLines, findShown, shipmentItems } from './cart-lines.js';
+import { computeCartLines, findShown, pricingLine, shipmentItems } from './cart-lines.js';
 import { clampQuantity, deliveryEstimate, lineLimit } from './cart-rules.js';
 import { CART_TTL_MS, hashToken, newToken } from './cart-token.js';
 import type { CatalogSnapshot } from '../catalog/catalog-snapshot.js';
 import { OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { lockAccountCart, lockCart } from '../orders/locks.js';
-import { lapseStoreConfirmation } from '../store-orders/store-confirmation.js';
+import { isConfirmationLive, lapseStoreConfirmation } from '../store-orders/store-confirmation.js';
 
 const CLEANUP_EVERY_MS = 24 * 60 * 60_000;
 
@@ -80,6 +86,8 @@ function emptyView(): CartView {
     shippingFrom: null,
     discount: null,
     couponCode: null,
+    pricing: 'regular',
+    memberSavings: null,
   };
 }
 
@@ -209,12 +217,27 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   async applyCoupon(owner: CartOwner, rawCode: string): Promise<CartResult> {
     const code = normalizeCouponCode(rawCode);
     const cart = await this.resolve(owner);
-    const lines = cart
-      ? discountLines(await computeCartLines(this.prisma, cart.id, await this.catalog.snapshot()), (l) => l.quantity)
+    // Checked at regular prices: the most lenient of the two pricings (decision 92) — a coupon that fits only at
+    // regular prices is still a valid entry, and the view then says whether member pricing beat it.
+    const lines: DiscountLine[] = cart
+      ? regularDiscountLines(
+          (await computeCartLines(this.prisma, cart.id, await this.catalog.snapshot()))
+            .filter((l) => l.available)
+            .map((l) => pricingLine(l, l.quantity)),
+        )
       : [];
-    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon against it.
-    const found = await this.promotions.coupon(this.prisma, code, { cartId: cart?.id });
-    const message = couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date());
+    const buyer = cart ? await this.buyer(cart.id, owner) : { customerId: null, isMember: false };
+    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon against it; a members-only
+    // coupon also counts the account's own uses (once per account, decision 94).
+    const found = await this.promotions.coupon(
+      this.prisma,
+      code,
+      { cartId: cart?.id },
+      buyer.isMember ? buyer.customerId : null,
+    );
+    const message = couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date(), {
+      isMember: buyer.isMember,
+    });
     if (message) throw new CouponRefused(message);
     // A valid coupon has eligible lines, so there is a cart.
     await this.prisma.cart.update({ where: { id: cart!.id }, data: { couponCode: code } });
@@ -375,17 +398,36 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
     return { price: variant.price, fulfillment, limit: lineLimit(fulfillment, stock) };
   }
 
-  /** Recomputes every line (spec §3.1): price changes, limits (clamped and saved) and visibility. */
+  /**
+   * Who the cart is priced for (decision 90, spec §9): a signed-in account's cart, or a store cart with a live
+   * confirmed customer, is a member's; a guest cart (or a store cart without a confirmed customer) never is.
+   * `customerId` is the account the welcome benefit and the once-per-account coupons are counted for.
+   */
+  private async buyer(cartId: string, owner: CartOwner): Promise<{ customerId: string | null; isMember: boolean }> {
+    if (!owner.store) return { customerId: owner.customerId, isMember: owner.customerId !== null };
+    const cart = await this.prisma.cart.findUniqueOrThrow({
+      where: { id: cartId },
+      select: { storeCustomerId: true, storeConfirmedAt: true, updatedAt: true },
+    });
+    // A store cart is priced for the customer the seller attached (the welcome benefit, as before) and is a member's
+    // cart while that customer's confirmation is live (spec §9).
+    return {
+      customerId: cart.storeCustomerId,
+      isMember: cart.storeCustomerId !== null && isConfirmationLive(cart),
+    };
+  }
+
+  /**
+   * Recomputes every line (spec §3.1): price changes, limits (clamped and saved) and visibility. Line totals, subtotal
+   * and discount come from `priceCart` only (decision 92): member pricing for a member's cart when it is not dearer,
+   * and for a guest the hint of what a member would save on the same cart.
+   */
   private async buildView(cartId: string, requestNotices: CartNotice[], owner: CartOwner): Promise<CartView> {
     const computed = await computeCartLines(this.prisma, cartId, await this.catalog.snapshot());
 
-    const lines: CartLine[] = [];
     const notices: CartNotice[] = [...requestNotices];
     for (const line of computed) {
       const { variantId, available, shown, limit, fulfillment } = line;
-      // An unavailable line keeps its saved quantity (shown, but left out of totals and checkout).
-      const quantity = available ? line.quantity : line.storedQuantity;
-
       if (!available) {
         // Shown but nothing left to sell → sold out; no longer shown → unavailable.
         notices.push({
@@ -393,55 +435,50 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
           kind: 'unavailable',
           messageHe: shown ? `${line.modelName} אזל מהמלאי` : `${line.modelName} לא זמין יותר`,
         });
-      } else {
-        const fix: { quantity?: number; unitPriceAtAdd?: number } = {};
-        if (line.storedQuantity > limit) {
-          fix.quantity = limit;
-          notices.push(clampedNotice(variantId, fulfillment, limit));
-        }
-        if (line.unitPrice !== line.unitPriceAtAdd) {
-          // Shown once: from now on the new price is the line's reference price.
-          fix.unitPriceAtAdd = line.unitPrice;
-          notices.push({ variantId, kind: 'price_changed', messageHe: `המחיר של ${line.modelName} עודכן` });
-        }
-        if (Object.keys(fix).length > 0)
-          await this.prisma.cartItem.update({ where: { cartId_variantId: { cartId, variantId } }, data: fix });
+        continue;
       }
-
-      lines.push({
-        variantId,
-        productSlug: line.productSlug,
-        modelName: line.modelName,
-        nameHe: line.nameHe,
-        optionLabels: line.optionLabels,
-        image: line.image,
-        unitPrice: line.unitPrice,
-        compareAtPrice: line.compareAtPrice,
-        quantity,
-        lineTotal: line.unitPrice * quantity,
-        maxQuantity: limit,
-        fulfillment,
-        leadTimeDays: line.leadTimeDays,
-        available,
-        // Shown but nothing left to sell → sold out; no longer shown → hidden.
-        unavailableReason: available ? null : shown ? 'sold_out' : 'hidden',
-      });
+      const fix: { quantity?: number; unitPriceAtAdd?: number } = {};
+      if (line.storedQuantity > limit) {
+        fix.quantity = limit;
+        notices.push(clampedNotice(variantId, fulfillment, limit));
+      }
+      if (line.unitPrice !== line.unitPriceAtAdd) {
+        // Shown once: from now on the new price is the line's reference price.
+        fix.unitPriceAtAdd = line.unitPrice;
+        notices.push({ variantId, kind: 'price_changed', messageHe: `המחיר של ${line.modelName} עודכן` });
+      }
+      if (Object.keys(fix).length > 0)
+        await this.prisma.cartItem.update({ where: { cartId_variantId: { cartId, variantId } }, data: fix });
     }
 
     // The one discount (spec §6), on the available lines at the quantities shown. A coupon that does not apply now
     // gets a notice; one that never will again (unknown, expired, used up) is also removed, so its notice shows once.
-    const { couponCode, storeCustomerId } = await this.prisma.cart.findUniqueOrThrow({
+    const { couponCode } = await this.prisma.cart.findUniqueOrThrow({
       where: { id: cartId },
-      select: { couponCode: true, storeCustomerId: true },
+      select: { couponCode: true },
     });
-    // A store cart is priced for the customer the seller attached; otherwise the signed-in account.
-    const customerId = owner.store ? storeCustomerId : owner.customerId;
-    const discount = await this.promotions.evaluate(
-      this.prisma,
-      discountLines(computed, (l) => l.quantity),
-      couponCode,
-      { cartId, customer: await this.promotions.welcomeCustomer(this.prisma, customerId) },
-    );
+    const { customerId, isMember } = await this.buyer(cartId, owner);
+    const customer = await this.promotions.welcomeCustomer(this.prisma, customerId);
+    const available = computed.filter((l) => l.available);
+    const pricingLines = available.map((l) => pricingLine(l, l.quantity));
+    const priced = await priceCart({
+      lines: pricingLines,
+      isMember,
+      evaluate: (lines) => this.promotions.evaluate(this.prisma, lines, couponCode, { cartId, customer, isMember }),
+    });
+    // The guest hint: the same cart priced as a member's (members-only promotions included, no account to count).
+    const savings = isMember
+      ? null
+      : memberSavings(
+          priced,
+          await priceCart({
+            lines: pricingLines,
+            isMember: true,
+            evaluate: (lines) =>
+              this.promotions.evaluate(this.prisma, lines, couponCode, { cartId, customer: null, isMember: true }),
+          }),
+        );
+    const discount = priced.discount;
     let code = couponCode;
     if (code && discount.couponProblem) {
       notices.push({
@@ -456,16 +493,45 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const counted = lines.filter((l) => l.available);
+    const pricedLines = new Map(available.map((l, i) => [l.variantId, priced.lines[i]]));
+    const lines: CartLine[] = computed.map((line) => {
+      const { variantId, available, shown, limit, fulfillment } = line;
+      // An unavailable line keeps its saved quantity (shown at its regular price, but left out of totals and checkout).
+      const quantity = available ? line.quantity : line.storedQuantity;
+      const price = pricedLines.get(variantId) ?? unpricedLine(line.unitPrice, quantity);
+      return {
+        variantId,
+        productSlug: line.productSlug,
+        modelName: line.modelName,
+        nameHe: line.nameHe,
+        optionLabels: line.optionLabels,
+        image: line.image,
+        unitPrice: price.unitPrice,
+        compareAtPrice: line.compareAtPrice,
+        memberPrice: line.memberPrice,
+        atMemberPrice: price.atMemberPrice,
+        quantity,
+        lineTotal: price.lineTotal,
+        maxQuantity: limit,
+        fulfillment,
+        leadTimeDays: line.leadTimeDays,
+        available,
+        // Shown but nothing left to sell → sold out; no longer shown → hidden.
+        unavailableReason: available ? null : shown ? 'sold_out' : 'hidden',
+      };
+    });
+
     return {
       lines,
-      itemCount: counted.reduce((sum, l) => sum + l.quantity, 0),
-      subtotal: counted.reduce((sum, l) => sum + l.lineTotal, 0),
+      itemCount: available.reduce((sum, l) => sum + l.quantity, 0),
+      subtotal: priced.subtotal,
       deliveryEstimate: deliveryEstimate(lines),
       notices,
       shippingFrom: await this.shipping.shippingFrom(shipmentItems(computed)),
       discount: discount.applied,
       couponCode: code,
+      pricing: priced.pricing,
+      memberSavings: savings,
     };
   }
 }

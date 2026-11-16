@@ -12,6 +12,7 @@ import type {
   CatalogStructure,
   ImportReport,
   OneTimeLink,
+  ProductDetail,
   ProductListResponse,
   TotpSetup,
 } from '@hg/models';
@@ -66,6 +67,7 @@ describe('Catalog admin (e2e)', () => {
     sku,
     price: 389_000,
     compareAtPrice: null,
+    memberPrice: null,
     stock: 3,
     fulfillment: 'in_stock',
     leadTimeDays: 14,
@@ -462,6 +464,59 @@ describe('Catalog admin (e2e)', () => {
       const thumb = (id: number) => list.items.find((i) => i.id === id)?.thumbnailUrl;
       expect(thumb(ids.b)).toEqual(expect.any(String));
       expect(thumb(ids.c)).toBeNull();
+    });
+  });
+
+  it('member price must stay lower than the price, in the form and in a price cut (CLB-03)', async () => {
+    const current = (await editor.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    const withMember = (patch: Partial<AdminVariant>[]) => current.variants.map((v, i) => ({ ...v, ...patch[i] }));
+
+    const equal = await editor
+      .put(`/catalog/products/${productId}`, forSave(current, { variants: withMember([{ memberPrice: 369_000 }]) }))
+      .expect(400);
+    expect(equal.body).toMatchObject({ code: 'member_price_not_lower', field: 'variants.0.memberPrice' });
+    const higher = await editor
+      .put(`/catalog/products/${productId}`, forSave(current, { variants: withMember([{}, { memberPrice: 999_000 }]) }))
+      .expect(400);
+    expect(higher.body).toMatchObject({ code: 'member_price_not_lower', field: 'variants.1.memberPrice' });
+
+    // Saved: the public product page and card show it; the card also keeps the normal price.
+    await editor
+      .put(`/catalog/products/${productId}`, forSave(current, { variants: withMember([{ memberPrice: 340_000 }]) }))
+      .expect(200);
+    const page = (await storefront('/products/zzbreeze-three-seater-sofa').expect(200)).body as ProductDetail;
+    expect(page.variants.find((v) => v.sku === 'ZZBREEZE-220-BG')!.memberPrice).toBe(340_000);
+    expect(page.variants.find((v) => v.sku === 'ZZBREEZE-220-GR')!.memberPrice).toBeNull();
+    const card = (
+      (await storefront('/products?q=zzbreeze&pageSize=60').expect(200)).body as ProductListResponse
+    ).items.find((i) => i.modelName === 'ZZBREEZE')!;
+    expect(card).toMatchObject({ priceFrom: 369_000, memberPriceFrom: 340_000, memberPriceFromRegular: 369_000 });
+
+    // Cutting the price under the member price (what a bulk price edit does) is the same error.
+    const saved = (await editor.get(`/catalog/products/${productId}`).expect(200)).body as AdminProduct;
+    const cut = await editor
+      .put(
+        `/catalog/products/${productId}`,
+        forSave(saved, { variants: saved.variants.map((v, i) => (i === 0 ? { ...v, price: 330_000 } : v)) }),
+      )
+      .expect(400);
+    expect(cut.body).toMatchObject({ code: 'member_price_not_lower', field: 'variants.0.memberPrice' });
+
+    // The database refuses it too, whatever the service does.
+    await expect(
+      prisma.variant.updateMany({ where: { productId, sku: 'ZZBREEZE-220-BG' }, data: { memberPrice: 400_000 } }),
+    ).rejects.toThrow();
+
+    await editor
+      .put(
+        `/catalog/products/${productId}`,
+        forSave(saved, { variants: saved.variants.map((v) => ({ ...v, memberPrice: null })) }),
+      )
+      .expect(200);
+    const cleared = (await storefront('/products?q=zzbreeze&pageSize=60').expect(200)).body as ProductListResponse;
+    expect(cleared.items.find((i) => i.modelName === 'ZZBREEZE')!).toMatchObject({
+      memberPriceFrom: null,
+      memberPriceFromRegular: null,
     });
   });
 

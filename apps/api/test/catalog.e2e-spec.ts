@@ -85,6 +85,8 @@ describe('Catalog API (e2e)', () => {
     expect(Number.isInteger(variant.id) && variant.id > 0).toBe(true);
     expect(new Set(product.variants.map((v) => v.id)).size).toBe(product.variants.length);
     expect(variant.options).toEqual({ color: 'beige', fabric: 'woven', size: '300', 'chaise-side': 'right' });
+    // No member prices in the seed: the field is there and empty.
+    expect(variant.memberPrice).toBeNull();
     expect(variant.dimensions).toMatchObject({ widthCm: 300, depthCm: 95, seatDepthCm: 58, chaiseDepthCm: 165 });
     expect(product.specs.find((s) => s.code === 'style')?.valuesHe).toEqual(
       expect.arrayContaining(['מודרני', 'נורדי']),

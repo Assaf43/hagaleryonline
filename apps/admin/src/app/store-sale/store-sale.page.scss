@@ -90,6 +90,11 @@ h2:focus {
   font-weight: 700;
 }
 
+.member-price {
+  display: block;
+  font-size: var(--font-small);
+}
+
 .summary-lines {
   list-style: none;
   margin: 0;

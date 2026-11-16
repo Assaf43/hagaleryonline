@@ -61,6 +61,11 @@
                 <li>
                   <span>
                     <bdi dir="ltr">{{ line.modelName }}</bdi> {{ line.nameHe }} × <bdi>{{ line.quantity }}</bdi>
+                    @if (line.atMemberPrice) {
+                      <span class="muted member-price"
+                        >{{ memberLabel }} <bdi>{{ price(line.unitPrice) }}</bdi></span
+                      >
+                    }
                   </span>
                   <bdi>{{ price(line.lineTotal) }}</bdi>
                 </li>

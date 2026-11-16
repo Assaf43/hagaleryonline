@@ -108,14 +108,18 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
       shippingFrom: null,
       discount: null,
       couponCode: null,
+      pricing: 'regular',
+      memberSavings: null,
     });
     expect(res.headers['set-cookie']).toBeUndefined();
+    expect(res.headers['cache-control']).toBe('no-store');
     expect(await prisma.cart.count()).toBe(0);
   });
 
   it('POST creates the cart and sets the httpOnly hg_cart cookie; only its hash is stored', async () => {
     const b = browser();
     const res = await b.add(inStock, 1).expect(200);
+    expect(res.headers['cache-control']).toBe('no-store');
     const cookie = cartCookie(res);
     expect(cookie).toBeDefined();
     expect(cookie).toMatch(/HttpOnly/i);

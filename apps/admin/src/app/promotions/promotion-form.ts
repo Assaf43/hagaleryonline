@@ -36,6 +36,9 @@ export interface PromotionForm {
   active: boolean;
   /** "הטבת הצטרפות" (decision 79): only for an automatic promotion. */
   isWelcome: boolean;
+  /** "חברי מועדון בלבד" and "חל גם על מחירי מועדון" (decision 92): either kind. */
+  membersOnly: boolean;
+  appliesToMemberPrices: boolean;
 }
 
 /** The form's fields that can show an error, in the order they appear (the first one gets the focus). */
@@ -118,6 +121,8 @@ export function emptyForm(): PromotionForm {
     usageLimit: '',
     active: true,
     isWelcome: false,
+    membersOnly: false,
+    appliesToMemberPrices: false,
   };
 }
 
@@ -150,6 +155,8 @@ export function toForm(p: AdminPromotion): PromotionForm {
     usageLimit: p.usageLimit === null ? '' : String(p.usageLimit),
     active: p.active,
     isWelcome: p.isWelcome,
+    membersOnly: p.membersOnly,
+    appliesToMemberPrices: p.appliesToMemberPrices,
   };
 }
 
@@ -222,6 +229,8 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
       active: f.active,
       // Always sent: a coupon is never one (the API refuses it), and saving it clears it on any other promotion.
       isWelcome: f.kind === 'automatic' && f.isWelcome,
+      membersOnly: f.membersOnly,
+      appliesToMemberPrices: f.appliesToMemberPrices,
     },
     errors: {},
   };

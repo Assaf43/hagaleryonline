@@ -162,6 +162,14 @@ export class PromotionFormPage {
     this.form.update((f) => ({ ...f, active }));
   }
 
+  protected setMembersOnly(membersOnly: boolean) {
+    this.form.update((f) => ({ ...f, membersOnly }));
+  }
+
+  protected setAppliesToMemberPrices(appliesToMemberPrices: boolean) {
+    this.form.update((f) => ({ ...f, appliesToMemberPrices }));
+  }
+
   protected setWelcome(isWelcome: boolean) {
     this.form.update((f) => ({ ...f, isWelcome }));
   }

@@ -5,7 +5,7 @@
  * earlier run of the same file. Phones are `05` + this (10 digits).
  *
  * Digits in use: 1 account, 2 customer-auth, 3 customer-unverified-email, 4 promotions, 5 store-customer,
- * 6 store-orders, 7 marketing-consent.
+ * 6 store-orders, 7 marketing-consent, 8 member-pricing.
  */
 export function uniqueIds(fileDigit: number): () => string {
   if (!Number.isInteger(fileDigit) || fileDigit < 0 || fileDigit > 9) throw new Error('fileDigit must be 0-9');

@@ -18,6 +18,8 @@ const COUPON: AdminPromotion = {
   usageLimit: 100,
   usedCount: 7,
   isWelcome: false,
+  membersOnly: false,
+  appliesToMemberPrices: false,
   active: true,
   createdAt: '2026-11-01T10:00:00.000Z',
   updatedAt: '2026-11-01T10:00:00.000Z',
@@ -103,6 +105,8 @@ describe('promotion form', () => {
       usageLimit: 100,
       active: true,
       isWelcome: false,
+      membersOnly: false,
+      appliesToMemberPrices: false,
     });
     expect(promotionInput(valid({ code: ' sale‏10 ' })).input?.code).toBe('SALE10');
     // Whole shekels: "150" and "150.00" are fine.
@@ -129,6 +133,21 @@ describe('promotion form', () => {
     });
     // A coupon is never a welcome benefit, whatever the hidden box says.
     expect(promotionInput(valid({ kind: 'coupon', isWelcome: true })).input?.isWelcome).toBe(false);
+  });
+
+  it('the club switches: read from the promotion, sent for either kind', () => {
+    expect(emptyForm()).toMatchObject({ membersOnly: false, appliesToMemberPrices: false });
+    expect(toForm({ ...COUPON, membersOnly: true, appliesToMemberPrices: true })).toMatchObject({
+      membersOnly: true,
+      appliesToMemberPrices: true,
+    });
+    expect(promotionInput(valid({ membersOnly: true })).input).toMatchObject({
+      membersOnly: true,
+      appliesToMemberPrices: false,
+    });
+    expect(
+      promotionInput(valid({ kind: 'automatic', membersOnly: true, appliesToMemberPrices: true })).input,
+    ).toMatchObject({ membersOnly: true, appliesToMemberPrices: true });
   });
 
   it('automatic promotions have no code and no usage limit', () => {

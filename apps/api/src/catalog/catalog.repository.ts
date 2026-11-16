@@ -115,6 +115,7 @@ export class CatalogRepository {
             sku: v.sku,
             price: v.price,
             compareAtPrice: v.compareAtPrice,
+            memberPrice: v.memberPrice,
             fulfillment: FULFILLMENT[v.fulfillment],
             leadTimeDays: v.leadTimeDays,
             sortOrder: v.sortOrder,
@@ -232,6 +233,7 @@ export class CatalogRepository {
         sku: v.sku,
         price: v.price,
         compareAtPrice: v.compareAtPrice,
+        memberPrice: v.memberPrice,
         inStock:
           v.fulfillment !== DbFulfillment.OUT_OF_STOCK && (v.fulfillment !== DbFulfillment.IN_STOCK || v.stock > 0),
         fulfillment: FULFILLMENT[v.fulfillment],

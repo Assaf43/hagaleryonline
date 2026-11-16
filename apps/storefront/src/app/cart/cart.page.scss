@@ -183,3 +183,21 @@ h1 {
   border: var(--border-width) solid var(--color-border);
   cursor: not-allowed;
 }
+
+.member-label {
+  margin-inline-start: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.member-hint {
+  margin: 0;
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+
+  a {
+    color: var(--color-text);
+    font-weight: 600;
+    text-decoration: underline;
+  }
+}

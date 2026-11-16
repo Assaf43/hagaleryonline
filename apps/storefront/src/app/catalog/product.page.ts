@@ -24,6 +24,8 @@ import { AddToCart } from './add-to-cart';
 import { DeliveryLine } from './delivery-line';
 import { FavoriteButton } from './favorite-button';
 import { galleryImages } from './gallery-images';
+import { JoinBox } from './member-join-box';
+import { Viewer, memberPriceView } from './member-price';
 import { PriceBlock } from './price-block';
 import { ProductDetails } from './product-details';
 import { ProductGallery } from './product-gallery';
@@ -60,6 +62,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
     ProductGallery,
     VariantPicker,
     PriceBlock,
+    JoinBox,
     DeliveryLine,
     ProductDetails,
     ProductRow,
@@ -111,6 +114,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
               </div>
 
               <hg-price-block [variant]="v" />
+              <hg-member-join-box [variant]="v" />
 
               @if (visibleAxes().length) {
                 <hg-variant-picker
@@ -132,7 +136,7 @@ function toRecord(map: ParamMap): Record<string, string | undefined> {
               />
               <hg-sticky-buy-bar
                 [target]="buy.button().nativeElement"
-                [price]="v.price"
+                [price]="stickyPrice()"
                 [disabled]="!buy.canAdd()"
                 [error]="buy.errorMessage()"
                 (buy)="buy.add()"
@@ -227,6 +231,12 @@ export class ProductPage {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly maxQuantity = MAX_QUANTITY;
+  private readonly viewer = inject(Viewer);
+  /** What the sticky bar shows: what this viewer pays (the member price for a member, decided in the browser). */
+  protected readonly stickyPrice = computed(() => {
+    const v = this.variant();
+    return v ? memberPriceView(v.price, v.compareAtPrice, v.memberPrice, this.viewer.isMember()).main : 0;
+  });
 
   readonly product = signal<ProductDetail | null>(null);
   /** The variant the URL (or the last pick) resolves to. */

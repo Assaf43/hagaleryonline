@@ -261,7 +261,7 @@
     }
 
     @if (!coupon()) {
-      <div class="welcome">
+      <div class="switch-row">
         <span class="option">
           <input
             type="checkbox"
@@ -277,6 +277,38 @@
         </p>
       </div>
     }
+
+    <div class="switch-row">
+      <span class="option">
+        <input
+          type="checkbox"
+          id="promo-members-only"
+          aria-describedby="promo-members-only-hint"
+          [checked]="form().membersOnly"
+          (change)="setMembersOnly($any($event.target).checked)"
+        />
+        <label for="promo-members-only">חברי מועדון בלבד</label>
+      </span>
+      <p class="muted" id="promo-members-only-hint">
+        רק לקוחות מחוברים שהם חברי מועדון. קופון לחברים בלבד תקף פעם אחת לכל חשבון.
+      </p>
+    </div>
+
+    <div class="switch-row">
+      <span class="option">
+        <input
+          type="checkbox"
+          id="promo-member-prices"
+          aria-describedby="promo-member-prices-hint"
+          [checked]="form().appliesToMemberPrices"
+          (change)="setAppliesToMemberPrices($any($event.target).checked)"
+        />
+        <label for="promo-member-prices">חל גם על מחירי מועדון</label>
+      </span>
+      <p class="muted" id="promo-member-prices-hint">
+        כשהמתג כבוי, שורות שנמכרות במחיר מועדון לא יקבלו את ההנחה הזו (הלקוח ישלם את הסכום הנמוך מבין השניים).
+      </p>
+    </div>
 
     <label class="option active">
       <input type="checkbox" [checked]="form().active" (change)="setActive($any($event.target).checked)" />

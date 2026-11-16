@@ -80,6 +80,13 @@ export interface ProductCard {
   /** compare-at price of that same variant, when on sale. */
   compareAtFrom: number | null;
   discountPercent: number | null;
+  /** Lowest `memberPrice ?? price` over the variants on the card; null when none of them has a member price. */
+  memberPriceFrom: number | null;
+  /**
+   * Current regular price of the variant that gives `memberPriceFrom` (lowest regular price on a tie); null when
+   * `memberPriceFrom` is null. A member's card strikes this value, only when it is above the member price.
+   */
+  memberPriceFromRegular: number | null;
   /** True when variants differ in price ("החל מ"). */
   hasPriceRange: boolean;
   swatches: Swatch[];
@@ -146,6 +153,8 @@ export interface VariantDetail {
   sku: string;
   price: number;
   compareAtPrice: number | null;
+  /** Club member price in agorot, lower than `price`; null = none. */
+  memberPrice: number | null;
   inStock: boolean;
   fulfillment: FulfillmentMode;
   leadTimeDays: number;

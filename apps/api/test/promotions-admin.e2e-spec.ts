@@ -249,6 +249,46 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     await owner.put('/promotions/99999999', coupon({ code: 'ZZNOWHERE' })).expect(404);
   });
 
+  it('round-trips membersOnly and appliesToMemberPrices, audited; missing keeps them on edit', async () => {
+    const plain = await create(coupon({ name: 'ZZ ללא מועדון', code: 'ZZCLUB0' }));
+    expect(plain).toMatchObject({ membersOnly: false, appliesToMemberPrices: false });
+    const club = await create(
+      coupon({ name: 'ZZ מועדון', code: 'ZZCLUB1', membersOnly: true, appliesToMemberPrices: true }),
+    );
+    expect(club).toMatchObject({ membersOnly: true, appliesToMemberPrices: true });
+    const row = await prisma.promotion.findUniqueOrThrow({ where: { id: club.id } });
+    expect(row).toMatchObject({ membersOnly: true, appliesToMemberPrices: true });
+    const made = (await audit()).find((e) => e.action === 'promotion.create' && e.entityId === String(club.id));
+    expect(made?.after).toMatchObject({ 'חברי מועדון בלבד': 'כן', 'חל גם על מחירי מועדון': 'כן' });
+
+    const off = (
+      await owner
+        .put(
+          `/promotions/${club.id}`,
+          coupon({ name: 'ZZ מועדון', code: 'ZZCLUB1', membersOnly: false, appliesToMemberPrices: true }),
+        )
+        .expect(200)
+    ).body as AdminPromotion;
+    expect(off).toMatchObject({ membersOnly: false, appliesToMemberPrices: true });
+    const entry = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(club.id));
+    expect(entry?.before).toEqual({ 'חברי מועדון בלבד': 'כן' });
+    expect(entry?.after).toEqual({ 'חברי מועדון בלבד': 'לא' });
+
+    // An edit without the keys (an older form) keeps them.
+    const kept = (
+      await owner.put(`/promotions/${club.id}`, coupon({ name: 'ZZ מועדון', code: 'ZZCLUB1', value: 12 })).expect(200)
+    ).body as AdminPromotion;
+    expect(kept).toMatchObject({ value: 12, membersOnly: false, appliesToMemberPrices: true });
+
+    const bad = await owner.post('/promotions', { ...coupon({ code: 'ZZCLUB2' }), membersOnly: 'yes' }).expect(400);
+    expect(bad.body).toMatchObject({ code: 'invalid', field: 'membersOnly' });
+    await owner.post('/promotions', { ...coupon({ code: 'ZZCLUB3' }), appliesToMemberPrices: 1 }).expect(400);
+
+    // A welcome benefit may also be members-only (harmless: it is for signed-in customers anyway).
+    const welcome = await create(automatic({ name: 'ZZ הטבה מועדון', isWelcome: true, membersOnly: true }));
+    expect(welcome).toMatchObject({ isWelcome: true, membersOnly: true });
+  });
+
   it('deactivates (no delete), audits it, and the coupon stops applying', async () => {
     const created = await create(coupon({ name: 'ZZ להשבתה', code: 'ZZOFF' }));
     const off = (await owner.post(`/promotions/${created.id}/deactivate`).expect(200)).body as AdminPromotion;

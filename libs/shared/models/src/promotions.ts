@@ -25,7 +25,17 @@ export function normalizeCouponCode(code: string): string {
 
 /** Why an entered coupon gives no discount. */
 export type CouponProblem =
-  'unknown' | 'not_started' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
+  | 'unknown'
+  | 'not_started'
+  | 'expired'
+  | 'below_minimum'
+  | 'exhausted'
+  | 'not_applicable'
+  | 'lost'
+  /** Member prices (decision 92) beat the entered coupon: no promotion is involved. */
+  | 'lost_to_member_prices'
+  /** A members-only coupon (decision 94) entered without an account. */
+  | 'members_only';
 
 /**
  * `GET /api/promotions/welcome` (public, spec §6.4): the Hebrew name of the active welcome promotion (active and
@@ -58,6 +68,8 @@ export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>,
   exhausted: 'הקופון נוצל במלואו',
   not_applicable: 'הקופון לא חל על המוצרים בסל',
   lost: 'המבצע הנוכחי משתלם יותר מהקופון',
+  lost_to_member_prices: 'מחירי המועדון משתלמים יותר מהקופון, ולכן הקופון לא הופעל',
+  members_only: 'הקופון מיועד לחברי מועדון בלבד. התחברו כדי להשתמש בו',
 };
 
 /** "הקופון תקף מסכום של {price}"; `price` is the formatted minimum, e.g. "1,000 ₪". */
@@ -127,6 +139,10 @@ export interface AdminPromotion {
   active: boolean;
   /** "הטבת הצטרפות" (decision 79): automatic only; the first paid order of each account. */
   isWelcome: boolean;
+  /** "חברי מועדון בלבד" (decision 92): only signed-in members; a coupon works once per account. */
+  membersOnly: boolean;
+  /** "חל גם על מחירי מועדון": off = lines sold at a member price are not discounted by this promotion. */
+  appliesToMemberPrices: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -150,6 +166,9 @@ export interface AdminPromotionInput {
    * it on every other promotion (each change audited). Missing: false on create, unchanged on edit.
    */
   isWelcome?: boolean;
+  /** Missing: false on create, unchanged on edit. 400 when not a boolean. */
+  membersOnly?: boolean;
+  appliesToMemberPrices?: boolean;
 }
 
 /** GET /api/admin/promotions/categories: every category in tree order, for the category picker. */

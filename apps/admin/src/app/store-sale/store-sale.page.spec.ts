@@ -26,6 +26,8 @@ const line = {
   image: null,
   unitPrice: 500_000,
   compareAtPrice: null,
+  memberPrice: null,
+  atMemberPrice: false,
   quantity: 1,
   lineTotal: 500_000,
   maxQuantity: 5,
@@ -45,6 +47,8 @@ const cartWith = (c: StoreCustomer | null): StoreCartView =>
     shippingFrom: null,
     discount: { labelHe: 'הנחת קופון', amount: 50_000, source: 'coupon', code: 'X' },
     couponCode: 'X',
+    pricing: 'regular',
+    memberSavings: null,
     customer: c,
   }) as unknown as StoreCartView;
 
@@ -217,6 +221,21 @@ describe('store sale page', () => {
     // The marketing checkbox is not pre-checked and "לתשלום" waits for the terms.
     expect(el(fixture).querySelector<HTMLInputElement>('input[name="marketing"]')!.checked).toBe(false);
     expect(el(fixture).querySelector<HTMLButtonElement>('.pay')!.disabled).toBe(true);
+  });
+
+  it('marks a line priced at the member price in the summary, with its unit price (CLB-03)', async () => {
+    const memberCart = {
+      ...cartWith(customer),
+      pricing: 'member',
+      lines: [{ ...line, unitPrice: 450_000, atMemberPrice: true, lineTotal: 450_000 }],
+    } as unknown as StoreCartView;
+    const fixture = await open(memberCart);
+    fixture.componentInstance.delivery.set(delivery);
+    fixture.componentInstance.goTo('summary');
+    await settle(fixture);
+    const tag = el(fixture).querySelector('.summary-lines .member-price')!;
+    expect(tag.textContent).toContain('מחיר מועדון:');
+    expect(tag.querySelector('bdi')!.textContent).toContain('4,500');
   });
 
   describe('marketing consent by SMS (CLB-08)', () => {

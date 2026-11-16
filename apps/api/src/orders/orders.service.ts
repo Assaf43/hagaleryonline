@@ -250,7 +250,10 @@ export class OrdersService {
   /**
    * The order's promotion can no longer be honored on a new payment page: inactive, out of its dates, or used up by
    * other orders (paid, or pending within their reservation — this order itself does not count). The welcome benefit
-   * also ends once the account has a paid order or another live pending order holds it (decision 79).
+   * also ends once the account has a paid order or another live pending order holds it (decision 79), and a
+   * members-only coupon once another order of the account used it or holds it (once per account, decision 94: a failed
+   * order released it, so another order may have taken it meanwhile). In the retry this runs under the promotion lock
+   * that checkout takes too, so a concurrent checkout of the same coupon waits for it.
    */
   private async promotionGone(
     db: Prisma.TransactionClient | PrismaService,
@@ -259,6 +262,14 @@ export class OrdersService {
     if (order.promotionId === null) return false;
     const rule = await this.promotions.byId(db, order.promotionId, { orderId: order.id });
     if (!rule || promotionEnded(rule, new Date())) return true;
+    if (
+      rule.membersOnly &&
+      rule.kind === 'coupon' &&
+      order.customerId !== null &&
+      (await this.promotions.accountUses(db, order.customerId, rule.id, { orderId: order.id })) >= 1
+    ) {
+      return true;
+    }
     return (
       rule.isWelcome === true &&
       !(await this.promotions.welcomeStillOpen(db, { ...order, promotionId: order.promotionId }))

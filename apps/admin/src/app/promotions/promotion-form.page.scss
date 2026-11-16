@@ -133,8 +133,8 @@ legend {
   font-size: var(--font-small);
 }
 
-// "הטבת הצטרפות" (decision 79): the checkbox and its hint, read together.
-.welcome {
+// A promotion switch (welcome benefit, members only, applies to member prices): the checkbox and its hint, read together.
+.switch-row {
   display: grid;
   gap: var(--space-1);
 

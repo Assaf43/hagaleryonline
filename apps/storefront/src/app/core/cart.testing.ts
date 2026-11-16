@@ -11,6 +11,8 @@ export function cartLine(variantId: number, quantity: number, unitPrice = 100000
     image: { url: `/media/${variantId}.webp`, altHe: `תמונה ${variantId}` },
     unitPrice,
     compareAtPrice: null,
+    memberPrice: null,
+    atMemberPrice: false,
     quantity,
     lineTotal: unitPrice * quantity,
     maxQuantity: 10,
@@ -31,5 +33,7 @@ export function cartView(lines: CartLine[] = [], notices: CartView['notices'] = 
     shippingFrom: null,
     discount: null,
     couponCode: null,
+    pricing: 'regular',
+    memberSavings: null,
   };
 }

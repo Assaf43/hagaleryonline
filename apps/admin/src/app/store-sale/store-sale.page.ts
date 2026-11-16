@@ -23,7 +23,7 @@ import { ConfirmDialog } from '../orders/confirm-dialog';
 import { CustomerStep } from './customer-step';
 import { DeliveryStep } from './delivery-step';
 import { PendingOrders } from './pending-orders';
-import { ProductPicker } from './product-picker';
+import { MEMBER_PRICE_LINE_HE, ProductPicker } from './product-picker';
 import { STEPS, STEP_LABELS, canEnter, stepAfterError, type DeliveryChoice, type SaleStep } from './steps';
 
 /** Order statuses where the payment did not go through: the seller may try again. */
@@ -57,6 +57,7 @@ export class StoreSalePage {
   protected readonly steps = STEPS;
   protected readonly labels = STEP_LABELS;
   protected readonly price = formatPrice;
+  protected readonly memberLabel = MEMBER_PRICE_LINE_HE;
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
 
   readonly step = signal<SaleStep>('products');

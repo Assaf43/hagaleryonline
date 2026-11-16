@@ -68,7 +68,7 @@ const ENTITIES: Record<string, string> = {
 const READABLE = new Set(['shipping', 'shipping_zone', 'promotion']);
 
 /** Prices are stored in agorot; show them in shekels. */
-const MONEY = new Set(['price', 'compareAtPrice']);
+const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice']);
 const ILS = new Intl.NumberFormat('he-IL', {
   style: 'currency',
   currency: 'ILS',
@@ -99,6 +99,7 @@ const FIELDS: Record<string, string> = {
   sku: 'מק"ט',
   price: 'מחיר',
   compareAtPrice: 'מחיר לפני הנחה',
+  memberPrice: 'מחיר מועדון',
   stock: 'מלאי',
   fulfillment: 'מצב אספקה',
   leadTimeDays: 'זמן אספקה (ימים)',

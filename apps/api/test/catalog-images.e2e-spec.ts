@@ -59,6 +59,7 @@ describe('Catalog images (e2e)', () => {
       sku,
       price: 399_000,
       compareAtPrice: null,
+      memberPrice: null,
       stock: 2,
       fulfillment: 'in_stock' as const,
       leadTimeDays: 14,
