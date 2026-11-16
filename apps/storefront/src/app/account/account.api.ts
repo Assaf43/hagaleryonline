@@ -112,6 +112,11 @@ export class AccountApi {
     return firstValueFrom(this.http.post<OrderView>(`/api/account/orders/${encodeURIComponent(number)}/cancel`, null));
   }
 
+  /** The marketing contact of the account's e-mail (status null: it never had one). */
+  consent() {
+    return firstValueFrom(this.http.get<AccountConsent>('/api/account/consent'));
+  }
+
   setConsent(marketingConsent: boolean) {
     const body: ConsentBody = { marketingConsent };
     return firstValueFrom(this.http.put<AccountConsent>('/api/account/consent', body));

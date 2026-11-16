@@ -371,10 +371,14 @@
                 type="checkbox"
                 [id]="marketingId"
                 [checked]="form().marketingConsent"
+                [attr.aria-describedby]="form().marketingConsent ? marketingId + '-hint' : null"
                 (change)="setMarketing($event)"
               />
               <label [for]="marketingId">אני מאשר/ת קבלת עדכונים ומבצעים במייל</label>
             </span>
+            @if (form().marketingConsent) {
+              <p class="marketing-hint" [id]="marketingId + '-hint'">נשלח קישור אישור למייל</p>
+            }
           </div>
         }
 

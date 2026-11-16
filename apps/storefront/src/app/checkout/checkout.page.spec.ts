@@ -578,6 +578,15 @@ describe('CheckoutPage', () => {
       req.flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
       await render();
     });
+
+    it('says a confirmation link is sent by e-mail once the marketing box is ticked (CLB-02)', async () => {
+      await setup();
+      expect(el().textContent).not.toContain('נשלח קישור אישור למייל');
+      q('#chk-marketing').click();
+      fixture.detectChanges();
+      expect(el().querySelector('.marketing-hint')?.textContent?.trim()).toBe('נשלח קישור אישור למייל');
+      expect(q('#chk-marketing').getAttribute('aria-describedby')).toBe('chk-marketing-hint');
+    });
   });
 
   describe('signed in (spec §6.4)', () => {

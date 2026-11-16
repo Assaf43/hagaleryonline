@@ -105,9 +105,22 @@
           <span>הלקוח קרא ומסכים לתנאי השימוש</span>
         </label>
         <label class="check">
-          <input name="marketing" type="checkbox" [checked]="marketing()" (change)="setMarketing($event)" />
+          <input
+            name="marketing"
+            type="checkbox"
+            [checked]="marketing() || marketingSubscribed()"
+            [disabled]="marketingNoEmail() || marketingSubscribed()"
+            (change)="setMarketing($event)"
+          />
           <span>הלקוח מאשר קבלת עדכונים ומבצעים במייל</span>
         </label>
+        @if (marketingNoEmail()) {
+          <p class="muted">אין כתובת דוא״ל, לכן אי אפשר להציע דיוור.</p>
+        } @else if (marketingSubscribed()) {
+          <p class="muted">כבר רשום לדיוור.</p>
+        } @else if (marketingPending()) {
+          <p class="muted">אישור הדיוור עדיין ממתין ללקוח.</p>
+        }
         <div class="actions">
           <button matButton="outlined" type="button" (click)="goTo('delivery')">חזרה למשלוח</button>
           <button matButton="filled" type="button" class="pay" [disabled]="!acceptTerms() || busy()" (click)="pay()">
@@ -142,6 +155,9 @@
             }
           }
         </div>
+        @if (marketingAsked()) {
+          <p class="muted">נשלח ללקוח SMS לאישור הדיוור.</p>
+        }
         @if (payment() === 'waiting' && payUrl()) {
           @if (popupBlocked()) {
             <p class="muted">הדפדפן לא פתח את דף התשלום. אפשר לפתוח אותו בכפתור.</p>

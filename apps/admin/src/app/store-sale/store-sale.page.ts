@@ -72,6 +72,12 @@ export class StoreSalePage {
   protected readonly popupBlocked = signal(false);
   protected readonly acceptTerms = signal(false);
   protected readonly marketing = signal(false);
+  /** The seller ticked the marketing box on the order that was placed: the customer got an SMS link (CLB-08). */
+  protected readonly marketingAsked = signal(false);
+  /** No e-mail, no marketing offer (decision 96). */
+  protected readonly marketingNoEmail = computed(() => !!this.cart()?.customer && !this.cart()?.customer?.email);
+  protected readonly marketingSubscribed = computed(() => this.cart()?.customer?.marketingStatus === 'subscribed');
+  protected readonly marketingPending = computed(() => this.cart()?.customer?.marketingStatus === 'pending');
   protected readonly error = signal('');
   protected readonly busy = signal(false);
   protected readonly loaded = signal(false);
@@ -194,6 +200,7 @@ export class StoreSalePage {
       this.popupBlocked.set(false);
       this.acceptTerms.set(false);
       this.marketing.set(false);
+      this.marketingAsked.set(false);
       this.payment.set('waiting');
       this.error.set('');
       this.step.set('products');
@@ -224,13 +231,14 @@ export class StoreSalePage {
       method: delivery.method,
       acceptTerms: true,
       expectedTotal: this.total(),
-      marketingConsent: this.marketing(),
+      marketingConsent: this.marketing() && !this.marketingNoEmail() && !this.marketingSubscribed(),
       saveAddress: delivery.saveAddress,
     };
     try {
       const created = await this.api.createOrder(request);
       this.orderNumber.set(created.number);
       this.locked.set(true);
+      this.marketingAsked.set(request.marketingConsent === true);
       this.openPayment(created.redirectUrl);
       this.beginStatus();
       void this.loadPending();

@@ -1,6 +1,7 @@
 import { BRAND } from '@hg/models';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { NewsletterForm } from '../newsletter/newsletter-form';
 import { MenuData } from './menu-data';
 
 /**
@@ -9,7 +10,7 @@ import { MenuData } from './menu-data';
  */
 @Component({
   selector: 'hg-site-footer',
-  imports: [RouterLink],
+  imports: [RouterLink, NewsletterForm],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <footer class="footer">
@@ -44,6 +45,7 @@ import { MenuData } from './menu-data';
             </nav>
           }
         </div>
+        <hg-newsletter-form class="newsletter" />
         <ul class="links">
           <li><a routerLink="/order-status">מצב ההזמנה שלי</a></li>
           <li><a routerLink="/returns">החזרות והחלפות</a></li>
@@ -110,6 +112,10 @@ import { MenuData } from './menu-data';
     a:hover {
       color: var(--color-text);
       text-decoration: underline;
+    }
+
+    .newsletter {
+      margin-block-start: var(--space-5);
     }
 
     .links {
