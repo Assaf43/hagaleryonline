@@ -108,6 +108,8 @@ describe('Cart API (e2e, CRT-02, CRT-04)', () => {
       shippingFrom: null,
       discount: null,
       couponCode: null,
+      pricing: 'regular',
+      memberSavings: null,
     });
     expect(res.headers['set-cookie']).toBeUndefined();
     expect(await prisma.cart.count()).toBe(0);

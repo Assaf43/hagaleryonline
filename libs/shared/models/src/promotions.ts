@@ -25,7 +25,15 @@ export function normalizeCouponCode(code: string): string {
 
 /** Why an entered coupon gives no discount. */
 export type CouponProblem =
-  'unknown' | 'not_started' | 'expired' | 'below_minimum' | 'exhausted' | 'not_applicable' | 'lost';
+  | 'unknown'
+  | 'not_started'
+  | 'expired'
+  | 'below_minimum'
+  | 'exhausted'
+  | 'not_applicable'
+  | 'lost'
+  /** A members-only coupon (decision 94) entered without an account. */
+  | 'members_only';
 
 /**
  * `GET /api/promotions/welcome` (public, spec §6.4): the Hebrew name of the active welcome promotion (active and
@@ -58,6 +66,7 @@ export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>,
   exhausted: 'הקופון נוצל במלואו',
   not_applicable: 'הקופון לא חל על המוצרים בסל',
   lost: 'המבצע הנוכחי משתלם יותר מהקופון',
+  members_only: 'הקופון מיועד לחברי מועדון בלבד. התחברו כדי להשתמש בו',
 };
 
 /** "הקופון תקף מסכום של {price}"; `price` is the formatted minimum, e.g. "1,000 ₪". */

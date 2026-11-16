@@ -13,7 +13,8 @@ import { lapseStoreConfirmation } from './store-confirmation.js';
 /**
  * The seller's store cart (spec §4.2): the website cart's pricing, promotion and stock code (`CartService`), owned by a
  * seller instead of a cookie or an account. A store cart never has a `customerId`; the customer the seller attaches is
- * `storeCustomerId`, which prices the welcome benefit but is never merged into an account cart.
+ * `storeCustomerId`, which prices the welcome benefit and, while its confirmation is live, makes the cart a member's
+ * cart (member prices, spec §9); it is never merged into an account cart.
  */
 @Injectable()
 export class StoreCartService {

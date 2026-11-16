@@ -4,6 +4,7 @@ import type { CatalogSnapshot, SnapshotProduct, SnapshotVariant } from '../catal
 import { insertSizeAxis, SIZE_AXIS, sizeAxis } from '../catalog/size-axis.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import type { PricingLine } from '../promotions/cart-pricing.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { availableStock } from './available-stock.js';
 import { lineLimit } from './cart-rules.js';
@@ -26,7 +27,10 @@ export interface ComputedLine {
   shown: boolean;
   /** Shown and at least one unit can be sold. */
   available: boolean;
+  /** The current regular unit price. What a cart pays per unit is decided by `priceCart` (cart-pricing.ts) only. */
   unitPrice: number;
+  /** The variant's club member price (decision 91); null when it has none. */
+  memberPrice: number | null;
   compareAtPrice: number | null;
   unitPriceAtAdd: number;
   fulfillment: FulfillmentMode;
@@ -60,6 +64,7 @@ export async function computeCartLines(
         select: {
           sku: true,
           price: true,
+          memberPrice: true,
           compareAtPrice: true,
           fulfillment: true,
           leadTimeDays: true,
@@ -88,6 +93,7 @@ export async function computeCartLines(
       shown: !!shown,
       available,
       unitPrice: v.price,
+      memberPrice: v.memberPrice,
       compareAtPrice: v.compareAtPrice,
       unitPriceAtAdd: item.unitPriceAtAdd,
       fulfillment: FULFILLMENT[v.fulfillment],
@@ -102,6 +108,17 @@ export async function computeCartLines(
       categoryPathIds: shown ? (snapshot.categoriesById.get(shown.product.categoryId)?.pathIds ?? []) : [],
     };
   });
+}
+
+/** A line as `priceCart` takes it, at `quantity`. */
+export function pricingLine(line: ComputedLine, quantity: number): PricingLine {
+  return {
+    productId: line.productId,
+    categoryPathIds: line.categoryPathIds,
+    quantity,
+    price: line.unitPrice,
+    memberPrice: line.memberPrice,
+  };
 }
 
 /** The available lines as units to ship, with the quantity that can be bought now. */

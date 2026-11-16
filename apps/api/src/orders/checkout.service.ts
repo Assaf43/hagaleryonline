@@ -16,15 +16,16 @@ import {
   type ShippingOption,
 } from '@hg/models';
 import type { ComputedLine } from '../cart/cart-lines.js';
-import { computeCartLines } from '../cart/cart-lines.js';
+import { computeCartLines, pricingLine } from '../cart/cart-lines.js';
 import { deliveryEstimate } from '../cart/cart-rules.js';
 import { CartService, type CartOwner } from '../cart/cart.service.js';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { OrderChannel, OrderShippingMethod, OrderStatus, type Prisma } from '../generated/prisma/client.js';
 import { PAYABLE_ORDER, PaymentsService, type PayableOrder } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { priceCart } from '../promotions/cart-pricing.js';
 import { couponProblemMessageHe } from '../promotions/discount-engine.js';
-import { discountInfo, discountLines, PromotionsService } from '../promotions/promotions.service.js';
+import { discountInfo, PromotionsService } from '../promotions/promotions.service.js';
 import { MarketingService } from '../marketing/marketing.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
@@ -52,7 +53,8 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
 export interface PlaceOrderOptions {
   /**
    * The account the order is for: the session's on the website, the cart's confirmed `storeCustomerId` at the store.
-   * It takes the welcome lock, counts for the welcome benefit and is stored on the order.
+   * It takes the welcome lock, counts for the welcome benefit and is stored on the order. With an account the cart is
+   * a member's (decision 90, spec §9): it is priced by `priceCart` with member prices (best of two, decision 92).
    */
   customerId: string | null;
   channel: 'web' | 'store';
@@ -198,7 +200,6 @@ export class CheckoutService {
         // Never null: there is at least one line.
         const estimate = deliveryEstimate(lines.map((l) => ({ ...l, available: true })));
         if (!estimate) throw emptyCart();
-        const subtotal = lines.reduce((sum, l) => sum + l.unitPrice * l.storedQuantity, 0);
         // The one discount of the order (decision 70), on the locked lines at their current prices. The limited
         // promotions are locked last (cart → orders → variants → promotions), so their uses — paid plus live
         // pending orders of other carts (this cart's were just expired) — hold until commit (spec §6).
@@ -207,19 +208,27 @@ export class CheckoutService {
         // this read waits for it and sees the order paid, or the webhook waits for this commit and every read here
         // still sees the order pending (welcomeHeld). Read before the lock, a payment committed while this waits
         // would be missed by both reads: a second welcome discount.
+        // A members-only coupon's row is locked there too, so its once-per-account count (paid plus live pending
+        // orders of the account) holds until commit; two checkouts of one account already wait for each other on the
+        // welcome lock taken first.
         await this.promotions.lockLimited(tx, couponCode, customerId !== null);
         const customer = await this.promotions.welcomeCustomer(tx, customerId);
-        const evaluated = await this.promotions.evaluate(
-          tx,
-          discountLines(lines, (l) => l.storedQuantity),
-          couponCode,
-          { cartId: cart.id, customer },
-        );
+        // The one pricing function (decision 92): an account's cart is priced at member prices and at regular prices,
+        // the lower total wins; a guest's at regular prices. Same as the cart view, so `expectedTotal` matches.
+        const isMember = customerId !== null;
+        const priced = await priceCart({
+          lines: lines.map((l) => pricingLine(l, l.storedQuantity)),
+          isMember,
+          evaluate: (discountLines) =>
+            this.promotions.evaluate(tx, discountLines, couponCode, { cartId: cart.id, customer, isMember }),
+        });
+        const evaluated = priced.discount;
         if (evaluated.couponProblem === 'exhausted')
           throw couponInvalid(couponProblemMessageHe('exhausted', evaluated.coupon));
+        const { subtotal } = priced;
         const discount = evaluated.applied?.amount ?? 0;
         const info = discountInfo(evaluated);
-        const total = subtotal - discount + option.total;
+        const total = priced.total + option.total;
         // Another order of the account took the welcome benefit meanwhile (one at a time, decision 79).
         if (input.expectedTotal !== total && evaluated.welcomeHeld) throw promotionEndedError();
         if (input.expectedTotal !== total) throw priceChanged(total);
@@ -238,6 +247,7 @@ export class CheckoutService {
             subtotal,
             discount,
             discountInfo: info ? { ...info } : undefined,
+            pricing: priced.pricing,
             promotionId: evaluated.promotion?.id ?? null,
             total,
             deliveryEstimate: estimate,
@@ -249,15 +259,17 @@ export class CheckoutService {
             marketingConsentAt: input.marketingConsent ? new Date() : null,
             reservedUntil: reservedUntil(),
             items: {
-              create: lines.map((l) => ({
+              // The unit price actually charged, from the pricing that won.
+              create: lines.map((l, i) => ({
                 variantId: l.variantId,
                 sku: l.sku,
                 modelName: l.modelName,
                 nameHe: l.nameHe,
                 optionLabels: l.optionLabels,
-                unitPrice: l.unitPrice,
+                unitPrice: priced.lines[i].unitPrice,
                 quantity: l.storedQuantity,
-                lineTotal: l.unitPrice * l.storedQuantity,
+                lineTotal: priced.lines[i].lineTotal,
+                atMemberPrice: priced.lines[i].atMemberPrice,
               })),
             },
           },

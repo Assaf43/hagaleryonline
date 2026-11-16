@@ -649,6 +649,8 @@ model Order {
   /// The checkout's marketing checkbox (unchecked by default, CLAUDE.md §4.4), with its time; source `checkout`.
   marketingConsent   Boolean             @default(false) @map("marketing_consent")
   marketingConsentAt DateTime?           @map("marketing_consent_at")
+  /// Which of the two pricings won (decision 92): `regular` or `member` (SQL CHECK, migration member_pricing).
+  pricing            String              @default("regular")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
 
@@ -677,18 +679,20 @@ model Order {
 
 /// One order line: a snapshot of what was bought. The variant link is cleared if the variant is ever deleted.
 model OrderItem {
-  id           Int    @id @default(autoincrement())
-  orderId      String @map("order_id") @db.Uuid
-  variantId    Int?   @map("variant_id")
-  sku          String
-  modelName    String @map("model_name")
-  nameHe       String @map("name_he")
+  id            Int     @id @default(autoincrement())
+  orderId       String  @map("order_id") @db.Uuid
+  variantId     Int?    @map("variant_id")
+  sku           String
+  modelName     String  @map("model_name")
+  nameHe        String  @map("name_he")
   /// Hebrew option labels in axis order.
-  optionLabels Json   @map("option_labels")
+  optionLabels  Json    @map("option_labels")
   /// Agorot, VAT included: the price actually charged.
-  unitPrice    Int    @map("unit_price")
-  quantity     Int
-  lineTotal    Int    @map("line_total")
+  unitPrice     Int     @map("unit_price")
+  quantity      Int
+  lineTotal     Int     @map("line_total")
+  /// The unit price charged was the variant's member price (decision 91).
+  atMemberPrice Boolean @default(false) @map("at_member_price")
 
   order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   variant Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
@@ -860,31 +864,37 @@ enum PromotionTarget {
 /// CHECK constraints (raw SQL, migration promotions_checks): code upper-case; a code exactly for coupons; value > 0;
 /// percent value ≤ 100.
 model Promotion {
-  id           Int             @id @default(autoincrement())
-  name         String
-  kind         PromotionKind
+  id                    Int             @id @default(autoincrement())
+  name                  String
+  kind                  PromotionKind
   /// Coupons only: unique, stored upper-case (entered case-insensitively).
-  code         String?         @unique
-  discountType DiscountType    @map("discount_type")
+  code                  String?         @unique
+  discountType          DiscountType    @map("discount_type")
   /// Percent 1–100, or agorot for a fixed discount.
-  value        Int
-  target       PromotionTarget
+  value                 Int
+  target                PromotionTarget
   /// Category ids (sub-categories included) or product ids, by target; empty for the whole order.
-  targetIds    Int[]           @default([]) @map("target_ids")
+  targetIds             Int[]           @default([]) @map("target_ids")
   /// Agorot, on the subtotal of the eligible lines.
-  minSubtotal  Int             @default(0) @map("min_subtotal")
-  startsAt     DateTime?       @map("starts_at")
-  endsAt       DateTime?       @map("ends_at")
+  minSubtotal           Int             @default(0) @map("min_subtotal")
+  startsAt              DateTime?       @map("starts_at")
+  endsAt                DateTime?       @map("ends_at")
   /// Paid orders allowed (coupons); null = no limit.
-  usageLimit   Int?            @map("usage_limit")
+  usageLimit            Int?            @map("usage_limit")
   /// Paid orders that used it (spec §5.4); may pass the limit when a pending order is paid late.
-  usedCount    Int             @default(0) @map("used_count")
-  active       Boolean         @default(true)
+  usedCount             Int             @default(0) @map("used_count")
+  active                Boolean         @default(true)
   /// "הטבת הצטרפות" (decision 79): automatic only, applied to the first paid order of each account. At most one
   /// active welcome promotion (partial unique index, migration welcome_promotion).
-  isWelcome    Boolean         @default(false) @map("is_welcome")
-  createdAt    DateTime        @default(now()) @map("created_at")
-  updatedAt    DateTime        @updatedAt @map("updated_at")
+  isWelcome             Boolean         @default(false) @map("is_welcome")
+  /// "לחברי מועדון בלבד" (decision 94): only for a signed-in account or a confirmed store customer; a members-only
+  /// coupon works once per account (paid plus live pending orders of the account).
+  membersOnly           Boolean         @default(false) @map("members_only")
+  /// "חל גם על מחירי מועדון" (decision 92): off → a line bought at its member price is not eligible (nor counted
+  /// toward the minimum); on → the promotion is computed on the member price.
+  appliesToMemberPrices Boolean         @default(false) @map("applies_to_member_prices")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
 
   orders Order[]
 

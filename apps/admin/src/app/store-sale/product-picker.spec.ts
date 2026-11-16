@@ -43,6 +43,8 @@ const cart = (quantity: number): StoreCartView =>
     subtotal: quantity * 520_000,
     discount: null,
     couponCode: null,
+    pricing: 'regular',
+    memberSavings: null,
     customer: null,
   }) as unknown as StoreCartView;
 

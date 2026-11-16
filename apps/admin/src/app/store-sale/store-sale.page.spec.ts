@@ -26,6 +26,8 @@ const line = {
   image: null,
   unitPrice: 500_000,
   compareAtPrice: null,
+  memberPrice: null,
+  atMemberPrice: false,
   quantity: 1,
   lineTotal: 500_000,
   maxQuantity: 5,
@@ -45,6 +47,8 @@ const cartWith = (c: StoreCustomer | null): StoreCartView =>
     shippingFrom: null,
     discount: { labelHe: 'הנחת קופון', amount: 50_000, source: 'coupon', code: 'X' },
     couponCode: 'X',
+    pricing: 'regular',
+    memberSavings: null,
     customer: c,
   }) as unknown as StoreCartView;
 

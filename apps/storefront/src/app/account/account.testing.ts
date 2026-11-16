@@ -51,6 +51,8 @@ export function flushCarts(http: HttpTestingController) {
       shippingFrom: null,
       discount: null,
       couponCode: null,
+      pricing: 'regular',
+      memberSavings: null,
     });
   }
 }
