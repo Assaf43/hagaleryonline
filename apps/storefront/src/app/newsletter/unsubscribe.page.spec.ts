@@ -54,4 +54,23 @@ describe('NewsletterUnsubscribePage', () => {
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('משהו השתבש');
     expect(button()).not.toBeNull();
   });
+
+  it('a missing token shows the invalid-link text at once and sends nothing', () => {
+    open();
+    expect(el().textContent).toContain('הקישור לא תקין או שפג תוקפו');
+    expect(el().querySelector('button')).toBeNull();
+    http.expectNone('/api/newsletter/unsubscribe');
+  });
+
+  it('moves the focus to the heading when the done state shows', async () => {
+    open('tok9');
+    document.body.appendChild(el());
+    button().click();
+    http.expectOne('/api/newsletter/unsubscribe').flush(null, { status: 204, statusText: 'No Content' });
+    await tick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(el().querySelector('h1'));
+    el().remove();
+  });
 });

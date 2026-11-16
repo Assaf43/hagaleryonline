@@ -1,15 +1,25 @@
-import { ChangeDetectionStrategy, Component, afterNextRender, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
-import { NewsletterApi } from './newsletter.api';
+import { NewsletterApi, newsletterFailure } from './newsletter.api';
 import { NEWSLETTER_COPY as COPY } from './newsletter.copy';
 
-type State = 'loading' | 'ok' | 'invalid';
+type State = 'loading' | 'ok' | 'invalid' | 'error';
 
 /**
  * `/newsletter/confirm?t=` (MKT-01, CLB-02): the link in the confirmation e-mail. The token is sent from the browser
  * after hydration, so the server-rendered HTML holds no address; on success the API's already masked address is shown.
- * An unknown, used or expired token reads the same "invalid or expired link". noindex.
+ * An unknown, used or expired token (404) reads "invalid or expired link"; any other failure offers a retry. The focus
+ * moves to the heading when the state changes, so screen readers announce it. noindex.
  */
 @Component({
   selector: 'hg-newsletter-confirm-page',
@@ -27,11 +37,17 @@ type State = 'loading' | 'ok' | 'invalid';
             {{ copy.confirmedFor }} <bdi dir="ltr">{{ masked() }}</bdi>
           </p>
         }
+        @case ('error') {
+          <p role="alert">{{ copy.failed }}</p>
+          <p>
+            <button type="button" class="btn btn-primary retry" (click)="retry()">{{ copy.retry }}</button>
+          </p>
+        }
         @default {
           <p role="alert">{{ copy.linkInvalid }}</p>
         }
       }
-      @if (state() !== 'loading') {
+      @if (state() === 'ok' || state() === 'invalid') {
         <p>
           <a class="btn btn-secondary" routerLink="/">{{ copy.toHome }}</a>
         </p>
@@ -58,6 +74,8 @@ export class NewsletterConfirmPage {
   readonly t = input<string | undefined>(undefined);
 
   private readonly api = inject(NewsletterApi);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   protected readonly copy = COPY;
   protected readonly state = signal<State>('loading');
   protected readonly masked = signal('');
@@ -74,10 +92,20 @@ export class NewsletterConfirmPage {
     afterNextRender(() => void this.confirm());
   }
 
+  protected retry(): void {
+    this.state.set('loading');
+    void this.confirm();
+  }
+
+  private focusHeading(): void {
+    afterNextRender(() => this.host.nativeElement.querySelector('h1')?.focus(), { injector: this.injector });
+  }
+
   private async confirm(): Promise<void> {
     const token = this.t();
     if (!token) {
       this.state.set('invalid');
+      this.focusHeading();
       return;
     }
     try {
@@ -85,8 +113,10 @@ export class NewsletterConfirmPage {
       this.masked.set(result.email);
       this.title.set(COPY.confirmed);
       this.state.set('ok');
-    } catch {
-      this.state.set('invalid');
+    } catch (error) {
+      // Only an unknown or expired link is "invalid"; a server, throttle or network problem can be retried.
+      this.state.set(newsletterFailure(error).status === 404 ? 'invalid' : 'error');
     }
+    this.focusHeading();
   }
 }

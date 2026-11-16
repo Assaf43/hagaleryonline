@@ -53,6 +53,36 @@ describe('NewsletterConfirmPage', () => {
     expect(text()).toContain('הקישור לא תקין או שפג תוקפו');
   });
 
+  it('moves the focus to the heading when the state changes (announced to screen readers)', async () => {
+    await open('tok');
+    document.body.appendChild(el());
+    http.expectOne('/api/newsletter/confirm').flush({ email: 'd***@example.com' });
+    await tick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(el().querySelector('h1'));
+    el().remove();
+  });
+
+  it('a 5xx, 429 or network error is not "invalid link": it offers a retry that calls again', async () => {
+    for (const status of [500, 429, 0]) {
+      TestBed.resetTestingModule();
+      await open('tok');
+      const req = http.expectOne('/api/newsletter/confirm');
+      if (status === 0) req.error(new ProgressEvent('error'));
+      else req.flush({}, { status, statusText: 'Error' });
+      await tick();
+      fixture.detectChanges();
+      expect(text()).toContain('משהו השתבש. נסו שוב.');
+      expect(text()).not.toContain('הקישור לא תקין');
+      el().querySelector<HTMLButtonElement>('button.retry')!.click();
+      http.expectOne('/api/newsletter/confirm').flush({ email: 'd***@example.com' });
+      await tick();
+      fixture.detectChanges();
+      expect(text()).toContain('ההרשמה לדיוור אושרה');
+    }
+  });
+
   it('a missing token is an invalid link without a request', async () => {
     await open();
     fixture.detectChanges();

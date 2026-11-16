@@ -16,6 +16,7 @@ export const NEWSLETTER_COPY = {
   confirmed: 'ההרשמה לדיוור אושרה',
   confirmedFor: 'הכתובת שאושרה:',
   linkInvalid: 'הקישור לא תקין או שפג תוקפו. אפשר להירשם שוב מתחתית האתר.',
+  retry: 'ניסיון נוסף',
   toHome: 'לדף הבית',
 
   unsubscribeTitle: 'הסרה מרשימת הדיוור',

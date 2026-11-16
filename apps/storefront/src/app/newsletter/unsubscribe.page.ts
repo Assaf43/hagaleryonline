@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PageMeta } from '../core/page-meta';
 import { NewsletterApi } from './newsletter.api';
@@ -6,7 +15,8 @@ import { NEWSLETTER_COPY as COPY } from './newsletter.copy';
 
 /**
  * `/newsletter/unsubscribe?t=` (CLB-02, decision 95): the unsubscribe link in every marketing e-mail. It waits for a
- * click, because mail scanners open links on their own; the answer is always the same done state. noindex.
+ * click, because mail scanners open links on their own; the answer is always the same done state. Without a token it
+ * says the link is invalid and sends nothing. noindex.
  */
 @Component({
   selector: 'hg-newsletter-unsubscribe-page',
@@ -14,7 +24,13 @@ import { NEWSLETTER_COPY as COPY } from './newsletter.copy';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="container page">
-      @if (done()) {
+      @if (!t()) {
+        <h1 tabindex="-1">{{ copy.unsubscribeTitle }}</h1>
+        <p role="alert">{{ copy.linkInvalid }}</p>
+        <p>
+          <a class="btn btn-secondary" routerLink="/">{{ copy.toHome }}</a>
+        </p>
+      } @else if (done()) {
         <h1 tabindex="-1">{{ copy.unsubscribed }}</h1>
         <p role="status">{{ copy.unsubscribedText }}</p>
         <p>
@@ -61,6 +77,8 @@ export class NewsletterUnsubscribePage {
   readonly t = input<string | undefined>(undefined);
 
   private readonly api = inject(NewsletterApi);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   protected readonly copy = COPY;
   protected readonly busy = signal(false);
   protected readonly done = signal(false);
@@ -76,12 +94,14 @@ export class NewsletterUnsubscribePage {
   }
 
   protected async unsubscribe(): Promise<void> {
-    if (this.busy()) return;
+    if (this.busy() || !this.t()) return;
     this.busy.set(true);
     this.error.set('');
     try {
       await this.api.unsubscribe(this.t() ?? '');
       this.done.set(true);
+      // The new heading takes the focus, so screen readers announce the done state.
+      afterNextRender(() => this.host.nativeElement.querySelector('h1')?.focus(), { injector: this.injector });
     } catch {
       this.error.set(COPY.failed);
     } finally {
