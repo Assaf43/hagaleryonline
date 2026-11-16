@@ -733,15 +733,16 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     });
   });
 
-  describe('the welcome benefit label (GET /api/promotions/welcome, spec §6.4)', () => {
+  describe('the welcome benefit label (GET /api/promotions/welcome, spec §6.4, decision 93)', () => {
     const welcome = (data: Partial<Prisma.PromotionCreateInput> = {}) =>
       prisma.promotion.create({
         data: {
           name: `${WELCOME_NAME} 10% על ההזמנה הראשונה`,
-          kind: PromotionKind.AUTOMATIC,
+          kind: PromotionKind.PERSONAL_TEMPLATE,
           discountType: DiscountType.PERCENT,
           value: 10,
           target: PromotionTarget.ORDER,
+          validityDays: 30,
           isWelcome: true,
           ...data,
         },
@@ -754,9 +755,19 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       return res.body as unknown;
     };
 
-    it('is null without an active welcome promotion, and its Hebrew name inside its dates', async () => {
+    it('is null without an active welcome template, and its Hebrew name inside its dates', async () => {
       expect(await label()).toBeNull();
-      // An ordinary automatic promotion is no welcome benefit.
+      // An ordinary automatic promotion, or a template without the mark, is no welcome benefit.
+      await prisma.promotion.create({
+        data: {
+          name: `${WELCOME_NAME} תבנית`,
+          kind: PromotionKind.PERSONAL_TEMPLATE,
+          discountType: DiscountType.PERCENT,
+          value: 5,
+          target: PromotionTarget.ORDER,
+          validityDays: 30,
+        },
+      });
       await prisma.promotion.create({
         data: {
           name: `${WELCOME_NAME} רגיל`,

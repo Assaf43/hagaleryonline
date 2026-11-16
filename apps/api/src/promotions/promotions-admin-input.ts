@@ -2,6 +2,8 @@ import {
   COUPON_CODE_PATTERN,
   MAX_COUPON_CODE_LENGTH,
   normalizeCouponCode,
+  VALIDITY_DAYS_MAX,
+  VALIDITY_DAYS_MIN,
   type AdminPromotionInput,
   type DiscountType,
   type PromotionKind,
@@ -13,7 +15,7 @@ import { MAX_AMOUNT } from '../shipping/shipping-admin-input.js';
 const MAX_NAME = 100;
 const MAX_TARGETS = 1_000;
 const MAX_USAGE_LIMIT = 1_000_000;
-const KINDS: readonly PromotionKind[] = ['automatic', 'coupon'];
+const KINDS: readonly PromotionKind[] = ['automatic', 'coupon', 'personal_template'];
 const TYPES: readonly DiscountType[] = ['percent', 'fixed'];
 const TARGETS: readonly PromotionTarget[] = ['order', 'categories', 'products'];
 /** An ISO time with a zone ("2026-12-01T22:00:00.000Z"); the admin converts Israel time to UTC before sending. */
@@ -61,10 +63,11 @@ function time(value: unknown, field: string): Date | null {
 
 /**
  * POST/PUT /api/admin/promotions (spec §6). Everything the database CHECKs (code upper-case, code iff coupon,
- * value > 0, percent ≤ 100) is refused here first as a 400 with the field, so the DB never has to. Fixed amounts and
- * the minimum are whole shekels; dates are real times between 2000 and 2100. Also: a usage
- * limit only on coupons, dates in order, targets by kind (none for the whole order, distinct ids otherwise; whether
- * they exist is checked by the service). The code is normalized like a customer's entry.
+ * value > 0, percent ≤ 100, validity days iff template and 1–365, welcome only on a template) is refused here first as
+ * a 400 with the field, so the DB never has to. Fixed amounts and the minimum are whole shekels; dates are real times
+ * between 2000 and 2100. Also: a usage limit only on coupons (a template's codes are single-use), dates in order,
+ * targets by kind (none for the whole order, distinct ids otherwise; whether they exist is checked by the service).
+ * The code is normalized like a customer's entry.
  */
 export function parsePromotionInput(body: unknown): AdminPromotionInput {
   const b = (body ?? {}) as Body;
@@ -112,10 +115,19 @@ export function parsePromotionInput(body: unknown): AdminPromotionInput {
 
   if (typeof b.active !== 'boolean') throw invalid('active');
 
-  // The welcome benefit (decision 79) is applied automatically: never a coupon.
+  // Personal-code templates (spec §5.2): days a code is valid from its issue; required on a template, absent otherwise.
+  let validityDays: number | null = null;
+  if (kind === 'personal_template') {
+    if (!isInt(b.validityDays, VALIDITY_DAYS_MIN, VALIDITY_DAYS_MAX)) throw invalid('validityDays');
+    validityDays = b.validityDays;
+  } else if (b.validityDays !== null && b.validityDays !== undefined) {
+    throw invalid('validityDays');
+  }
+
+  // The welcome template (decision 93): every new account gets a code from it — a template only.
   // Missing: unchanged on an edit (false for a new promotion).
   const isWelcome = b.isWelcome ?? undefined;
-  if (isWelcome !== undefined && (typeof isWelcome !== 'boolean' || (isWelcome && kind !== 'automatic')))
+  if (isWelcome !== undefined && (typeof isWelcome !== 'boolean' || (isWelcome && kind !== 'personal_template')))
     throw invalid('isWelcome');
 
   // Club switches (decision 92): either kind, welcome included. Missing: unchanged on an edit (false on create).
@@ -139,6 +151,7 @@ export function parsePromotionInput(body: unknown): AdminPromotionInput {
     usageLimit,
     active: b.active,
     isWelcome,
+    validityDays,
     membersOnly,
     appliesToMemberPrices,
   };

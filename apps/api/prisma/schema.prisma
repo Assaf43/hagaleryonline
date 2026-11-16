@@ -354,6 +354,7 @@ model AdminUser {
   sellerCarts      Cart[]
   sellerOrders     Order[]
   createdCustomers Customer[]
+  issuedCodes      PersonalCode[]
 
   @@map("admin_users")
 }
@@ -621,6 +622,9 @@ model Order {
   /// The applied promotion: its usage count goes up when the order is paid (spec §6). A promotion with orders
   /// cannot be deleted (RESTRICT).
   promotionId        Int?                @map("promotion_id")
+  /// The personal code the discount came from (its template is `promotionId`): a live pending order holds it, and
+  /// paying the order marks it used (`PersonalCode.orderId`).
+  personalCodeId     Int?                @map("personal_code_id")
   total              Int
   /// { fulfillment, leadTimeDays } of the slowest line (CRT-04).
   deliveryEstimate   Json                @map("delivery_estimate")
@@ -657,6 +661,8 @@ model Order {
   cart          Cart?              @relation(fields: [cartId], references: [id], onDelete: SetNull)
   customer      Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
   promotion     Promotion?         @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  personalCode  PersonalCode?      @relation("OrderPersonalCode", fields: [personalCodeId], references: [id], onDelete: SetNull)
+  usedCode      PersonalCode?      @relation("PersonalCodeUsedBy")
   items         OrderItem[]
   payments      Payment[]
   events        OrderStatusEvent[]
@@ -674,6 +680,7 @@ model Order {
   @@index([createdAt])
   @@index([promotionId])
   @@index([customerId])
+  @@index([personalCodeId])
   @@map("orders")
 }
 
@@ -839,8 +846,11 @@ model OutboxJob {
 // ---------- Promotions and coupons (Phase 4d, spec §6, decision 70) ----------
 
 enum PromotionKind {
-  AUTOMATIC @map("automatic")
-  COUPON    @map("coupon")
+  AUTOMATIC         @map("automatic")
+  COUPON            @map("coupon")
+  /// A template for personal codes (decision 93–94, spec §5.2): no code of its own; each `PersonalCode` reads its
+  /// terms from it when used.
+  PERSONAL_TEMPLATE @map("personal_template")
 
   @@map("promotion_kind")
 }
@@ -884,9 +894,13 @@ model Promotion {
   /// Paid orders that used it (spec §5.4); may pass the limit when a pending order is paid late.
   usedCount             Int             @default(0) @map("used_count")
   active                Boolean         @default(true)
-  /// "הטבת הצטרפות" (decision 79): automatic only, applied to the first paid order of each account. At most one
-  /// active welcome promotion (partial unique index, migration welcome_promotion).
+  /// "הטבת הצטרפות" (decision 93): personal-code templates only (SQL CHECK); every new account gets a code from it,
+  /// usable only while the account has no paid order. At most one active welcome template (partial unique index,
+  /// migration personal_codes).
   isWelcome             Boolean         @default(false) @map("is_welcome")
+  /// Personal-code templates only (SQL CHECK: set exactly for a template, 1–365): days a code is valid from its issue,
+  /// never past the template's `endsAt`.
+  validityDays          Int?            @map("validity_days")
   /// "לחברי מועדון בלבד" (decision 94): only for a signed-in account or a confirmed store customer; a members-only
   /// coupon works once per account (paid plus live pending orders of the account).
   membersOnly           Boolean         @default(false) @map("members_only")
@@ -896,10 +910,38 @@ model Promotion {
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
 
-  orders Order[]
+  orders        Order[]
+  personalCodes PersonalCode[]
 
   @@index([kind, active])
   @@map("promotions")
+}
+
+/// A personal code (decisions 93–94, spec §5.2): one account's single-use code from a template, evaluated as a coupon
+/// with the template's current terms. `orderId` is the paid order that used it; a live pending order holding it is
+/// `Order.personalCodeId`.
+model PersonalCode {
+  id          Int      @id @default(autoincrement())
+  /// "NST-" + 8 characters of an unambiguous alphabet; never equal to a coupon code.
+  code        String   @unique
+  promotionId Int      @map("promotion_id")
+  customerId  String   @map("customer_id") @db.Uuid
+  /// Issue time + the template's `validityDays`, never after the template's `endsAt`.
+  expiresAt   DateTime @map("expires_at")
+  /// The staff member who issued it; null = the welcome code of a new account.
+  issuedById  Int?     @map("issued_by_id")
+  orderId     String?  @unique @map("order_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  promotion    Promotion  @relation(fields: [promotionId], references: [id], onDelete: Restrict)
+  customer     Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  issuedBy     AdminUser? @relation(fields: [issuedById], references: [id], onDelete: Restrict)
+  order        Order?     @relation("PersonalCodeUsedBy", fields: [orderId], references: [id], onDelete: SetNull)
+  heldByOrders Order[]    @relation("OrderPersonalCode")
+
+  @@index([customerId])
+  @@index([promotionId])
+  @@map("personal_codes")
 }
 
 // ---------- Notifications (Phase 5b, spec §3, §5.2) ----------
@@ -1113,6 +1155,7 @@ model Customer {
   storeCarts       Cart[]            @relation("CartStoreCustomer")
   tickets          SupportTicket[]
   marketingContact MarketingContact?
+  personalCodes    PersonalCode[]
   createdBySeller  AdminUser?        @relation(fields: [createdBySellerId], references: [id], onDelete: Restrict)
 
   @@map("customers")

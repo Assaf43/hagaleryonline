@@ -37,6 +37,7 @@ import {
   type SmsProvider,
 } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
+import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { MarketingService } from './../src/marketing/marketing.service.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
@@ -151,6 +152,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     await prisma.cart.deleteMany();
     await prisma.outboxJob.deleteMany({});
     await prisma.otpCode.deleteMany({});
+    await prisma.personalCode.deleteMany({ where: { promotion: { name: { startsWith: 'ZZ' } } } });
     await prisma.promotion.deleteMany({ where: { name: { startsWith: 'ZZ' } } });
     await prisma.customer.deleteMany({ where: { fullName: { startsWith: 'ZZ' } } });
     await deleteMarketingContacts(prisma, { email: { endsWith: DOMAIN } });
@@ -583,23 +585,33 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect((await orderOf(b.number)).status).toBe(OrderStatus.PAID);
   });
 
-  it('the store order costs what the website charges for the same cart; a quick account gets the welcome benefit', async () => {
-    await prisma.promotion.create({
+  it('the store order costs what the website charges for the same cart; a quick account gets its welcome code', async () => {
+    const welcome = await prisma.promotion.create({
       data: {
         name: 'ZZ הטבת הצטרפות',
-        kind: PromotionKind.AUTOMATIC,
+        kind: PromotionKind.PERSONAL_TEMPLATE,
         discountType: DiscountType.PERCENT,
         value: 10,
         target: PromotionTarget.ORDER,
+        validityDays: 30,
         isWelcome: true,
       },
     });
     await newSale(sellerA, [[plenty, 3]]);
     const customer = await quickAccount(sellerA);
+    // Task 13 issues the welcome code with the quick account and puts it on the store cart; here it is done by hand,
+    // the seller entering the code.
+    const { code } = await issuePersonalCode(prisma, {
+      templateId: welcome.id,
+      customerId: customer.id,
+      issuedById: null,
+      now: new Date(),
+    });
+    await sellerA.post('/store-cart/coupon', { code }).expect(201);
     const view = (await sellerA.get('/store-cart').expect(200)).body as StoreCartView;
     expect(view.customer).toMatchObject({ id: customer.id, isNew: true });
     expect(view.subtotal).toBe(150_000);
-    expect(view.discount?.amount).toBe(15_000);
+    expect(view.discount).toEqual({ labelHe: 'ZZ הטבת הצטרפות', amount: 15_000, source: 'coupon', code });
 
     // The website, same lines, as a guest (no welcome benefit for a guest).
     const guest = request.agent(app.getHttpServer() as App);
@@ -615,7 +627,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     const shipping = quote.methods.find((m) => m.method === 'curbside')!.total;
     const { customer: attached, ...storeCart } = view;
     expect(attached).not.toBeNull();
-    expect({ ...storeCart, discount: null }).toEqual({ ...web, discount: null });
+    expect({ ...storeCart, discount: null, couponCode: null }).toEqual({ ...web, discount: null });
 
     // The total on the seller screen (view + quote) is the one the order takes.
     const expectedTotal = view.subtotal - view.discount!.amount + shipping;
@@ -623,9 +635,10 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     const order = await orderOf((res.body as StoreOrderCreated).number);
     expect(order).toMatchObject({ subtotal: 150_000, discount: 15_000, shippingTotal: shipping, total: expectedTotal });
-    expect(order.promotionId).not.toBeNull();
+    expect(order.promotionId).toBe(welcome.id);
+    expect(order.personalCodeId).toBe((await prisma.personalCode.findUniqueOrThrow({ where: { code } })).id);
 
-    // The website checkout of the same lines: the same subtotal and shipping, without the welcome discount.
+    // The website checkout of the same lines: the same subtotal and shipping, without the welcome code.
     const webRes = await guest
       .post('/api/checkout')
       .set('Origin', STOREFRONT)

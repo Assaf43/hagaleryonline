@@ -46,8 +46,13 @@ export interface PromotionRule {
   usageLimit: number | null;
   usedCount: number;
   active: boolean;
-  /** The welcome benefit (decision 79): the caller adds it as a candidate only for an eligible account. */
+  /** The welcome template (decision 93): its personal codes work only while the account has no paid order. */
   isWelcome?: boolean;
+  /**
+   * A personal code evaluated as a coupon (spec §5.2): the code's id. The rule is then its template's terms with
+   * `kind: 'coupon'` and the personal code as `code`; `id` stays the template's.
+   */
+  personalCodeId?: number;
   /** Only for a signed-in account or a confirmed store customer (decision 94). */
   membersOnly: boolean;
   /** Lines at their member price are eligible too (decision 92); off → they are left out. */
@@ -215,8 +220,15 @@ export function evaluateDiscount(
 
   if (!best) return { applied: null, promotion: null, couponOutcome, couponProblem: problem };
   const { rule, amount } = best;
+  // Only automatic promotions and coupons (a personal code is evaluated as a coupon) reach here.
+  const isCoupon = rule.kind === 'coupon';
   return {
-    applied: { labelHe: rule.name, amount, source: rule.kind, code: rule.kind === 'coupon' ? rule.code : null },
+    applied: {
+      labelHe: rule.name,
+      amount,
+      source: isCoupon ? 'coupon' : 'automatic',
+      code: isCoupon ? rule.code : null,
+    },
     promotion: rule,
     couponOutcome,
     couponProblem: problem,

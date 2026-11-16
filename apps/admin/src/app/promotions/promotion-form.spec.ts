@@ -18,6 +18,7 @@ const COUPON: AdminPromotion = {
   usageLimit: 100,
   usedCount: 7,
   isWelcome: false,
+  validityDays: null,
   membersOnly: false,
   appliesToMemberPrices: false,
   active: true,

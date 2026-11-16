@@ -25,7 +25,7 @@ import { invoiceViews, ORDER_INVOICES } from '../invoicing/invoice-view.js';
 import { PAYABLE_ORDER, PaymentsService } from '../payments/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { promotionEnded } from '../promotions/discount-engine.js';
-import { PromotionsService } from '../promotions/promotions.service.js';
+import { hasPaidOrder, PromotionsService } from '../promotions/promotions.service.js';
 import { DEFAULT_RETURN_WINDOW_DAYS, returnUntil } from '../support/support-input.js';
 import { currentSlotView } from './delivery-slot.js';
 import { lockCart, lockOrder, lockOrderPayments, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
@@ -249,30 +249,32 @@ export class OrdersService {
 
   /**
    * The order's promotion can no longer be honored on a new payment page: inactive, out of its dates, or used up by
-   * other orders (paid, or pending within their reservation — this order itself does not count). The welcome benefit
-   * also ends once the account has a paid order or another live pending order holds it (decision 79), and a
-   * members-only coupon once another order of the account used it or holds it (once per account, decision 94: a failed
-   * order released it, so another order may have taken it meanwhile). In the retry this runs under the promotion lock
-   * that checkout takes too, so a concurrent checkout of the same coupon waits for it.
+   * other orders (paid, or pending within their reservation — this order itself does not count). A members-only coupon
+   * also ends once another order of the account used it or holds it (once per account, decision 94: a failed order
+   * released it, so another order may have taken it meanwhile). A personal code (spec §5.2) ends when its template is
+   * off, the code expired, another order used it or holds it, or — a welcome code — the account has a paid order
+   * (`PromotionsService.personalCodeGone`). In the retry this runs under the promotion lock that checkout takes too
+   * (for a personal code: its template's row, which the webhook paying an order with a code of it also takes), so a
+   * concurrent checkout of the same coupon or code waits for it.
    */
   private async promotionGone(
     db: Prisma.TransactionClient | PrismaService,
-    order: { id: string; promotionId: number | null; customerId: string | null },
+    order: { id: string; promotionId: number | null; customerId: string | null; personalCodeId: number | null },
   ): Promise<boolean> {
     if (order.promotionId === null) return false;
     const rule = await this.promotions.byId(db, order.promotionId, { orderId: order.id });
     if (!rule || promotionEnded(rule, new Date())) return true;
-    if (
+    if (order.personalCodeId !== null)
+      return this.promotions.personalCodeGone(db, { ...order, personalCodeId: order.personalCodeId });
+    // A template without a code: a welcome order placed before the welcome code (migration personal_codes) — honored
+    // only while the account has no paid order, as the automatic welcome benefit was.
+    if (rule.kind === 'personal_template')
+      return order.customerId === null || (await hasPaidOrder(db, order.customerId));
+    return (
       rule.membersOnly &&
       rule.kind === 'coupon' &&
       order.customerId !== null &&
       (await this.promotions.accountUses(db, order.customerId, rule.id, { orderId: order.id })) >= 1
-    ) {
-      return true;
-    }
-    return (
-      rule.isWelcome === true &&
-      !(await this.promotions.welcomeStillOpen(db, { ...order, promotionId: order.promotionId }))
     );
   }
 

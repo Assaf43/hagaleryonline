@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { CartDiscount, DiscountType, PromotionKind, PromotionTarget, WelcomeBenefit } from '@hg/models';
+import type {
+  CartDiscount,
+  CouponProblem,
+  DiscountType,
+  PromotionKind,
+  PromotionTarget,
+  WelcomeBenefit,
+} from '@hg/models';
 import {
   OrderStatus,
   DiscountType as DbDiscountType,
@@ -10,11 +17,19 @@ import {
 } from '../generated/prisma/client.js';
 import { PAID_OR_LATER } from '../orders/order-transitions.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { evaluateDiscount, type DiscountLine, type DiscountResult, type PromotionRule } from './discount-engine.js';
+import {
+  evaluateDiscount,
+  promotionEnded,
+  type DiscountLine,
+  type DiscountResult,
+  type PromotionRule,
+} from './discount-engine.js';
+import { personalCodeProblem, personalCodeRule, type PersonalCodeState } from './personal-codes.js';
 
 const KIND: Record<DbPromotionKind, PromotionKind> = {
   [DbPromotionKind.AUTOMATIC]: 'automatic',
   [DbPromotionKind.COUPON]: 'coupon',
+  [DbPromotionKind.PERSONAL_TEMPLATE]: 'personal_template',
 };
 const DISCOUNT_TYPE: Record<DbDiscountType, DiscountType> = {
   [DbDiscountType.PERCENT]: 'percent',
@@ -48,8 +63,8 @@ export interface UsageExclusion {
 }
 
 /**
- * The signed-in customer, for the welcome benefit (decision 79): it is a candidate only for `hasPaidOrder: false`.
- * Guests pass nothing and never get it.
+ * The cart's account (a signed-in customer, or a store cart's attached customer): personal codes are checked against it
+ * (owner; a welcome code only while `hasPaidOrder` is false, decision 93). Guests pass nothing.
  */
 export interface WelcomeCustomer {
   customerId: string;
@@ -123,6 +138,13 @@ export function discountInfo(result: DiscountResult): DiscountInfo | null {
   };
 }
 
+/** The entered code as the engine gets it: the coupon to evaluate, or why the code cannot be used before the engine. */
+export interface CouponCandidate {
+  coupon: PromotionRule | null;
+  /** A personal code's own refusal (owner, use, expiry, first order, spec §5.2), or `unknown` for no such code. */
+  problem: CouponProblem | null;
+}
+
 /**
  * Promotions read from the database for the discount engine (spec §6). The cart view, coupon entry, checkout and the
  * payment retry all count uses the same way (`withUses`), so the discount the customer sees is the one checkout
@@ -130,6 +152,13 @@ export function discountInfo(result: DiscountResult): DiscountInfo | null {
  *
  * Uses against a limit = paid orders (`usedCount`, +1 per paid order) + live pending orders that hold the promotion
  * (waiting for payment within their reservation), minus the excluded ones (spec §6).
+ *
+ * Personal codes (decisions 93–94, spec §5.2): an entered code that names no coupon is looked up among the personal
+ * codes. It is the coupon candidate — built from its template's current terms (`personalCodeRule`) — only when
+ * `personalCodeProblem` finds nothing: the cart's account owns it, it is unused, not expired, its template is active,
+ * no other live pending order holds it (one at a time, like the old welcome benefit), and for a welcome code the account
+ * has no paid order. A live pending order holds the code through `orders.personal_code_id`; paying it sets the code's
+ * `order_id` (`markCodeUsed`).
  */
 @Injectable()
 export class PromotionsService {
@@ -154,25 +183,26 @@ export class PromotionsService {
   }
 
   /**
-   * Active automatic promotions with their uses (dates, minimum and limit are checked by the engine). The welcome
-   * benefit is not among them: `evaluate` adds it for an eligible customer only.
+   * Active automatic promotions with their uses (dates, minimum and limit are checked by the engine). There is no
+   * automatic welcome benefit any more: the welcome template gives each new account a personal code (decision 93).
    */
   async automatic(db: Db, exclude: UsageExclusion = {}): Promise<PromotionRule[]> {
     const rows = await db.promotion.findMany({
-      where: { kind: DbPromotionKind.AUTOMATIC, active: true, isWelcome: false },
+      where: { kind: DbPromotionKind.AUTOMATIC, active: true },
       orderBy: { id: 'asc' },
     });
     return this.withUses(db, rows.map(toRule), exclude);
   }
 
   /**
-   * The active welcome promotion inside its dates, as the checkout banner names it (`labelHe` = its name, as in the
-   * cart's discount line); null when there is none. Whether a given customer would get it is not checked here.
+   * The active welcome template inside its dates, as the checkout banner names it (`labelHe` = its name, as in the
+   * cart's discount line when its code is used); null when there is none. Whether a given customer would get a code is
+   * not checked here.
    */
   async welcomeBenefit(now = new Date()): Promise<WelcomeBenefit | null> {
     const row = await this.prisma.promotion.findFirst({
       where: {
-        kind: DbPromotionKind.AUTOMATIC,
+        kind: DbPromotionKind.PERSONAL_TEMPLATE,
         active: true,
         isWelcome: true,
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
@@ -183,22 +213,35 @@ export class PromotionsService {
     return row ? { labelHe: row.name } : null;
   }
 
-  /** The signed-in customer's eligibility for the welcome benefit; null for a guest. */
+  /** The cart's account with whether it has a paid order (welcome codes); null for a guest. */
   async welcomeCustomer(db: Db, customerId: string | null | undefined): Promise<WelcomeCustomer | null> {
     if (!customerId) return null;
     return { customerId, hasPaidOrder: await hasPaidOrder(db, customerId) };
   }
 
   /**
-   * The welcome benefit of an order can still be honored (retry): the order has an account, the account has no paid
-   * order, and no other live pending order of the account holds the benefit.
+   * The personal code an order holds can no longer be honored on a new payment page (retry): its template is off or
+   * no longer a template, out of its dates, the code expired, another order used it (paid) or holds it (live pending),
+   * the order has no account any more, or — a welcome code — the account has a paid order. Run under the template's
+   * row lock (`lockOne`), which the webhook paying an order with a code of this template also takes.
    */
-  async welcomeStillOpen(
+  async personalCodeGone(
     db: Db,
-    order: { id: string; customerId: string | null; promotionId: number },
+    order: { id: string; customerId: string | null; personalCodeId: number },
+    now = new Date(),
   ): Promise<boolean> {
-    if (!order.customerId || (await hasPaidOrder(db, order.customerId))) return false;
-    return !(await this.welcomeHeld(db, order.customerId, order.promotionId, { orderId: order.id }));
+    const state = await this.personalCodeState(db, { id: order.personalCodeId }, { orderId: order.id });
+    if (!state) return true;
+    if (promotionEnded(state.template, now)) return true;
+    // Its own use does not count against it (a paid order is never retried, but the check stays exact).
+    const orderId = state.orderId === order.id ? null : state.orderId;
+    const customer = await this.welcomeCustomer(db, order.customerId);
+    const buyer = {
+      customerId: customer?.customerId ?? null,
+      isMember: true,
+      hasPaidOrder: customer?.hasPaidOrder ?? false,
+    };
+    return personalCodeProblem({ ...state, orderId }, buyer, now) !== null;
   }
 
   /** One promotion by id with its uses (retry of an order), or null. */
@@ -212,18 +255,20 @@ export class PromotionsService {
    * usage limit — in id order, so their uses stay true until commit. Taken LAST: cart → orders → variants →
    * promotions (locks.ts).
    */
-  async lockLimited(tx: Prisma.TransactionClient, couponCode: string | null, welcome = false): Promise<void> {
-    // With `welcome` (any signed-in checkout), the active welcome promotion too (in the same id order), so it cannot
-    // change until commit and a webhook paying a welcome order (it locks the row for its use +1) is waited for before
-    // the checkout reads `hasPaidOrder` (CheckoutService).
+  async lockLimited(tx: Prisma.TransactionClient, couponCode: string | null): Promise<void> {
     // A members-only coupon too (once per account, decision 94): the webhook paying an order that holds it locks the
-    // row for its use +1, so the account's uses read after this lock see that order paid, or still pending. Two
-    // checkouts of one account are already one after the other (the welcome advisory lock, taken first).
+    // row for its use +1, so the account's uses read after this lock see that order paid, or still pending.
+    // A personal code's template too (spec §5.2): the webhook paying an order that holds a code of this template locks
+    // the same row (its use +1) BEFORE it marks the code used, so whatever this checkout reads after this lock — the
+    // code's use, the orders holding it, the account's paid orders for a welcome code — sees that payment committed,
+    // or the order still pending. The template's terms also stay as read until commit (an admin save locks the row).
+    // Two checkouts of one account are already one after the other (the account's advisory lock, `lockWelcome`, taken
+    // first), so a second order never takes a code the first holds.
     await tx.$queryRaw`
       SELECT id FROM promotions
       WHERE (usage_limit IS NOT NULL AND (code = ${couponCode} OR (kind = 'automatic' AND active)))
          OR (members_only AND code = ${couponCode})
-         OR (${welcome} AND is_welcome AND active)
+         OR id = (SELECT promotion_id FROM personal_codes WHERE code = ${couponCode})
       ORDER BY id FOR UPDATE`;
   }
 
@@ -233,10 +278,32 @@ export class PromotionsService {
   }
 
   /**
-   * The one discount for these lines and the entered coupon code (null: none). The active welcome promotion is a
-   * candidate only when `context.customer` is given with `hasPaidOrder: false`, and only while no other live pending
-   * order of that account holds it (then `welcomeHeld` is true: checkout answers 409 `promotion_ended` when the
-   * customer saw it). Otherwise it follows the rules of any automatic promotion (one discount, best wins).
+   * The entered code (normalized; null: none) as a coupon candidate for this cart: a coupon with its uses, or a usable
+   * personal code as a coupon with its template's terms; otherwise why not (`unknown` for a code that names neither).
+   * Coupon entry and `evaluate` both use it, with the same exclusions as checkout.
+   */
+  async candidate(
+    db: Db,
+    code: string | null,
+    context: EvaluateContext = {},
+    now = new Date(),
+  ): Promise<CouponCandidate> {
+    if (!code) return { coupon: null, problem: null };
+    const isMember = context.isMember === true;
+    const customer = context.customer ?? null;
+    const coupon = await this.coupon(db, code, context, isMember ? (customer?.customerId ?? null) : null);
+    if (coupon?.kind === 'coupon') return { coupon, problem: null };
+    const state = await this.personalCodeState(db, { code }, context);
+    if (!state) return { coupon: null, problem: 'unknown' };
+    const buyer = { customerId: customer?.customerId ?? null, isMember, hasPaidOrder: customer?.hasPaidOrder ?? false };
+    const problem = personalCodeProblem(state, buyer, now);
+    return problem ? { coupon: null, problem } : { coupon: personalCodeRule(state), problem: null };
+  }
+
+  /**
+   * The one discount for these lines and the entered coupon code (null: none): the best automatic promotion against
+   * the entered coupon or personal code (`candidate`). A code refused before the engine leaves the automatic promotions
+   * alone, with that refusal as the coupon's problem.
    */
   async evaluate(
     db: Db,
@@ -244,29 +311,34 @@ export class PromotionsService {
     couponCode: string | null,
     context: EvaluateContext = {},
     now = new Date(),
-  ): Promise<DiscountResult & { coupon: PromotionRule | null; welcomeHeld: boolean }> {
+  ): Promise<DiscountResult & { coupon: PromotionRule | null }> {
     // One after the other: `db` may be an interactive transaction.
     const automatic = await this.automatic(db, context);
-    let welcomeHeld = false;
-    const customer = context.customer;
-    if (customer && !customer.hasPaidOrder) {
-      const row = await db.promotion.findFirst({
-        where: { kind: DbPromotionKind.AUTOMATIC, active: true, isWelcome: true },
-      });
-      if (row && (await this.welcomeHeld(db, customer.customerId, row.id, context))) welcomeHeld = true;
-      else if (row) automatic.push(...(await this.withUses(db, [toRule(row)], context)));
-    }
     const isMember = context.isMember === true;
-    const coupon = await this.coupon(db, couponCode, context, isMember ? (customer?.customerId ?? null) : null);
-    if (couponCode && coupon?.kind !== 'coupon') {
-      // An entered code that names no coupon (any more): the automatic promotions alone, the code is unknown.
+    const { coupon, problem } = await this.candidate(db, couponCode, context, now);
+    if (problem) {
       const result = evaluateDiscount(lines, automatic, null, now, { isMember });
-      return { ...result, couponOutcome: 'invalid', couponProblem: 'unknown', coupon: null, welcomeHeld };
+      return { ...result, couponOutcome: 'invalid', couponProblem: problem, coupon: null };
     }
-    return { ...evaluateDiscount(lines, automatic, coupon, now, { isMember }), coupon, welcomeHeld };
+    return { ...evaluateDiscount(lines, automatic, coupon, now, { isMember }), coupon };
   }
 
-  /** Paid order: one more use of its promotion, even past the limit (the order is honored, Review Focus 5). */
+  /**
+   * A paid order that holds a personal code marks it used, in the payment transaction after `countUse` (the template's
+   * row lock first, then the code's row). A code another paid order already used keeps that first use; this order is
+   * honored anyway (a late payment after its reservation ran out, as for a coupon past its limit).
+   */
+  async markCodeUsed(
+    tx: Prisma.TransactionClient,
+    order: { id: string; personalCodeId: number | null },
+  ): Promise<void> {
+    if (order.personalCodeId === null) return;
+    await tx.personalCode.updateMany({
+      where: { id: order.personalCodeId, orderId: null },
+      data: { orderId: order.id },
+    });
+  }
+
   /**
    * The account's uses of a promotion (members-only coupons, once per account, decision 94), minus the excluded
    * orders: the payment retry asks with its own order excluded.
@@ -275,8 +347,29 @@ export class PromotionsService {
     return accountUses(db, customerId, promotionId, exclude);
   }
 
+  /** Paid order: one more use of its promotion, even past the limit (the order is honored, Review Focus 5). */
   async countUse(tx: Prisma.TransactionClient, promotionId: number): Promise<void> {
     await tx.promotion.updateMany({ where: { id: promotionId }, data: { usedCount: { increment: 1 } } });
+  }
+
+  /** A personal code (by code or id) with its template, use and hold, or null when there is no such code. */
+  private async personalCodeState(
+    db: Db,
+    where: { code: string } | { id: number },
+    exclude: UsageExclusion,
+  ): Promise<PersonalCodeState | null> {
+    const row = await db.personalCode.findUnique({ where, include: { promotion: true } });
+    if (!row) return null;
+    const held = (await db.order.count({ where: livePending(exclude, { personalCodeId: row.id }) })) > 0;
+    return {
+      id: row.id,
+      code: row.code,
+      customerId: row.customerId,
+      expiresAt: row.expiresAt,
+      orderId: row.orderId,
+      held,
+      template: toRule(row.promotion),
+    };
   }
 
   /** `usedCount` of each limited rule becomes paid uses + live pending orders holding it (minus the excluded). */
@@ -287,16 +380,6 @@ export class PromotionsService {
     const pending = await db.order.groupBy({ by: ['promotionId'], where, _count: { _all: true } });
     const counts = new Map(pending.map((p) => [p.promotionId, p._count._all]));
     return rules.map((r) => ({ ...r, usedCount: r.usedCount + (counts.get(r.id) ?? 0) }));
-  }
-
-  /** Another live pending order of the account (not excluded) holds the welcome promotion: one at a time. */
-  private async welcomeHeld(
-    db: Db,
-    customerId: string,
-    promotionId: number,
-    exclude: UsageExclusion,
-  ): Promise<boolean> {
-    return (await db.order.count({ where: livePending(exclude, { customerId, promotionId }) })) > 0;
   }
 }
 

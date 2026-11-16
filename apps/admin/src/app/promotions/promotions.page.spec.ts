@@ -24,6 +24,7 @@ const base: AdminPromotion = {
   usageLimit: null,
   usedCount: 12,
   isWelcome: false,
+  validityDays: null,
   membersOnly: false,
   appliesToMemberPrices: false,
   active: true,

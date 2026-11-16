@@ -348,11 +348,11 @@ export class PaymentsService {
    * `superseded_paid` payment, which is a real paid order (review ruling); `paid_twice` and `late_payment` never
    * reach here. The order's promotion counts one more use — even past a coupon's limit, since the order is honored
    * (spec §6, Review Focus 5). The atomic increment locks the promotion row last: payment → order → variants →
-   * promotion.
+   * promotion; a personal code the order holds is then marked used (its row, after its template's).
    */
   private async onPaid(
     tx: Prisma.TransactionClient,
-    order: { id: string; promotionId: number | null; customerId: string | null },
+    order: { id: string; promotionId: number | null; personalCodeId: number | null; customerId: string | null },
     welcomeTo: string | null,
   ): Promise<void> {
     await this.enqueuePaidJobs(tx, order.id);
@@ -365,6 +365,9 @@ export class PaymentsService {
         orderId: order.id,
       });
     if (order.promotionId !== null) await this.promotions.countUse(tx, order.promotionId);
+    // A personal code is marked used by this order — after its template's row (above), the lock a checkout of the code
+    // also takes before reading whether the code is used (spec §5.2).
+    await this.promotions.markCodeUsed(tx, order);
     // The e-mail tool's fields of the buying account changed (has purchased, interests). Last: its e-mail lock is the
     // last lock. A marketing DB error here rolls the whole payment back on purpose: the provider retries the webhook,
     // and a paid order never exists without its sync job.
