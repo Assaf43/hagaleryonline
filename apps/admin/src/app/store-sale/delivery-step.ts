@@ -1,4 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+  type WritableSignal,
+} from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { SHIPPING_METHOD_LABELS_HE, MAX_FLOOR } from '@hg/models';
 import type { CheckoutAddress, CustomerAddressView, LocalityOption, ShippingMethod, ShippingQuote } from '@hg/models';
@@ -35,17 +44,27 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
           autocomplete="off"
           role="combobox"
           aria-autocomplete="list"
+          aria-controls="store-locality-list"
           [attr.aria-expanded]="options().length > 0"
+          [attr.aria-activedescendant]="active() >= 0 ? 'store-locality-' + active() : null"
           [value]="localityText()"
           (input)="searchLocality($event)"
+          (keydown)="localityKey($event)"
         />
       </label>
     </div>
     @if (options().length > 0) {
-      <ul class="list" aria-label="יישובים">
-        @for (o of options(); track o.id) {
-          <li>
-            <button type="button" class="pick" (click)="pickLocality(o)">{{ o.nameHe }}</button>
+      <ul class="list" id="store-locality-list" role="listbox" aria-label="יישובים">
+        @for (o of options(); track o.id; let i = $index) {
+          <li
+            class="pick"
+            role="option"
+            [id]="'store-locality-' + i"
+            [attr.aria-selected]="active() === i"
+            (mousedown)="$event.preventDefault()"
+            (click)="pickLocality(o)"
+          >
+            {{ o.nameHe }}
           </li>
         }
       </ul>
@@ -53,7 +72,7 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
     <div class="row">
       <label>
         <span>רחוב</span>
-        <input name="street" maxlength="80" [value]="street()" (input)="street.set(valueOf($event))" />
+        <input name="street" maxlength="80" [value]="street()" (input)="edit(street, $event)" />
       </label>
       <label>
         <span>מספר בית</span>
@@ -62,18 +81,12 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
           maxlength="10"
           dir="ltr"
           [value]="houseNumber()"
-          (input)="houseNumber.set(valueOf($event))"
+          (input)="edit(houseNumber, $event)"
         />
       </label>
       <label>
         <span>דירה</span>
-        <input
-          name="apartment"
-          maxlength="10"
-          dir="ltr"
-          [value]="apartment()"
-          (input)="apartment.set(valueOf($event))"
-        />
+        <input name="apartment" maxlength="10" dir="ltr" [value]="apartment()" (input)="edit(apartment, $event)" />
       </label>
       <label>
         <span>קומה (0 = קרקע)</span>
@@ -95,7 +108,7 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
     </label>
     <label>
       <span>הערות לשליח</span>
-      <input name="notes" maxlength="300" [value]="notes()" (input)="notes.set(valueOf($event))" />
+      <input name="notes" maxlength="300" [value]="notes()" (input)="edit(notes, $event)" />
     </label>
     <div class="actions">
       <button matButton="outlined" type="button" [disabled]="busy() || !canQuote()" (click)="quote()">
@@ -111,8 +124,10 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
               class="pick"
               role="radio"
               [attr.aria-checked]="method() === m.method"
+              [attr.tabindex]="isTabStop(m.method) ? 0 : -1"
               [class.chosen]="method() === m.method"
               (click)="method.set(m.method)"
+              (keydown)="radioKey($event, m.method)"
             >
               {{ labels[m.method] }} · <bdi>{{ price(m.total) }}</bdi>
             </button>
@@ -168,6 +183,7 @@ export class DeliveryStep {
   protected readonly ready = computed(
     () => !!this.quoted() && !!this.method() && !!this.street().trim() && !!this.houseNumber().trim(),
   );
+  protected readonly active = signal(-1);
   private searchSeq = 0;
 
   async ngOnInit() {
@@ -193,12 +209,14 @@ export class DeliveryStep {
 
   protected setFloor(event: Event) {
     const n = Number(valueOf(event));
+    this.clearSaved();
     this.floor.set(Number.isInteger(n) && n >= 0 ? Math.min(n, MAX_FLOOR) : 0);
     this.quoted.set(null);
     this.method.set(null);
   }
 
   protected setElevator(event: Event) {
+    this.clearSaved();
     this.hasElevator.set(this.checked(event));
     this.quoted.set(null);
     this.method.set(null);
@@ -206,6 +224,8 @@ export class DeliveryStep {
 
   protected async searchLocality(event: Event) {
     const text = valueOf(event);
+    this.clearSaved();
+    this.active.set(-1);
     this.localityText.set(text);
     this.localityId.set(null);
     this.quoted.set(null);
@@ -227,6 +247,57 @@ export class DeliveryStep {
     this.localityId.set(o.id);
     this.localityText.set(o.nameHe);
     this.options.set([]);
+    this.active.set(-1);
+  }
+
+  protected localityKey(event: KeyboardEvent) {
+    const list = this.options();
+    if (list.length === 0) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      this.active.set((this.active() + step + list.length) % list.length);
+    } else if (event.key === 'Enter' && this.active() >= 0) {
+      event.preventDefault();
+      this.pickLocality(list[this.active()]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      this.options.set([]);
+      this.active.set(-1);
+    }
+  }
+
+  /** Editing a field after a saved address was chosen makes it a different address. */
+  private clearSaved() {
+    if (this.savedId() === null) return;
+    this.savedId.set(null);
+    this.saveAddress.set(true);
+  }
+
+  protected edit(field: WritableSignal<string>, event: Event) {
+    this.clearSaved();
+    field.set(valueOf(event));
+  }
+
+  /** The checked method (or the first one while none is) is the group's only tab stop. */
+  protected isTabStop(method: ShippingMethod) {
+    const methods = this.quoted()?.methods ?? [];
+    const current = this.method();
+    return current ? current === method : methods[0]?.method === method;
+  }
+
+  /** Arrow keys move and choose within the group (left is "next" in RTL). */
+  protected radioKey(event: KeyboardEvent, method: ShippingMethod) {
+    const move: Record<string, number> = { ArrowDown: 1, ArrowLeft: 1, ArrowUp: -1, ArrowRight: -1 };
+    const step = move[event.key];
+    const methods = this.quoted()?.methods ?? [];
+    if (step === undefined || methods.length === 0) return;
+    event.preventDefault();
+    const at = methods.findIndex((m) => m.method === method);
+    const index = (at + step + methods.length) % methods.length;
+    this.method.set(methods[index].method);
+    const group = (event.currentTarget as HTMLElement).parentElement;
+    group?.querySelectorAll<HTMLElement>('[role="radio"]')[index]?.focus();
   }
 
   protected useSaved(a: CustomerAddressView) {
@@ -258,7 +329,8 @@ export class DeliveryStep {
       this.quoted.set(q);
       const stillThere = (m: ShippingMethod | null) => !!m && q.methods.some((o) => o.method === m);
       const current = keep ?? this.method();
-      this.method.set(stillThere(current) ? current : (q.methods[0]?.method ?? null));
+      // One offered method is chosen for the seller; with several, the seller must pick.
+      this.method.set(stillThere(current) ? current : q.methods.length === 1 ? q.methods[0].method : null);
     } catch (e) {
       this.fail(e);
     } finally {

@@ -63,6 +63,8 @@ export class StoreSalePage {
   readonly cart = signal<StoreCartView | null>(null);
   readonly delivery = signal<DeliveryChoice | null>(null);
   readonly orderNumber = signal<number | null>(null);
+  /** True once an order exists for this sale (not for a pending order the seller reopens). */
+  readonly locked = signal(false);
   readonly payment = signal<PaymentState>('waiting');
   readonly pending = signal<StorePendingOrder[]>([]);
   protected readonly payUrl = signal<string | null>(null);
@@ -76,6 +78,7 @@ export class StoreSalePage {
     cart: this.cart(),
     delivery: this.delivery(),
     orderNumber: this.orderNumber(),
+    locked: this.locked(),
   }));
   protected readonly discount = computed(() => this.cart()?.discount?.amount ?? 0);
   protected readonly total = computed(() => {
@@ -157,6 +160,7 @@ export class StoreSalePage {
       this.cart.set(await this.api.startSale());
       this.delivery.set(null);
       this.orderNumber.set(null);
+      this.locked.set(false);
       this.payUrl.set(null);
       this.acceptTerms.set(false);
       this.marketing.set(false);
@@ -195,6 +199,7 @@ export class StoreSalePage {
     try {
       const created = await this.api.createOrder(request);
       this.orderNumber.set(created.number);
+      this.locked.set(true);
       this.openPayment(created.redirectUrl);
       this.beginStatus();
       void this.loadPending();
@@ -203,6 +208,7 @@ export class StoreSalePage {
       if (body?.code === 'order_pending' && typeof body.number === 'number') {
         // The sale already has an order: show it, with "נסה שוב" for a new payment page.
         this.orderNumber.set(body.number);
+        this.locked.set(true);
         this.payUrl.set(null);
         this.beginStatus();
         this.error.set(storeErrorMessage(e));
@@ -274,30 +280,48 @@ export class StoreSalePage {
     }
   }
 
+  private readonly onVisible = () => {
+    if (document.visibilityState === 'visible') void this.poll();
+  };
+  private polling = false;
+  /** True while the shown error came from a poll: the next good poll clears it. */
+  private pollFailed = false;
+
   private startPolling() {
     this.stopPolling();
     this.timer = setInterval(() => {
       if (document.visibilityState === 'visible') void this.poll();
     }, POLL_MS);
+    // Back from the payment tab: check at once instead of waiting for the next tick.
+    document.addEventListener('visibilitychange', this.onVisible);
   }
 
   private stopPolling() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    document.removeEventListener('visibilitychange', this.onVisible);
   }
 
-  /** One status check (also called by the timer): paid ends the sale, failed or expired offers a retry. */
+  /** One status check (the timer and a return to the tab call it; never two in flight): paid ends the sale. */
   async poll() {
     const number = this.orderNumber();
-    if (number === null) return;
+    if (number === null || this.polling) return;
+    this.polling = true;
     try {
       const { status } = await this.api.status(number);
+      if (this.pollFailed) {
+        this.pollFailed = false;
+        this.error.set('');
+      }
       if (status === 'pending_payment') return;
       this.stopPolling();
       this.payment.set(FAILED.has(status) ? 'failed' : CLOSED.has(status) ? 'closed' : 'paid');
       void this.loadPending();
     } catch (e) {
+      this.pollFailed = true;
       this.error.set(storeErrorMessage(e));
+    } finally {
+      this.polling = false;
     }
   }
 }

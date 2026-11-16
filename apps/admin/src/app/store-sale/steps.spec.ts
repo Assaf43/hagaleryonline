@@ -6,7 +6,13 @@ const line = { variantId: 1, available: true } as StoreCartView['lines'][number]
 const cart = (customer: StoreCartView['customer'] = null): StoreCartView =>
   ({ lines: [line], customer }) as unknown as StoreCartView;
 const customer = { id: 'c', fullName: 'דנה', phone: '0501234567', email: null, emailVerified: false, isNew: false };
-const state = (over: Partial<SaleState>): SaleState => ({ cart: null, delivery: null, orderNumber: null, ...over });
+const state = (over: Partial<SaleState>): SaleState => ({
+  cart: null,
+  delivery: null,
+  orderNumber: null,
+  locked: false,
+  ...over,
+});
 
 describe('store sale step machine', () => {
   it('needs lines before the customer step and a confirmed customer before delivery', () => {
@@ -22,6 +28,12 @@ describe('store sale step machine', () => {
     expect(canEnter('summary', state({ cart: cart(customer), delivery }))).toBe(true);
     expect(canEnter('status', state({ cart: cart(customer), delivery }))).toBe(false);
     expect(canEnter('status', state({ orderNumber: 100001 }))).toBe(true);
+  });
+
+  it('locks steps 1-4 once an order was placed for the sale', () => {
+    const placed = state({ cart: cart(customer), delivery: {} as never, orderNumber: 5, locked: true });
+    for (const s of ['products', 'customer', 'delivery', 'summary'] as const) expect(canEnter(s, placed)).toBe(false);
+    expect(canEnter('status', placed)).toBe(true);
   });
 
   it('sends customer_not_confirmed back to the customer step', () => {

@@ -203,6 +203,42 @@ describe('store sale page', () => {
     expect(el(fixture).querySelector('p.error[role="alert"]')).not.toBeNull();
   });
 
+  it('polls at once when the tab becomes visible, never twice at the same time, and clears a poll error', async () => {
+    const fixture = await toSummary();
+    const page = fixture.componentInstance;
+    page.orderNumber.set(100053);
+    page['startPolling']();
+    document.dispatchEvent(new Event('visibilitychange'));
+    const first = http.expectOne('/api/admin/store-orders/100053');
+    // A second trigger while the first is in flight sends nothing.
+    document.dispatchEvent(new Event('visibilitychange'));
+    http.expectNone('/api/admin/store-orders/100053');
+    first.flush({ statusCode: 500 }, { status: 500, statusText: 'Server Error' });
+    await settle(fixture);
+    expect(el(fixture).querySelector('p.error[role="alert"]')).not.toBeNull();
+    document.dispatchEvent(new Event('visibilitychange'));
+    http.expectOne('/api/admin/store-orders/100053').flush({ number: 100053, status: 'pending_payment', total: 1 });
+    await settle(fixture);
+    expect(el(fixture).querySelector('p.error[role="alert"]')).toBeNull();
+    page['stopPolling']();
+  });
+
+  it('locks steps 1-4 once the order exists, leaving the status step', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    const fixture = await toSummary();
+    fixture.componentInstance['acceptTerms'].set(true);
+    fixture.detectChanges();
+    el(fixture).querySelector<HTMLButtonElement>('.pay')!.click();
+    http.expectOne('/api/admin/store-orders').flush({ number: 100054, redirectUrl: 'https://pay.example.test/y' });
+    await settle(fixture);
+    http.expectOne('/api/admin/store-orders/pending').flush([]);
+    await settle(fixture);
+    const buttons = [...el(fixture).querySelectorAll<HTMLButtonElement>('.step')];
+    expect(buttons.map((b) => b.disabled)).toEqual([true, true, true, true, false]);
+    expect(el(fixture).querySelector<HTMLButtonElement>('.new-sale')!.disabled).toBe(false);
+    fixture.componentInstance['stopPolling']();
+  });
+
   it('returns to the customer step when the API says customer_not_confirmed', async () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
     const fixture = await toSummary();

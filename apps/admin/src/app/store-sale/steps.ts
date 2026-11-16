@@ -28,12 +28,15 @@ export interface SaleState {
   delivery: DeliveryChoice | null;
   /** The order of this sale, once it was placed. */
   orderNumber: number | null;
+  /** An order was placed for this sale: only the status step is open until a new sale starts. */
+  locked: boolean;
 }
 
 const hasLines = (cart: StoreCartView | null) => !!cart && cart.lines.some((l) => l.available);
 
 /** Whether a step may be opened: each one needs what the earlier ones produce (spec §4.1). */
 export function canEnter(step: SaleStep, state: SaleState): boolean {
+  if (state.locked && step !== 'status') return false;
   switch (step) {
     case 'products':
       return true;

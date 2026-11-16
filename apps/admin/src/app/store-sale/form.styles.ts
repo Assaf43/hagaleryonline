@@ -32,7 +32,7 @@ export const FORM_STYLES = `
     color: var(--color-text); background: var(--color-surface);
     border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); cursor: pointer;
   }
-  .pick[aria-pressed='true'], .pick[aria-checked='true'] {
+  .pick[aria-pressed='true'], .pick[aria-checked='true'], .pick[aria-selected='true'] {
     color: var(--color-on-accent); background: var(--color-accent); border-color: var(--color-accent);
   }
   .notice { margin: 0; padding: var(--space-2) var(--space-3); background: var(--color-warning-soft); border-radius: var(--radius-md); }
