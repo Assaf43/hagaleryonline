@@ -17,6 +17,10 @@ export interface MarketingSyncPayload {
  * `upsertContact` with the fields of this moment, anything else (pending, unsubscribed) → `removeContact`. Then
  * `syncedVersion = max(syncedVersion, version)`. A job whose version is already covered by a later run is skipped:
  * that run read the contact after this job's change, and any change since then has its own, higher version.
+ *
+ * One API process only: the outbox runs jobs one after another, so version N's upsert ends before N+1's remove starts.
+ * With several processes (or a job reclaimed after 10 minutes, see `OutboxService`) N and N+1 could run at once and
+ * the older read could land last at the tool — add the outbox claim token and order the runs per contact first.
  */
 @Injectable()
 export class MarketingSyncJob implements OnModuleInit {

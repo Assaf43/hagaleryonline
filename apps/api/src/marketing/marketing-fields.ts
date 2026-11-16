@@ -13,20 +13,22 @@ const MAX_DEPTH = 10;
 /**
  * The fields of a contact the e-mail tool keeps (spec §5.4), read now: `member` when the contact is linked to an
  * account (its first name too), else `newsletter`; whether it has a paid order (paid or any later step,
- * `PAID_OR_LATER`) and when the latest was paid; the top-level category slugs of those orders' products. An order
- * counts when the linked account placed it or its contact e-mail is the contact's (any case). Favorites join the
- * interests in Phase 7c.
+ * `PAID_OR_LATER`) and when the latest was paid; the top-level category slugs of those orders' products. Only orders
+ * the linked account placed count: a guest order is never linked to anyone (decision 77), even when its e-mail is the
+ * contact's, so a contact without an account has no purchase fields. Favorites join the interests in Phase 7c.
  */
 export async function marketingFields(db: FieldsDb, contact: MarketingContact): Promise<SyncedContact> {
-  const customer = contact.customerId
-    ? await db.customer.findUnique({ where: { id: contact.customerId }, select: { fullName: true } })
+  const customerId = contact.customerId;
+  const customer = customerId
+    ? await db.customer.findUnique({ where: { id: customerId }, select: { fullName: true } })
     : null;
-  const orders = await db.$queryRaw<{ id: string; paid_at: Date | null }[]>`
-    SELECT o.id,
-           (SELECT min(p.updated_at) FROM payments p WHERE p.order_id = o.id AND p.status = 'succeeded') AS paid_at
-    FROM orders o
-    WHERE o.status::text IN (${Prisma.join(PAID_DB_VALUES)})
-      AND (o.customer_id = ${contact.customerId}::uuid OR lower(o.contact->>'email') = ${contact.email})`;
+  const orders = customerId
+    ? await db.$queryRaw<{ id: string; paid_at: Date | null }[]>`
+        SELECT o.id,
+               (SELECT min(p.updated_at) FROM payments p WHERE p.order_id = o.id AND p.status = 'succeeded') AS paid_at
+        FROM orders o
+        WHERE o.status::text IN (${Prisma.join(PAID_DB_VALUES)}) AND o.customer_id = ${customerId}::uuid`
+    : [];
 
   let interestCategories: string[] = [];
   if (orders.length > 0) {

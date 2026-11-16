@@ -8,7 +8,7 @@ import type { CartView, ShippingQuote } from '@hg/models';
 import { AppModule } from './../src/app.module.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
-import { ConsentAction, MarketingStatus } from './../src/generated/prisma/client.js';
+import { ConsentAction, MarketingStatus, OutboxJobState } from './../src/generated/prisma/client.js';
 import { MARKETING_PROVIDER, type SyncedContact } from './../src/marketing/marketing-provider.js';
 import { MarketingService } from './../src/marketing/marketing.service.js';
 import { MOCK_MARKETING_SIGNATURE_HEADER, MockMarketingProvider } from './../src/marketing/mock-marketing.provider.js';
@@ -264,9 +264,25 @@ describe('Marketing sync and webhook (e2e, CLB-11)', () => {
   it('unsubscribe beats queued sync', async () => {
     const email = newEmail();
     await subscribe(email);
-    // The subscribe job is still queued when the tool reports the unsubscribe.
+    // The confirmation's sync job (contact subscribed when it was queued) is still waiting.
+    const { id, syncVersion } = (await contactOf(email))!;
+    const queued = await prisma.outboxJob.findUniqueOrThrow({
+      where: { dedupeKey: `marketing.sync:${id}:${syncVersion}` },
+    });
+    expect(queued.state).toBe(OutboxJobState.PENDING);
     await providerUnsubscribe(email, `evt_${unique()}`).expect(204);
-    await runJobs();
+    const upsert = vi.spyOn(mock, 'upsertContact');
+    const remove = vi.spyOn(mock, 'removeContact');
+    try {
+      await runJobs();
+      // The job queued while subscribed read the contact when it ran: it removed, it never upserted.
+      expect(upsert.mock.calls.filter(([c]) => c.email === email)).toEqual([]);
+      expect(remove.mock.calls.filter(([e]) => e === email).length).toBeGreaterThanOrEqual(1);
+    } finally {
+      upsert.mockRestore();
+      remove.mockRestore();
+    }
+    expect((await prisma.outboxJob.findUniqueOrThrow({ where: { id: queued.id } })).state).toBe(OutboxJobState.DONE);
     expect(synced(email)).toBeUndefined();
     expect((await contactOf(email))!.status).toBe(MarketingStatus.UNSUBSCRIBED);
   });
@@ -307,6 +323,23 @@ describe('Marketing sync and webhook (e2e, CLB-11)', () => {
     expect(Date.parse(fields.lastPaidOrderAt!)).toBeGreaterThan(Date.now() - 60_000);
     const contact = await contactOf(email);
     expect(contact!.syncedVersion).toBe(contact!.syncVersion);
+  });
+
+  it("a guest order with a member's e-mail changes nothing of the member (decision 77)", async () => {
+    const email = newEmail();
+    await signUp(email);
+    await runJobs();
+    const before = (await contactOf(email))!;
+    // A stranger, not signed in, types the member's e-mail at checkout and pays.
+    await buyAndPay(browser(), email.toUpperCase(), `05${unique()}`);
+    expect((await contactOf(email))!.syncVersion).toBe(before.syncVersion);
+    await runJobs();
+    expect(synced(email)).toMatchObject({
+      tags: ['member'],
+      hasPurchased: false,
+      lastPaidOrderAt: null,
+      interestCategories: [],
+    });
   });
 
   it('dev endpoints: list and unsubscribe through the webhook path, orders.manage only', async () => {

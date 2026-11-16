@@ -60,6 +60,13 @@ describe('marketingFields', () => {
     expect(db.orderItem.findMany).not.toHaveBeenCalled();
   });
 
+  it('a contact without an account has no purchase fields, whatever orders exist (decision 77)', async () => {
+    const db = fakeDb([{ id: 'o-1', paidAt: new Date(), categoryIds: [3] }]);
+    const fields = await marketingFields(db, contact());
+    expect(fields).toMatchObject({ hasPurchased: false, lastPaidOrderAt: null, interestCategories: [] });
+    expect(db.$queryRaw).not.toHaveBeenCalled();
+  });
+
   it('a linked contact is a member with the first word of the account name', async () => {
     const db = fakeDb([], '  דנה   לוי ');
     const fields = await marketingFields(db, contact({ customerId: 'cust-1' }));
@@ -74,7 +81,7 @@ describe('marketingFields', () => {
       { id: 'o-1', paidAt: early, categoryIds: [2, 4, null] },
       { id: 'o-2', paidAt: late, categoryIds: [3, 1, 3] },
     ]);
-    const fields = await marketingFields(db, contact());
+    const fields = await marketingFields(db, contact({ customerId: 'cust-1' }));
     expect(fields.interestCategories).toEqual(['sofas', 'tables']);
     expect(fields.hasPurchased).toBe(true);
     expect(fields.lastPaidOrderAt).toBe(late.toISOString());

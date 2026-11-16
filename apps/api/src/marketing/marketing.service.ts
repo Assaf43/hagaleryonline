@@ -297,29 +297,28 @@ export class MarketingService {
   }
 
   /**
-   * An order was paid (in the payment's transaction, as its last step): the synced fields of its contacts changed
-   * (has purchased, last paid order, interests), so each subscribed contact — the one linked to the order's account
-   * and the one of the order's e-mail — gets a new `syncVersion` and a `marketing.sync` job. Other contacts are not in
-   * the tool, so nothing changes for them. The e-mail locks are taken in a fixed order (two orders at once).
+   * An order of an account was paid (in the payment's transaction, as its last step): the synced fields of the
+   * account's contact changed (has purchased, last paid order, interests), so a subscribed contact linked to it gets a
+   * new `syncVersion` and a `marketing.sync` job. Only the account's own contact: purchase fields come from the
+   * account's orders only (decision 77), so a guest order changes nobody's fields. A contact not subscribed is not in
+   * the tool: nothing to do.
    */
-  async orderPaid(tx: Db, order: { customerId: string | null; email: string | null }): Promise<void> {
-    const email = order.email ? normalize(order.email) : null;
-    const or: Prisma.MarketingContactWhereInput[] = [
-      ...(order.customerId ? [{ customerId: order.customerId }] : []),
-      ...(email ? [{ email }] : []),
-    ];
-    if (or.length === 0) return;
-    const seen = await tx.marketingContact.findMany({ where: { OR: or }, select: { id: true, email: true } });
-    for (const { id, email: address } of [...seen].sort((a, b) => a.email.localeCompare(b.email))) {
-      await lockEmail(tx, address);
-      const contact = await tx.marketingContact.findUnique({ where: { id } });
-      if (contact?.status !== MarketingStatus.SUBSCRIBED) continue;
-      const updated = await tx.marketingContact.update({
-        where: { id },
-        data: { syncVersion: { increment: 1 } },
-      });
-      await this.sync(tx, updated);
-    }
+  async orderPaid(tx: Db, order: { customerId: string | null }): Promise<void> {
+    if (!order.customerId) return;
+    const seen = await tx.marketingContact.findUnique({
+      where: { customerId: order.customerId },
+      select: { email: true },
+    });
+    if (!seen) return;
+    await lockEmail(tx, seen.email);
+    // Re-read under the lock: the contact may have changed (or been unlinked) meanwhile.
+    const contact = await tx.marketingContact.findUnique({ where: { customerId: order.customerId } });
+    if (contact?.status !== MarketingStatus.SUBSCRIBED) return;
+    const updated = await tx.marketingContact.update({
+      where: { id: contact.id },
+      data: { syncVersion: { increment: 1 } },
+    });
+    await this.sync(tx, updated);
   }
 
   /** The contact of an account: the linked one, else the one of its own e-mail (an unverified e-mail is still theirs). */
