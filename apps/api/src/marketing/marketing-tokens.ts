@@ -10,11 +10,26 @@ export function newConfirmToken(): { token: string; hash: string } {
   return { token, hash: hashToken(token) };
 }
 
+/** Only for development and tests: production refuses to start without its own `MARKETING_TOKEN_SECRET`. */
+const DEV_TOKEN_SECRET = 'dev-marketing-token-secret-not-for-production';
+const MIN_SECRET_LENGTH = 32;
+
 /**
- * The unsubscribe token of a contact is stable: an HMAC of its id under a server secret, so every message we send
- * carries a link that keeps working (also after a later message), yet the raw token is stored nowhere — the contact row
- * keeps only its SHA-256 (`unsubscribeTokenHash`, used to find the contact). Changing the secret retires the links
- * already sent; the next message to the contact writes the new hash.
+ * The HMAC key of the unsubscribe tokens: `MARKETING_TOKEN_SECRET`, required in production (at least 32 characters).
+ * Its own secret, not `OTP_PEPPER`: rotating the code pepper must not kill the unsubscribe links already sent.
+ */
+export function resolveMarketingTokenSecret(value: string | undefined, nodeEnv: string | undefined): string {
+  if (nodeEnv !== 'production') return value || DEV_TOKEN_SECRET;
+  if (!value || value.length < MIN_SECRET_LENGTH)
+    throw new Error('MARKETING_TOKEN_SECRET is required in production (at least 32 random characters).');
+  return value;
+}
+
+/**
+ * The unsubscribe token of a contact is stable: an HMAC of its id under `MARKETING_TOKEN_SECRET`, so every message we
+ * send carries a link that keeps working (also after a later message), yet the raw token is stored nowhere — the
+ * contact row keeps only its SHA-256 (`unsubscribeTokenHash`, used to find the contact). Changing the secret retires
+ * the links already sent; the next message to the contact writes the new hash.
  */
 export class UnsubscribeTokens {
   constructor(private readonly secret: string) {}
