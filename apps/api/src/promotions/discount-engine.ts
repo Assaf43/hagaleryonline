@@ -126,7 +126,7 @@ function ruleProblem(
   eligible: number,
   now: Date,
   context: DiscountContext = GUEST,
-): Exclude<CouponProblem, 'unknown' | 'lost'> | null {
+): Exclude<CouponProblem, 'unknown' | 'lost' | 'lost_to_member_prices'> | null {
   if (rule.membersOnly && !context.isMember) return 'members_only';
   if (!rule.active) return 'expired';
   if (rule.startsAt && now < rule.startsAt) return 'not_started';

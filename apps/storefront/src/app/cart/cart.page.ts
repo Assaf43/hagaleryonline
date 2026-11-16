@@ -4,6 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
+import { MEMBER_JOIN_LINK_HE, MEMBER_PRICE_LABEL_HE, MEMBER_SAVINGS_HINT_HE } from '../catalog/member-price';
 import { PageMeta } from '../core/page-meta';
 import { QuantityStepper } from '../catalog/quantity-stepper';
 import { ResponsiveImage } from '../catalog/responsive-image';
@@ -35,6 +36,9 @@ export class CartPage {
     return e ? deliveryEstimateText(e.leadTimeDays) : '';
   });
   protected readonly price = formatPrice;
+  protected readonly memberLabel = MEMBER_PRICE_LABEL_HE;
+  protected readonly hintPrefix = MEMBER_SAVINGS_HINT_HE;
+  protected readonly joinLink = MEMBER_JOIN_LINK_HE;
   /** The line being changed (its controls ignore clicks meanwhile). */
   protected readonly busy = signal<number | null>(null);
   protected readonly error = signal('');

@@ -34,6 +34,30 @@ describe('CartPage', () => {
     fixture.detectChanges();
   }
 
+  it('shows a guest the club savings hint with a sign-in link back to the cart', async () => {
+    const view = cartView([cartLine(1, 1, 100000)]);
+    view.memberSavings = 15000;
+    await setup(view);
+    expect(text()).toContain('חברי מועדון היו חוסכים 150 ₪');
+    const a = el().querySelector<HTMLAnchorElement>('.member-hint a')!;
+    expect(a.getAttribute('href')).toBe('/account?next=%2Fcart');
+  });
+
+  it('shows no hint when nothing would be saved', async () => {
+    await setup();
+    expect(el().querySelector('.member-hint')).toBeNull();
+  });
+
+  it('labels a line charged at its member price', async () => {
+    const view = cartView([cartLine(1, 1, 90000)]);
+    view.lines[0].atMemberPrice = true;
+    view.lines[0].memberPrice = 90000;
+    view.pricing = 'member';
+    await setup(view);
+    expect(el().querySelector('.unit')?.textContent).toContain('מחיר מועדון');
+    expect(el().querySelector('.unit .sale')).toBeNull();
+  });
+
   it('sets a noindex title', async () => {
     await setup();
     expect(metaSet).toHaveBeenCalledWith({

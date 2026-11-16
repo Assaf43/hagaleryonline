@@ -38,11 +38,16 @@
                 }
                 @if (l.available) {
                   <span class="unit">
-                    <span class="num" [class.sale]="l.compareAtPrice !== null && l.compareAtPrice > l.unitPrice">{{
-                      price(l.unitPrice)
-                    }}</span>
+                    <span
+                      class="num"
+                      [class.sale]="!l.atMemberPrice && l.compareAtPrice !== null && l.compareAtPrice > l.unitPrice"
+                      >{{ price(l.unitPrice) }}</span
+                    >
                     @if (l.compareAtPrice !== null && l.compareAtPrice > l.unitPrice) {
                       <s class="old num"><span class="visually-hidden">במקום </span>{{ price(l.compareAtPrice) }}</s>
+                    }
+                    @if (l.atMemberPrice) {
+                      <span class="member-label">{{ memberLabel }}</span>
                     }
                   </span>
                 } @else {
@@ -91,6 +96,13 @@
           @if (view.discount; as d) {
             <p class="row discount-row">
               <span>{{ d.labelHe }}:</span>&ngsp;<hg-discount-amount [amount]="d.amount" />
+            </p>
+          }
+          @if (view.memberSavings; as saved) {
+            <p class="member-hint">
+              {{ hintPrefix }} <bdi class="num">{{ price(saved) }}</bdi
+              >.
+              <a [routerLink]="['/account']" [queryParams]="{ next: '/cart' }">{{ joinLink }}</a>
             </p>
           }
           <hg-coupon-field />

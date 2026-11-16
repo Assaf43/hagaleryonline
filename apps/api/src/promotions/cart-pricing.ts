@@ -127,7 +127,7 @@ async function run<D extends DiscountResult>(
 function couponBeaten<D extends DiscountResult>(winner: D, regular: D): D {
   if (winner.couponOutcome !== 'invalid' || !LINE_PROBLEMS.has(winner.couponProblem)) return winner;
   if (regular.couponOutcome === 'invalid') return { ...winner, couponProblem: regular.couponProblem };
-  return { ...winner, couponOutcome: 'lost_to_automatic', couponProblem: 'lost' };
+  return { ...winner, couponOutcome: 'lost_to_automatic', couponProblem: 'lost_to_member_prices' };
 }
 
 const LINE_PROBLEMS: ReadonlySet<DiscountResult['couponProblem']> = new Set(['not_applicable', 'below_minimum']);

@@ -1,6 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { ProductCard as Card } from '@hg/models';
+import {
+  MEMBER_GUEST_LINE_HE,
+  MEMBER_PRICE_LABEL_HE,
+  REGULAR_PRICE_SR_HE,
+  Viewer,
+  memberPriceView,
+} from './member-price';
 import { deliveryBadge, formatPrice } from '../core/format';
 import { FavoriteButton } from './favorite-button';
 import { ResponsiveImage } from './responsive-image';
@@ -42,17 +49,30 @@ const MAX_SWATCHES = 4;
             <span class="name">{{ p.nameHe }}</span>
           </a>
         </h3>
+        @let pv = priceView();
         <p class="price-row">
-          <span class="price" [class.sale]="p.compareAtFrom">
+          <span class="price" [class.sale]="!pv.memberLine && p.compareAtFrom">
             @if (p.hasPriceRange) {
               <span class="from">החל מ-</span>
             }
-            <span class="num">{{ price(p.priceFrom) }}</span>
+            <span class="num">{{ price(pv.main) }}</span>
           </span>
-          @if (p.compareAtFrom) {
-            <s class="old-price num"><span class="visually-hidden">במקום </span>{{ price(p.compareAtFrom) }}</s>
+          @if (pv.struck) {
+            <s class="old-price num"
+              ><span class="visually-hidden">{{ pv.memberLine ? regularSr : 'במקום ' }}</span
+              >{{ price(pv.struck) }}</s
+            >
           }
         </p>
+        @if (pv.memberLine; as line) {
+          <p class="member-line">
+            @if (line.kind === 'guest') {
+              {{ guestLine }} <bdi class="num">{{ price(line.price) }}</bdi>
+            } @else {
+              {{ memberLabel }}
+            }
+          </p>
+        }
         @if (p.swatches.length > 1) {
           <p class="swatches" [attr.aria-label]="colorsLabel()">
             @for (s of shownSwatches(); track s.code) {
@@ -205,6 +225,12 @@ const MAX_SWATCHES = 4;
       font-size: var(--font-small);
     }
 
+    .member-line {
+      margin: 0;
+      font-size: var(--font-small);
+      color: var(--color-text-secondary);
+    }
+
     .swatches {
       display: flex;
       align-items: center;
@@ -235,7 +261,16 @@ export class ProductCard {
   /** How wide the card is shown, for the photo's `sizes`. */
   readonly sizes = input('(width >= 1280px) 25vw, (width >= 768px) 33vw, 50vw');
 
+  private readonly viewer = inject(Viewer);
   protected readonly price = formatPrice;
+  protected readonly guestLine = MEMBER_GUEST_LINE_HE;
+  protected readonly memberLabel = MEMBER_PRICE_LABEL_HE;
+  protected readonly regularSr = REGULAR_PRICE_SR_HE;
+  /** The viewer is known only in the browser, so the server render shows the regular price (CLB-03). */
+  protected readonly priceView = computed(() => {
+    const p = this.product();
+    return memberPriceView(p.priceFrom, p.compareAtFrom, p.memberPriceFrom, this.viewer.isMember());
+  });
   protected readonly shownSwatches = computed(() => this.product().swatches.slice(0, MAX_SWATCHES));
   protected readonly moreSwatches = computed(() => Math.max(0, this.product().swatches.length - MAX_SWATCHES));
   protected readonly colorsLabel = computed(

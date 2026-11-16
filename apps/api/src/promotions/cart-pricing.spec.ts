@@ -156,7 +156,11 @@ describe('priceCart: best of two (decision 92, spec §5.1)', () => {
     const code = rule({ kind: 'coupon', code: 'SAVE', value: 10 });
     const result = await priceCart({ lines: [SOFA], isMember: true, evaluate: engine(true, [], code) });
     expect(result).toMatchObject({ pricing: 'member', total: 450_000 });
-    expect(result.discount).toMatchObject({ applied: null, couponOutcome: 'lost_to_automatic', couponProblem: 'lost' });
+    expect(result.discount).toMatchObject({
+      applied: null,
+      couponOutcome: 'lost_to_automatic',
+      couponProblem: 'lost_to_member_prices',
+    });
   });
 
   it('a coupon the regular run cannot use either keeps its own problem', async () => {

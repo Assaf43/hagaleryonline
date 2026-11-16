@@ -32,6 +32,8 @@ export type CouponProblem =
   | 'exhausted'
   | 'not_applicable'
   | 'lost'
+  /** Member prices (decision 92) beat the entered coupon: no promotion is involved. */
+  | 'lost_to_member_prices'
   /** A members-only coupon (decision 94) entered without an account. */
   | 'members_only';
 
@@ -66,6 +68,7 @@ export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>,
   exhausted: 'הקופון נוצל במלואו',
   not_applicable: 'הקופון לא חל על המוצרים בסל',
   lost: 'המבצע הנוכחי משתלם יותר מהקופון',
+  lost_to_member_prices: 'מחירי המועדון משתלמים יותר מהקופון, ולכן הקופון לא הופעל',
   members_only: 'הקופון מיועד לחברי מועדון בלבד. התחברו כדי להשתמש בו',
 };
 
