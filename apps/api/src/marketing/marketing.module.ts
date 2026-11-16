@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { WriteThrottleModule } from '../orders/write-throttle.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { selectProvider } from '../providers/select-provider.js';
 import { MarketingDevController } from './marketing-dev.controller.js';
@@ -12,6 +13,7 @@ import { resolveMarketingTokenSecret, UnsubscribeTokens } from './marketing-toke
 import { MarketingWebhookController } from './marketing-webhook.controller.js';
 import { MarketingService } from './marketing.service.js';
 import { MockMarketingProvider } from './mock-marketing.provider.js';
+import { NewsletterController } from './newsletter.controller.js';
 
 /**
  * Marketing consent and the e-mail tool (Phase 7, spec §5.3–5.4, CLB-11, decisions 95–96): `MarketingService` is the
@@ -22,8 +24,8 @@ import { MockMarketingProvider } from './mock-marketing.provider.js';
  * production).
  */
 @Module({
-  imports: [AuthModule, OutboxModule, NotificationsModule],
-  controllers: [MarketingWebhookController, MarketingDevController],
+  imports: [AuthModule, OutboxModule, NotificationsModule, WriteThrottleModule],
+  controllers: [MarketingWebhookController, MarketingDevController, NewsletterController],
   providers: [
     MarketingService,
     MarketingMessagesJob,
