@@ -112,6 +112,8 @@ export interface AdminVariant extends Dimensions {
   sku: string;
   price: number;
   compareAtPrice: number | null;
+  /** Club member price in agorot, lower than `price`; null = none. */
+  memberPrice: number | null;
   stock: number;
   fulfillment: FulfillmentMode;
   leadTimeDays: number;
@@ -228,6 +230,8 @@ export type CatalogErrorCode =
   | 'conflict'
   | 'duplicate'
   | 'invalid'
+  /** A variant's member price is not lower than its price (`field` = `variants.<i>.memberPrice`). */
+  | 'member_price_not_lower'
   /** A value or category still in use cannot be removed. */
   | 'in_use'
   /** Cannot show the product on the site yet: `reasons` lists what is missing. */

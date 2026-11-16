@@ -50,6 +50,7 @@ const FIELDS: Record<string, string> = {
   sku: 'מק"ט',
   price: 'מחיר',
   compareAtPrice: 'מחיר לפני הנחה',
+  memberPrice: 'מחיר מועדון',
   stock: 'מלאי',
   fulfillment: 'מצב אספקה',
   leadTimeDays: 'זמן אספקה',
@@ -117,6 +118,8 @@ function catalogMessage(body: {
       if (body.field === 'file' && body.value && body.value in IMAGE_PROBLEMS)
         return IMAGE_PROBLEMS[body.value as ImageUploadProblem];
       return `יש לבדוק את השדה: ${fieldLabel(body.field ?? '')}.`;
+    case 'member_price_not_lower':
+      return `${fieldLabel(body.field ?? '')} חייב להיות נמוך מהמחיר.`;
     case 'in_use':
       // The API names the reason itself when it is not the usual one (a product that was ordered).
       return body.messageHe ?? 'אי אפשר למחוק, כי יש מוצרים או תמונות שמשתמשים בזה.';
@@ -141,6 +144,7 @@ function shippingMessage(body: { code?: ShippingAdminErrorCode; localityNameHe?:
 export function catalogIssueText(code: CatalogErrorCode): string {
   const text: Record<CatalogErrorCode, string> = {
     invalid: 'הערך לא תקין (למשל מחיר לפני הנחה שלא גבוה מהמחיר)',
+    member_price_not_lower: 'מחיר המועדון חייב להיות נמוך מהמחיר',
     duplicate: 'הערך כבר קיים במוצר אחר',
     conflict: 'המוצר השתנה בזמן הייבוא. נסו שוב',
     in_use: 'בשימוש',

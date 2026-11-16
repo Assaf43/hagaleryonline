@@ -88,7 +88,7 @@ describe('Catalog Excel (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.variant.update({ where: { sku: ALBA_SKU }, data: { price: albaPrice } });
+    await prisma.variant.update({ where: { sku: ALBA_SKU }, data: { price: albaPrice, memberPrice: null } });
     await resetAdminData(prisma);
     await app.close();
   });
@@ -193,6 +193,42 @@ describe('Catalog Excel (e2e)', () => {
     expect((await upload(editor, fakeSale, 'check')).errors).toEqual([
       { row, column: 'מחיר לפני הנחה (₪)', code: 'rejected', catalogCode: 'invalid' },
     ]);
+  });
+
+  it('imports a member price, keeps it on an empty cell, clears it with 0, and refuses one that is not lower', async () => {
+    const MEMBER = 'מחיר מועדון (₪)';
+    const memberOf = async () => (await prisma.variant.findUnique({ where: { sku: ALBA_SKU } }))!.memberPrice;
+    const file = await edit(exported, (s) => s.set(s.rowOf(ALBA_SKU), MEMBER, 100));
+    expect(await memberOf()).toBeNull();
+    expect((await upload(editor, file, 'import')).applied).toBe(true);
+    expect(await memberOf()).toBe(10_000);
+
+    // The export has it, and an empty cell leaves it as it is (decision 61).
+    const withMember = await download(editor, 'export');
+    const untouched = await edit(exported, (s) => s.set(s.rowOf(ALBA_SKU), 'מלאי', 5));
+    expect((await upload(editor, untouched, 'import')).applied).toBe(true);
+    expect(await memberOf()).toBe(10_000);
+
+    let row = 0;
+    const notLower = await edit(withMember, (s) => {
+      row = s.rowOf(ALBA_SKU);
+      s.set(row, MEMBER, 999_999);
+    });
+    expect((await upload(editor, notLower, 'check')).errors).toEqual([
+      { row, column: MEMBER, code: 'rejected', catalogCode: 'member_price_not_lower' },
+    ]);
+    // Lowering the price alone, under the member price, is refused on the member price column.
+    const priceCut = await edit(withMember, (s) => {
+      row = s.rowOf(ALBA_SKU);
+      s.set(row, 'מחיר (₪)', 50);
+    });
+    expect((await upload(editor, priceCut, 'check')).errors).toEqual([
+      { row, column: MEMBER, code: 'rejected', catalogCode: 'member_price_not_lower' },
+    ]);
+
+    const cleared = await edit(withMember, (s) => s.set(s.rowOf(ALBA_SKU), MEMBER, 0));
+    expect((await upload(editor, cleared, 'import')).applied).toBe(true);
+    expect(await memberOf()).toBeNull();
   });
 
   it('refuses a file that is not a workbook', async () => {

@@ -201,6 +201,8 @@ export interface BulkEditResult {
   pricePercent?: number;
   /** ₪; 0 removes the "before" price */
   compareAtPrice?: number;
+  /** ₪; 0 removes the club price */
+  memberPrice?: number;
   stock?: number;
   fulfillment?: FulfillmentMode;
   leadTimeDays?: number;
@@ -228,6 +230,10 @@ export interface BulkEditResult {
         <mat-form-field>
           <mat-label>מחיר לפני הנחה (₪, 0 מבטל)</mat-label>
           <input matInput type="number" min="0" name="compare" [(ngModel)]="compareAtPrice" />
+        </mat-form-field>
+        <mat-form-field>
+          <mat-label>מחיר מועדון (₪, 0 מבטל)</mat-label>
+          <input matInput type="number" min="0" name="member" [(ngModel)]="memberPrice" />
         </mat-form-field>
         <mat-form-field>
           <mat-label>מלאי</mat-label>
@@ -269,6 +275,7 @@ export class VariantBulkDialog {
   protected price: number | null = null;
   protected pricePercent: number | null = null;
   protected compareAtPrice: number | null = null;
+  protected memberPrice: number | null = null;
   protected stock: number | null = null;
   protected fulfillment: FulfillmentMode | null = null;
   protected leadTimeDays: number | null = null;
@@ -279,6 +286,7 @@ export class VariantBulkDialog {
     if (this.price !== null && this.price > 0) result.price = this.price;
     else if (this.pricePercent) result.pricePercent = this.pricePercent;
     if (this.compareAtPrice !== null) result.compareAtPrice = this.compareAtPrice;
+    if (this.memberPrice !== null) result.memberPrice = this.memberPrice;
     if (this.stock !== null) result.stock = this.stock;
     if (this.fulfillment) result.fulfillment = this.fulfillment;
     if (this.leadTimeDays !== null) result.leadTimeDays = this.leadTimeDays;

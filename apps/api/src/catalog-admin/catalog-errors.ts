@@ -10,6 +10,9 @@ export class CatalogError extends HttpException {
 
 export const invalid = (field: string, value?: string) =>
   new CatalogError(HttpStatus.BAD_REQUEST, 'invalid', { field, value });
+/** A member price must be lower than the price (CLB-03). `field` is `variants.<i>.memberPrice`. */
+export const memberPriceNotLower = (field: string) =>
+  new CatalogError(HttpStatus.BAD_REQUEST, 'member_price_not_lower', { field });
 export const duplicate = (field: string, value?: string) =>
   new CatalogError(HttpStatus.CONFLICT, 'duplicate', { field, value });
 export const conflict = () => new CatalogError(HttpStatus.CONFLICT, 'conflict');

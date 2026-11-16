@@ -15,6 +15,7 @@ function variant(price: number, width: number, options: Record<string, string>, 
     sku: `SKU-${variantId}`,
     price,
     compareAtPrice: null,
+    memberPrice: null,
     fulfillment: 'in_stock' as const,
     leadTimeDays: 14,
     sortOrder: 0,
@@ -221,6 +222,39 @@ describe('queryProducts', () => {
       { mode: 'in_stock', count: 1, selected: false },
       { mode: 'pre_order', count: 1, selected: true },
     ]);
+  });
+
+  describe('memberPriceFrom', () => {
+    const item = (p: SnapshotProduct, query: Parameters<typeof run>[1] = {}) => run(buildSnapshot([p]), query).items[0];
+
+    it('is null without member prices', () => {
+      expect(item(alba).memberPriceFrom).toBeNull();
+    });
+
+    it('is the lowest memberPrice ?? price over the variants, when one has a member price', () => {
+      const p = product(
+        7,
+        2,
+        [
+          variant(500_000, 300, { color: 'beige' }, { memberPrice: 470_000 }),
+          variant(450_000, 260, { color: 'gray' }),
+          variant(520_000, 280, { color: 'olive' }, { memberPrice: 400_000 }),
+        ],
+        { attributes: new Map([['style', new Set(['modern'])]]) },
+      );
+      const card = item(p);
+      expect(card.memberPriceFrom).toBe(400_000);
+      expect(card.priceFrom).toBe(450_000);
+    });
+
+    it('looks only at the variants the filters leave on the card', () => {
+      const p = product(8, 2, [
+        variant(500_000, 300, { color: 'beige' }, { memberPrice: 470_000 }),
+        variant(450_000, 260, { color: 'gray' }),
+      ]);
+      expect(item(p, { attributes: { color: ['gray'] } }).memberPriceFrom).toBeNull();
+      expect(item(p, { attributes: { color: ['beige'] } }).memberPriceFrom).toBe(470_000);
+    });
   });
 
   describe('card photo', () => {

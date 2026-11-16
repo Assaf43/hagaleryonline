@@ -162,6 +162,8 @@ model Variant {
   price          Int
   /// Price before discount, agorot. Null = not on sale.
   compareAtPrice Int?            @map("compare_at_price")
+  /// Club member price, agorot. Null = none. Always lower than `price` (SQL CHECK).
+  memberPrice    Int?            @map("member_price")
   stock          Int             @default(0)
   fulfillment    FulfillmentMode @default(IN_STOCK)
   /// Maximum delivery time in business days (PRD-09).

@@ -7,6 +7,7 @@ const variant = (extra: Partial<AdminVariant> = {}) => ({
   sku: 'alba-300-bg',
   price: 499_000,
   compareAtPrice: null,
+  memberPrice: null,
   stock: 2,
   fulfillment: 'in_stock',
   leadTimeDays: 14,
@@ -72,6 +73,26 @@ describe('parseProductInput', () => {
       'variants.0.widthCm',
     );
     expect(fieldOf(() => parseProductInput(product({ variants: [variant(), variant()] })))).toBe('variants.1.sku');
+  });
+
+  it('refuses a member price that is not lower than the price, with its own code', () => {
+    const codeAndField = (memberPrice: number) => {
+      try {
+        parseProductInput(product({ variants: [variant({ memberPrice })] }));
+      } catch (e) {
+        return (e as { getResponse(): { code: string; field: string } }).getResponse();
+      }
+      return null;
+    };
+    expect(codeAndField(499_000)).toMatchObject({ code: 'member_price_not_lower', field: 'variants.0.memberPrice' });
+    expect(codeAndField(600_000)).toMatchObject({ code: 'member_price_not_lower' });
+    expect(codeAndField(0)).toMatchObject({ code: 'invalid', field: 'variants.0.memberPrice' });
+    expect(parseProductInput(product({ variants: [variant({ memberPrice: 450_000 })] })).variants[0]).toMatchObject({
+      memberPrice: 450_000,
+    });
+    expect(
+      parseProductInput(product({ variants: [variant({ memberPrice: null })] })).variants[0].memberPrice,
+    ).toBeNull();
   });
 
   it('refuses a "before" price that is not higher than the price (no fake discounts)', () => {

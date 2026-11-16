@@ -277,6 +277,8 @@ export function toCard(
       ? Math.round((1 - cheapest.price / cheapest.compareAtPrice) * 100)
       : null;
 
+  const hasMember = matching.some((v) => v.memberPrice !== null);
+
   return {
     id: p.id,
     slug: p.slug,
@@ -285,6 +287,7 @@ export function toCard(
     priceFrom: cheapest.price,
     compareAtFrom: discount ? cheapest.compareAtPrice : null,
     discountPercent: discount,
+    memberPriceFrom: hasMember ? Math.min(...matching.map((v) => v.memberPrice ?? v.price)) : null,
     hasPriceRange: new Set(p.variants.map((v) => v.price)).size > 1,
     swatches: swatchesOf(snapshot, p),
     image: cardImage(p, selectedColors),

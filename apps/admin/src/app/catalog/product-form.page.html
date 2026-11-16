@@ -263,6 +263,7 @@
                   <th>מק"ט</th>
                   <th>מחיר</th>
                   <th>לפני הנחה</th>
+                  <th>מחיר מועדון</th>
                   <th>מלאי</th>
                   <th>אספקה</th>
                   <th>ימים</th>
@@ -315,6 +316,17 @@
                         [name]="'compare' + row.key"
                         [attr.aria-label]="'מחיר לפני הנחה בשורה ' + (i + 1)"
                         [(ngModel)]="row.compareAtPrice"
+                        (ngModelChange)="touch()"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        class="cell num"
+                        type="number"
+                        min="1"
+                        [name]="'member' + row.key"
+                        [attr.aria-label]="'מחיר מועדון בשורה ' + (i + 1)"
+                        [(ngModel)]="row.memberPrice"
                         (ngModelChange)="touch()"
                       />
                     </td>
@@ -403,7 +415,7 @@
                   </tr>
                   @if (expanded().has(row.key)) {
                     <tr class="details-row">
-                      <td colspan="13">
+                      <td colspan="14">
                         <div class="details">
                           @for (a of variantAttributes(); track a.id) {
                             <mat-form-field>
