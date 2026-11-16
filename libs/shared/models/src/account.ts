@@ -216,7 +216,7 @@ export interface ConsentBody {
   marketingConsent: boolean;
 }
 
-export type MarketingConsentSource = 'signup' | 'checkout' | 'account' | 'store';
+export type MarketingConsentSource = 'signup' | 'checkout' | 'account' | 'store' | 'newsletter';
 
 export interface AccountConsent {
   marketingConsent: boolean;

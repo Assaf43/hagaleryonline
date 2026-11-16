@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { CustomerMe, OtpChannel } from '@hg/models';
-import { MarketingConsentSource, Prisma, type Customer } from '../generated/prisma/client.js';
+import { Prisma, type Customer } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { hashPassword, verifyAgainstDummy, verifyPassword } from '../auth/passwords.js';
 import { CartService } from '../cart/cart.service.js';
@@ -67,8 +67,9 @@ export function toMe(c: Customer): CustomerMe {
     phoneVerified: c.phoneVerifiedAt !== null,
     emailVerified: c.emailVerifiedAt !== null,
     hasPassword: c.passwordHash !== null,
-    marketingConsent: c.marketingConsent,
-    marketingConsentAt: c.marketingConsentAt?.toISOString() ?? null,
+    // TODO(Task 2): MarketingService; until then every customer reads as having no consent.
+    marketingConsent: false,
+    marketingConsentAt: null,
   };
 }
 
@@ -320,9 +321,7 @@ export class CustomerAuthService {
             passwordHash,
             phoneVerifiedAt: now,
             emailVerifiedAt: now,
-            marketingConsent: details.marketingConsent,
-            marketingConsentAt: details.marketingConsent ? now : null,
-            marketingConsentSource: details.marketingConsent ? MarketingConsentSource.SIGNUP : null,
+            // TODO(Task 2): MarketingService records details.marketingConsent (source signup).
           },
         });
       });

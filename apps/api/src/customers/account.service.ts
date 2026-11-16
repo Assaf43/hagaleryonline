@@ -9,10 +9,9 @@ import {
   type CustomerAddressInput,
   type CustomerAddressView,
   type CustomerMe,
-  type MarketingConsentSource as ConsentSourceView,
   type OrderView,
 } from '@hg/models';
-import { MarketingConsentSource, type Customer, type Prisma } from '../generated/prisma/client.js';
+import { type Customer, type Prisma } from '../generated/prisma/client.js';
 import { MESSAGES, parseCheckoutAddress } from '../orders/checkout.service.js';
 import { OrderLifecycleService } from '../orders/order-lifecycle.service.js';
 import { fieldError } from '../orders/order-errors.js';
@@ -23,13 +22,6 @@ import { listAddresses, toView } from './address-view.js';
 import { toMe } from './customer-auth.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const SOURCE_VIEW: Record<MarketingConsentSource, ConsentSourceView> = {
-  SIGNUP: 'signup',
-  CHECKOUT: 'checkout',
-  ACCOUNT: 'account',
-  STORE: 'store',
-};
 
 /**
  * The account's own data (spec §6.3, ACC-03, ACC-04, ACC-05): saved addresses, order history, the cancel of an
@@ -169,18 +161,8 @@ export class AccountService {
   async setConsent(customer: Customer, body: unknown): Promise<AccountConsent> {
     const value = (body && typeof body === 'object' ? (body as Record<string, unknown>) : {}).marketingConsent;
     if (typeof value !== 'boolean') throw badField('marketingConsent');
-    const now = new Date();
-    const data: Prisma.CustomerUpdateManyMutationInput = value
-      ? {
-          marketingConsent: true,
-          marketingConsentAt: now,
-          marketingConsentSource: MarketingConsentSource.ACCOUNT,
-          marketingWithdrawnAt: null,
-        }
-      : { marketingConsent: false, marketingWithdrawnAt: now };
-    // Only when it changes: a repeated answer keeps the recorded times.
-    await this.prisma.customer.updateMany({ where: { id: customer.id, marketingConsent: !value }, data });
-    return consentView(await this.prisma.customer.findUniqueOrThrow({ where: { id: customer.id } }));
+    // TODO(Task 2): MarketingService records the change in the contact and its history; the customer columns are gone.
+    return consentView();
   }
 
   /** The checkout's address rules, the locality must exist, and an optional boolean `isDefault`. */
@@ -208,12 +190,13 @@ function addressData(input: CustomerAddressInput) {
   return { localityId, street, houseNumber, apartment, floor, hasElevator, notes };
 }
 
-function consentView(c: Customer): AccountConsent {
+// TODO(Task 2): MarketingService; until then every customer reads as having no consent.
+function consentView(): AccountConsent {
   return {
-    marketingConsent: c.marketingConsent,
-    marketingConsentAt: c.marketingConsentAt?.toISOString() ?? null,
-    marketingConsentSource: c.marketingConsentSource ? SOURCE_VIEW[c.marketingConsentSource] : null,
-    marketingWithdrawnAt: c.marketingWithdrawnAt?.toISOString() ?? null,
+    marketingConsent: false,
+    marketingConsentAt: null,
+    marketingConsentSource: null,
+    marketingWithdrawnAt: null,
   };
 }
 
