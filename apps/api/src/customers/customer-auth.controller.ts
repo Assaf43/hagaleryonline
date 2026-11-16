@@ -7,16 +7,13 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  Injectable,
   Post,
   Res,
   UseFilters,
   UseGuards,
   UseInterceptors,
   createParamDecorator,
-  type CallHandler,
   type ExecutionContext,
-  type NestInterceptor,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import {
@@ -26,6 +23,7 @@ import {
   type SignedInResponse,
   type SignUpResponse,
 } from '@hg/models';
+import { NoStoreInterceptor } from '../common/no-store.interceptor.js';
 import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { writeCartCookie } from '../cart/cart.controller.js';
@@ -45,15 +43,6 @@ import {
 } from './customer-session.guard.js';
 
 type BodyRecord = Record<string, unknown>;
-
-/** Every answer of the account API is personal: never cached (spec §6.3). */
-@Injectable()
-export class NoStoreInterceptor implements NestInterceptor {
-  intercept(ctx: ExecutionContext, next: CallHandler) {
-    ctx.switchToHttp().getResponse<Response>().setHeader('Cache-Control', 'no-store');
-    return next.handle();
-  }
-}
 
 /** Account errors as JSON, with `Retry-After` when they carry `retryAfterSeconds` (per-IP limit, password delay). */
 @Catch(AccountError)

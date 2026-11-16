@@ -153,8 +153,8 @@ describe('admin promotions screens', () => {
     it('marks the welcome benefit with a chip', async () => {
       const { el } = await list([{ ...base, isWelcome: true }, COUPON]);
       const [welcome, coupon] = [...el.querySelectorAll('.promotion')];
-      expect(welcome.querySelector('.welcome-chip')?.textContent?.trim()).toBe('הטבת הצטרפות');
-      expect(coupon.querySelector('.welcome-chip')).toBeNull();
+      expect(welcome.querySelector('.flag-chip')?.textContent?.trim()).toBe('הטבת הצטרפות');
+      expect(coupon.querySelector('.flag-chip')).toBeNull();
     });
 
     it('badges members-only and applies-to-member-prices promotions', async () => {

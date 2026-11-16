@@ -112,7 +112,11 @@ export class PromotionsAdminService {
       if (input.isWelcome) await this.takeWelcome(tx, null, meta);
       await this.check(tx, input, null);
       const row = await tx.promotion.create({
-        data: toData(input, input.isWelcome === true, input.membersOnly ?? false, input.appliesToMemberPrices ?? false),
+        data: toData(input, {
+          isWelcome: input.isWelcome === true,
+          membersOnly: input.membersOnly ?? false,
+          appliesToMemberPrices: input.appliesToMemberPrices ?? false,
+        }),
       });
       const view = (await this.views(tx, [row]))[0];
       await this.audit.record(
@@ -133,12 +137,11 @@ export class PromotionsAdminService {
       const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'automatic');
       // Losing the mark also turns it off: an active ex-welcome promotion would otherwise become an automatic
       // discount for every shopper (staff turn it on again in a later save if that is what they want).
-      const data = toData(
-        input,
+      const data = toData(input, {
         isWelcome,
-        input.membersOnly ?? existing.membersOnly,
-        input.appliesToMemberPrices ?? existing.appliesToMemberPrices,
-      );
+        membersOnly: input.membersOnly ?? existing.membersOnly,
+        appliesToMemberPrices: input.appliesToMemberPrices ?? existing.appliesToMemberPrices,
+      });
       if (existing.isWelcome && !isWelcome) data.active = false;
       const row = await tx.promotion.update({ where: { id }, data });
       const view = (await this.views(tx, [row]))[0];
@@ -298,7 +301,13 @@ export class PromotionsAdminService {
   }
 }
 
-function toData(input: AdminPromotionInput, isWelcome: boolean, membersOnly: boolean, appliesToMemberPrices: boolean) {
+interface PromotionFlags {
+  isWelcome: boolean;
+  membersOnly: boolean;
+  appliesToMemberPrices: boolean;
+}
+
+function toData(input: AdminPromotionInput, { isWelcome, membersOnly, appliesToMemberPrices }: PromotionFlags) {
   return {
     name: input.name,
     kind: KIND_TO_DB[input.kind],

@@ -19,7 +19,7 @@ import { AuthConfig } from '../auth/auth.config.js';
 import { StorefrontOriginGuard } from '../auth/guards.js';
 import { OptionalCustomer, OptionalCustomerGuard, customerCookieOptions } from '../customers/customer-session.guard.js';
 import type { ResolvedCustomer } from '../customers/customer-session.service.js';
-import { NoStoreInterceptor } from '../customers/customer-auth.controller.js';
+import { NoStoreInterceptor } from '../common/no-store.interceptor.js';
 import { CART_COOKIE, CART_TTL_MS, cartTokenOf as tokenOf } from './cart-token.js';
 import { CartError, CartService, type CartOwner, type CartResult } from './cart.service.js';
 
