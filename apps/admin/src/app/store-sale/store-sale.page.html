@@ -1,0 +1,151 @@
+<div class="head">
+  <h1>מכירה בחנות</h1>
+  <button matButton="filled" type="button" class="new-sale" [disabled]="busy()" (click)="newSale()">מכירה חדשה</button>
+</div>
+
+<nav aria-label="שלבי המכירה">
+  <ol class="steps">
+    @for (s of steps; track s) {
+      <li>
+        <button
+          type="button"
+          class="step"
+          [attr.aria-current]="step() === s ? 'step' : null"
+          [class.current]="step() === s"
+          [disabled]="!can(s)"
+          (click)="goTo(s)"
+        >
+          {{ labels[s] }}
+        </button>
+      </li>
+    }
+  </ol>
+</nav>
+
+@if (error() && (step() === 'summary' || step() === 'status')) {
+  <p class="error" role="alert">{{ error() }}</p>
+}
+
+@if (!loaded()) {
+  <p class="muted" role="status">טוען…</p>
+} @else {
+  <section class="panel">
+    @switch (step()) {
+      @case ('products') {
+        <hga-product-picker [cart]="cart()" (cartChange)="onCart($event)" (failed)="onFailed($event)" />
+        <div class="actions">
+          <button matButton="filled" type="button" [disabled]="!can('customer')" (click)="goTo('customer')">
+            המשך ללקוח
+          </button>
+        </div>
+      }
+      @case ('customer') {
+        <hga-customer-step
+          [cart]="cart()"
+          (cartChange)="onCart($event)"
+          (next)="goTo('delivery')"
+          (failed)="onFailed($event)"
+        />
+      }
+      @case ('delivery') {
+        <hga-delivery-step [initial]="delivery()" (chosen)="onDelivery($event)" (failed)="onFailed($event)" />
+      }
+      @case ('summary') {
+        <h2 tabindex="-1" data-step-heading>סיכום</h2>
+        @if (cart(); as c) {
+          <ul class="summary-lines">
+            @for (line of c.lines; track line.variantId) {
+              @if (line.available) {
+                <li>
+                  <span>
+                    <bdi dir="ltr">{{ line.modelName }}</bdi> {{ line.nameHe }} × <bdi>{{ line.quantity }}</bdi>
+                  </span>
+                  <bdi>{{ price(line.lineTotal) }}</bdi>
+                </li>
+              }
+            }
+          </ul>
+          <dl class="totals">
+            <dt>סכום ביניים</dt>
+            <dd>
+              <bdi>{{ price(c.subtotal) }}</bdi>
+            </dd>
+            @if (c.discount; as d) {
+              <dt>{{ d.labelHe }}</dt>
+              <dd>
+                <bdi>−{{ price(d.amount) }}</bdi>
+              </dd>
+            }
+            @if (delivery(); as dl) {
+              <dt>משלוח ({{ methodLabels[dl.method] }})</dt>
+              <dd>
+                <bdi>{{ price(dl.shippingTotal) }}</bdi>
+              </dd>
+            }
+            <dt class="grand">לתשלום</dt>
+            <dd class="grand">
+              <bdi>{{ price(total()) }}</bdi>
+            </dd>
+          </dl>
+          @if (c.customer; as cu) {
+            <p class="muted">
+              {{ cu.fullName }} · <bdi dir="ltr">{{ cu.phone }}</bdi>
+            </p>
+          }
+        }
+        <label class="check">
+          <input name="terms" type="checkbox" [checked]="acceptTerms()" (change)="setTerms($event)" />
+          <span>הלקוח קרא ומסכים לתנאי השימוש</span>
+        </label>
+        <label class="check">
+          <input name="marketing" type="checkbox" [checked]="marketing()" (change)="setMarketing($event)" />
+          <span>הלקוח מאשר קבלת עדכונים ומבצעים במייל</span>
+        </label>
+        <div class="actions">
+          <button matButton="outlined" type="button" (click)="goTo('delivery')">חזרה למשלוח</button>
+          <button matButton="filled" type="button" class="pay" [disabled]="!acceptTerms() || busy()" (click)="pay()">
+            לתשלום
+          </button>
+        </div>
+      }
+      @case ('status') {
+        <h2 tabindex="-1" data-step-heading>תשלום</h2>
+        <div role="status" aria-live="polite" class="payment-status">
+          @switch (payment()) {
+            @case ('waiting') {
+              <p>
+                ממתין לתשלום · הזמנה <bdi>{{ orderNumber() }}</bdi>
+              </p>
+            }
+            @case ('paid') {
+              <p class="paid">
+                שולם · הזמנה <bdi>{{ orderNumber() }}</bdi>
+              </p>
+            }
+            @case ('failed') {
+              <p class="error">
+                התשלום לא הושלם · הזמנה <bdi>{{ orderNumber() }}</bdi>
+              </p>
+            }
+          }
+        </div>
+        @if (payment() === 'waiting' && payUrl()) {
+          <p class="muted">
+            דף התשלום נפתח בלשונית חדשה.
+            <a [href]="payUrl()" target="_blank" rel="noopener"
+              >פתיחה שוב<span class="sr-only"> (נפתח בלשונית חדשה)</span></a
+            >
+          </p>
+        }
+        @if (payment() !== 'paid') {
+          <div class="actions">
+            <button matButton="filled" type="button" class="retry" [disabled]="busy()" (click)="retryPayment()">
+              נסה שוב
+            </button>
+          </div>
+        }
+      }
+    }
+  </section>
+  <hga-pending-orders [orders]="pending()" (retry)="retryPayment($event)" (cancel)="cancelOrder($event)" />
+}

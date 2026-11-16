@@ -94,6 +94,12 @@ export const routes: Routes = [
         title: 'הזמנה',
       },
       {
+        path: 'store-sale',
+        canMatch: [hasPermission('orders.store')],
+        loadComponent: () => import('./store-sale/store-sale.page').then((m) => m.StoreSalePage),
+        title: 'מכירה בחנות',
+      },
+      {
         path: 'support',
         canMatch: [hasPermission('support.manage')],
         loadComponent: () => import('./support/inbox.page').then((m) => m.InboxPage),

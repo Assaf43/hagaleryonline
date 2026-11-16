@@ -85,6 +85,12 @@
           הזמנות
         </a>
       }
+      @if (can('orders.store')) {
+        <a class="nav-link" routerLink="/store-sale" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideStore></svg>
+          מכירה בחנות
+        </a>
+      }
       @if (can('support.manage')) {
         <a class="nav-link" routerLink="/support" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideInbox></svg>
