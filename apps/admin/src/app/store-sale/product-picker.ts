@@ -12,6 +12,9 @@ export function matchVariant(product: ProductDetail, choice: Record<string, stri
   return product.variants.find((v) => product.optionAxes.every((a) => v.options[a.code] === choice[a.code])) ?? null;
 }
 
+/** A cart line the server priced at the member price (CLB-03): "מחיר מועדון: 4,500 ₪" (the unit price). */
+export const MEMBER_PRICE_LINE_HE = 'מחיר מועדון:';
+
 const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
 
 /** Step 1 (spec §4.1): find a product, pick its variant and quantity, edit the cart lines, add a coupon. */
@@ -98,6 +101,11 @@ const valueOf = (event: Event) => (event.target as HTMLInputElement).value;
                 <span>
                   <bdi dir="ltr">{{ line.modelName }}</bdi> {{ line.nameHe }}
                   <span class="muted">{{ line.optionLabels.join(' · ') }}</span>
+                  @if (line.atMemberPrice) {
+                    <span class="muted member-price"
+                      >{{ memberLabel }} <bdi>{{ price(line.unitPrice) }}</bdi></span
+                    >
+                  }
                   @if (!line.available) {
                     <span class="error">{{
                       line.unavailableReason === 'sold_out' ? 'אזל מהמלאי' : 'לא מוצג יותר'
@@ -177,6 +185,7 @@ export class ProductPicker {
     return pr ? matchVariant(pr, this.choice()) : null;
   });
   protected readonly price = formatPrice;
+  protected readonly memberLabel = MEMBER_PRICE_LINE_HE;
   protected readonly valueOf = valueOf;
 
   protected async search(event: Event) {

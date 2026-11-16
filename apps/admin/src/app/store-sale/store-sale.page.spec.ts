@@ -223,6 +223,21 @@ describe('store sale page', () => {
     expect(el(fixture).querySelector<HTMLButtonElement>('.pay')!.disabled).toBe(true);
   });
 
+  it('marks a line priced at the member price in the summary, with its unit price (CLB-03)', async () => {
+    const memberCart = {
+      ...cartWith(customer),
+      pricing: 'member',
+      lines: [{ ...line, unitPrice: 450_000, atMemberPrice: true, lineTotal: 450_000 }],
+    } as unknown as StoreCartView;
+    const fixture = await open(memberCart);
+    fixture.componentInstance.delivery.set(delivery);
+    fixture.componentInstance.goTo('summary');
+    await settle(fixture);
+    const tag = el(fixture).querySelector('.summary-lines .member-price')!;
+    expect(tag.textContent).toContain('מחיר מועדון:');
+    expect(tag.querySelector('bdi')!.textContent).toContain('4,500');
+  });
+
   describe('marketing consent by SMS (CLB-08)', () => {
     const toSummaryWith = async (c: StoreCustomer) => {
       const fixture = await open(cartWith(c));

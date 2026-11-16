@@ -110,7 +110,7 @@ svg {
   }
 }
 
-// "הטבת הצטרפות" (decision 79): at most one active promotion carries it.
+// A flag on a promotion in the list (welcome benefit, members only, applies to member prices).
 .flag-chip {
   display: inline-block;
   margin-inline-start: var(--space-2);
