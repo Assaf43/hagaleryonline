@@ -34,6 +34,8 @@ export function confirmationPath(number: number, token: string): string {
 }
 
 /** Where the payment provider returns a store order paid on the store tablet: a page without personal data (§4.7). */
+// A real provider adapter (Phase 9) must map the provider's success return to `/pay/done?r=ok` and its failure or
+// cancel return to `/pay/done?r=fail`: the page shows the outcome only from `r` and never claims a payment otherwise.
 export const STORE_RETURN_PATH = '/pay/done';
 
 /**

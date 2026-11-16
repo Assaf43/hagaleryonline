@@ -15,6 +15,15 @@ import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { CheckoutApi, apiErrorCode, checkoutErrorMessage } from '../checkout/checkout.api';
 
+/**
+ * A store order returns to `/pay/done`, which shows the outcome only: `?r=ok` after a payment, `?r=fail` after a
+ * failure or a cancel (no order data in the URL). The website's tokened confirmation page is left as it is.
+ */
+export function withOutcome(url: string, outcome: SandboxPaymentOutcome): string {
+  if (url !== '/pay/done' && !url.startsWith('/pay/done?')) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}r=${outcome === 'success' ? 'ok' : 'fail'}`;
+}
+
 const INSTALLMENTS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 /**
@@ -197,7 +206,7 @@ export class SandboxPayPage {
         outcome,
         installments: this.installments(),
       });
-      await this.router.navigateByUrl(confirmationUrl);
+      await this.router.navigateByUrl(withOutcome(confirmationUrl, outcome));
     } catch (error) {
       this.error.set(`לא הצלחנו להשלים את התשלום. ${checkoutErrorMessage(apiErrorCode(error))}`);
     } finally {
