@@ -93,4 +93,23 @@ describe('App', () => {
     fixture.detectChanges();
     expect((fixture.nativeElement as HTMLElement).querySelector('.announce')).toBeTruthy();
   });
+
+  it('shows neither the bar nor the static strip after the visitor closes the live announcement', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush({
+      ...site,
+      announcement: { id: 1, version: 1, textHe: 'מבצע', linkUrl: null, linkLabelHe: null },
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('.bar button')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.bar')).toBeNull();
+    expect(el.querySelector('.announce')).toBeNull();
+    document.cookie = 'hg-ann=; Max-Age=0; Path=/';
+  });
 });
