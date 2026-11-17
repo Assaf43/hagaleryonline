@@ -214,12 +214,15 @@ export class IssueCodeDialog {
     }
     this.busy.set(true);
     this.problem.set('');
+    // No Escape / backdrop close while the request runs, or a code could be issued without the profile reloading.
+    this.ref.disableClose = true;
     try {
       this.issued.set(await this.api.issueCode(this.data.customerId, templateId, this.send()));
     } catch (e) {
       this.problem.set(errorMessage(e));
     } finally {
       this.busy.set(false);
+      this.ref.disableClose = false;
     }
   }
 
