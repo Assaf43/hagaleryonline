@@ -13,6 +13,7 @@ import type {
   AdminHomeInput,
   AdminInfoPage,
   AdminInfoPageInput,
+  AdminPromotionSource,
   AdminSiteContent,
   AdminSiteContentInput,
 } from '@hg/models';
@@ -104,6 +105,10 @@ export class ContentApi {
 
   home() {
     return firstValueFrom(this.http.get<AdminHome>(`${BASE}/home`));
+  }
+  /** The promotions a product row may use (content.manage; the promotions list itself needs promotions.manage). */
+  promotionSources() {
+    return firstValueFrom(this.http.get<AdminPromotionSource[]>(`${BASE}/promotion-sources`));
   }
   saveHome(input: AdminHomeInput) {
     return firstValueFrom(this.http.put<AdminHome>(`${BASE}/home`, input));

@@ -22,6 +22,21 @@ export interface ProductSourceOptions {
   promotions: readonly LivePromotion[];
 }
 
+/** Whether two product sources are the same choice (kind and its id / product ids in order), field by field. */
+export function sameSource(a: ProductSource, b: ProductSource): boolean {
+  if (a.kind === 'manual') {
+    return (
+      b.kind === 'manual' &&
+      a.productIds.length === b.productIds.length &&
+      a.productIds.every((id, i) => id === b.productIds[i])
+    );
+  }
+  if (a.kind === 'category' || a.kind === 'room' || a.kind === 'promotion') {
+    return b.kind === a.kind && b.id === a.id;
+  }
+  return a.kind === b.kind;
+}
+
 /**
  * A promotion a source may show: automatic, not members-only, on categories or products (never the whole order),
  * active and inside its dates now, and not used up.

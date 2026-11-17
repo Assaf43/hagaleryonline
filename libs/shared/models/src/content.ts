@@ -415,6 +415,16 @@ export type AdminHomeSection = HomeSectionConfig & {
   unavailable: HomeSectionUnavailable;
 };
 
+/**
+ * `GET /api/admin/content/promotion-sources` (content.manage): the promotions a home product row may use (automatic, on
+ * categories or products, not members-only). `usable`: the site shows it now (active, inside its dates, not used up).
+ */
+export interface AdminPromotionSource {
+  id: number;
+  name: string;
+  usable: boolean;
+}
+
 /** `GET /api/admin/content/home`: every section in order; `updatedAt` (the newest section's) is sent back on save. */
 export interface AdminHome {
   sections: AdminHomeSection[];

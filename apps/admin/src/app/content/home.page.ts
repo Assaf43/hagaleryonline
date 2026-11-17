@@ -8,7 +8,6 @@ import { LucideChevronDown, LucideChevronUp, LucidePlus } from '@lucide/angular'
 import { CONTENT_LIMITS, HOME_SECTION_LABELS_HE, type AdminHome, type HomeSectionKind } from '@hg/models';
 import { CatalogApi } from '../core/catalog.api';
 import { errorMessage } from '../core/errors';
-import { PromotionsApi } from '../core/promotions.api';
 import { ContentApi } from './content.api';
 import { LEAVE_PROMPT } from './form-support';
 import { HomeSectionDialog, type HomeLookups, type HomeSectionDialogData } from './home-section.dialog';
@@ -153,7 +152,6 @@ const NO_SETTINGS: HomeSectionKind[] = ['trust', 'rooms'];
 export class HomePage {
   private readonly api = inject(ContentApi);
   private readonly catalog = inject(CatalogApi);
-  private readonly promotionsApi = inject(PromotionsApi);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
 
@@ -192,10 +190,10 @@ export class HomePage {
         this.api.home(),
         this.api.banners(),
         this.catalog.structure(),
-        this.promotionsApi.list(),
+        this.api.promotionSources(),
       ]);
       if (home.status === 'rejected') throw home.reason;
-      // A picker that cannot load (e.g. no permission for promotions) is just empty; the list still works.
+      // A picker that cannot load is just empty; the list still works.
       this.lookups.set({
         banners: banners.status === 'fulfilled' ? banners.value : [],
         categories: structure.status === 'fulfilled' ? structure.value.categories : [],

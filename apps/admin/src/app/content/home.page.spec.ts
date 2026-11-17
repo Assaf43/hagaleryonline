@@ -68,7 +68,8 @@ describe('admin home page screen', () => {
     http.expectOne('/api/admin/content/home').flush(home);
     http.expectOne('/api/admin/content/banners').flush([BANNER]);
     http.expectOne('/api/admin/catalog/structure').flush({ categories: [], rooms: [], attributes: [], synonyms: [] });
-    http.expectOne('/api/admin/promotions').flush([]);
+    http.expectOne('/api/admin/content/promotion-sources').flush([]);
+    http.expectNone('/api/admin/promotions');
     await settle(fixture);
     return { fixture, el: fixture.nativeElement as HTMLElement };
   }

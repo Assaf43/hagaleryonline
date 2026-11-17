@@ -165,6 +165,39 @@ describe('Content home page (e2e)', () => {
     await service.put('/content/home', { sections: [], expectedUpdatedAt: new Date().toISOString() }).expect(403);
   });
 
+  it('promotion-sources: a content editor lists usable and ended promotions; 403 without content.manage', async () => {
+    const sofas = await prisma.category.findUniqueOrThrow({ where: { slug: 'sofas' } });
+    const make = (data: Record<string, unknown>) =>
+      prisma.promotion.create({
+        data: {
+          name: PROMO,
+          kind: PromotionKind.AUTOMATIC,
+          discountType: DiscountType.PERCENT,
+          value: 10,
+          target: PromotionTarget.CATEGORIES,
+          targetIds: [sofas.id],
+          ...data,
+        },
+      });
+    const live = await make({ name: `${PROMO} חי` });
+    const ended = await make({ name: `${PROMO} הסתיים`, endsAt: new Date(day(-1)) });
+    const order = await make({ target: PromotionTarget.ORDER });
+    const members = await make({ membersOnly: true });
+    const coupon = await make({ kind: PromotionKind.COUPON, code: 'ZZSRC10' });
+
+    await service.get('/content/promotion-sources').expect(403);
+    const list = (await editor.get('/content/promotion-sources').expect(200)).body as {
+      id: number;
+      name: string;
+      usable: boolean;
+    }[];
+    const byId = new Map(list.map((p) => [p.id, p]));
+    expect(byId.get(live.id)).toEqual({ id: live.id, name: `${PROMO} חי`, usable: true });
+    expect(byId.get(ended.id)?.usable).toBe(false);
+    for (const p of [order, members, coupon]) expect(byId.has(p.id)).toBe(false);
+    await prisma.promotion.deleteMany({ where: { name: { startsWith: PROMO } } });
+  });
+
   it("the default sections reproduce today's home page", async () => {
     const view = await home();
     expect(kinds(view)).toEqual(['hero', 'trust', 'rooms', 'products', 'products']);

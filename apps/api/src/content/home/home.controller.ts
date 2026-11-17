@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common';
-import type { AdminHome, HomeView } from '@hg/models';
+import type { AdminHome, AdminPromotionSource, HomeView } from '@hg/models';
 import type { RequestMeta } from '../../auth/auth.service.js';
 import {
   Admin,
@@ -27,18 +27,24 @@ export class HomeController {
 }
 
 /** "דף הבית" in the admin (Phase 8 §5, ADM-06): content.manage; the whole list in one save with `expectedUpdatedAt`. */
-@Controller('admin/content/home')
+@Controller('admin/content')
 @UseGuards(SameOriginGuard, AdminAuthGuard)
 @RequirePermission('content.manage')
 export class HomeAdminController {
   constructor(private readonly home: HomeService) {}
 
-  @Get()
+  /** The promotion picker of a product row: read-only, so the content editor does not need `promotions.manage`. */
+  @Get('promotion-sources')
+  promotionSources(): Promise<AdminPromotionSource[]> {
+    return this.home.promotionSources();
+  }
+
+  @Get('home')
   get(): Promise<AdminHome> {
     return this.home.adminHome();
   }
 
-  @Put()
+  @Put('home')
   save(@Body() body: unknown, @Admin() admin: AdminContext, @ClientMeta() client: RequestMeta): Promise<AdminHome> {
     const sections = parseHomeInput(body);
     return this.home.saveHome(sections, expectedUpdatedAt(body), { actorId: admin.user.id, ip: client.ip });

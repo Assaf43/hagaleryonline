@@ -11,7 +11,7 @@ import {
   HOME_SECTION_LABELS_HE,
   type AdminBanner,
   type AdminCategory,
-  type AdminPromotion,
+  type AdminPromotionSource,
   type AdminRoom,
   type HomeProductCount,
   type ProductSource,
@@ -27,7 +27,7 @@ export interface HomeLookups {
   banners: AdminBanner[];
   categories: AdminCategory[];
   rooms: AdminRoom[];
-  promotions: AdminPromotion[];
+  promotions: AdminPromotionSource[];
 }
 
 export interface HomeSectionDialogData {
@@ -35,9 +35,9 @@ export interface HomeSectionDialogData {
   lookups: HomeLookups;
 }
 
-/** Promotions a product row can use: automatic, on categories or products, for everyone (the API checks again). */
-export function usablePromotions(list: AdminPromotion[]): AdminPromotion[] {
-  return list.filter((p) => p.kind === 'automatic' && p.target !== 'order' && !p.membersOnly);
+/** The promotion picker's options: every promotion the API offers, an ended one marked (the API checks again). */
+export function promotionOptions(list: AdminPromotionSource[]): IdOption[] {
+  return list.map((p) => ({ id: p.id, label: p.usable ? p.name : `${p.name} (לא פעיל כעת)` }));
 }
 
 /** Every category, sub-categories indented under their parent's depth. */
@@ -209,9 +209,7 @@ export class HomeSectionDialog {
   protected readonly roomChoices = computed<IdOption[]>(() =>
     this.data.lookups.rooms.map((r) => ({ id: r.id, label: `${r.nameHe}${r.active ? '' : ' (מוסתר)'}` })),
   );
-  protected readonly promotionChoices = computed<IdOption[]>(() =>
-    usablePromotions(this.data.lookups.promotions).map((p) => ({ id: p.id, label: p.name })),
-  );
+  protected readonly promotionChoices = computed(() => promotionOptions(this.data.lookups.promotions));
 
   constructor() {
     const d = this.data.draft;

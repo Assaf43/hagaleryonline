@@ -3,6 +3,7 @@ import type {
   AdminHome,
   AdminHomeSection,
   AdminHomeSectionInput,
+  AdminPromotionSource,
   BannerView,
   HomeHeroFallback,
   HomeRoom,
@@ -10,7 +11,6 @@ import type {
   HomeSectionUnavailable,
   HomeSectionView,
   HomeView,
-  ProductSource,
 } from '@hg/models';
 import { AuditService } from '../../audit/audit.service.js';
 import { CacheStore } from '../../cache/cache-store.js';
@@ -35,6 +35,7 @@ import {
   productSourceLink,
   promotionUsable,
   resolveProductSource,
+  sameSource,
   type LivePromotion,
 } from '../product-source.js';
 import { DB_KIND, bannerIdsOf, configJson, homeAudit, storedConfig } from './home-config.js';
@@ -110,6 +111,23 @@ export class HomeService {
       ]),
     );
     return { sections, banners, promotions };
+  }
+
+  /** The promotions a product row may use, for the content editor's picker (no `promotions.manage` needed). */
+  async promotionSources(now = new Date()): Promise<AdminPromotionSource[]> {
+    const [rows, live] = await Promise.all([
+      this.prisma.promotion.findMany({
+        where: { kind: DbPromotionKind.AUTOMATIC, target: { not: DbPromotionTarget.ORDER }, membersOnly: false },
+        orderBy: { id: 'asc' },
+        select: { id: true, name: true },
+      }),
+      this.promotions.automatic(this.prisma),
+    ]);
+    const liveById = new Map(live.map((p) => [p.id, p]));
+    return rows.map(({ id, name }) => {
+      const rule = liveById.get(id);
+      return { id, name, usable: rule !== undefined && promotionUsable(rule, now) };
+    });
   }
 
   /** `GET /api/content/home`: the visible sections that have something to show, resolved. */
@@ -306,8 +324,6 @@ function unavailableOf(
   }
   return result;
 }
-
-const sameSource = (a: ProductSource, b: ProductSource) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * Every new reference must exist: banners (read FOR SHARE, so a banner delete waits for this save and then sees the

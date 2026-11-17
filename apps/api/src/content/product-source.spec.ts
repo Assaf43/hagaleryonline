@@ -6,8 +6,24 @@ import {
   productSourceLink,
   promotionUsable,
   resolveProductSource,
+  sameSource,
   type LivePromotion,
 } from './product-source.js';
+
+describe('sameSource', () => {
+  it('compares the kind and its id or product ids, field by field', () => {
+    expect(sameSource({ kind: 'bestsellers' }, { kind: 'bestsellers' })).toBe(true);
+    expect(sameSource({ kind: 'bestsellers' }, { kind: 'newest' })).toBe(false);
+    expect(sameSource({ kind: 'category', id: 3 }, { kind: 'category', id: 3 })).toBe(true);
+    expect(sameSource({ kind: 'category', id: 3 }, { kind: 'category', id: 4 })).toBe(false);
+    expect(sameSource({ kind: 'category', id: 3 }, { kind: 'room', id: 3 })).toBe(false);
+    expect(sameSource({ kind: 'promotion', id: 3 }, { kind: 'promotion', id: 3 })).toBe(true);
+    expect(sameSource({ kind: 'manual', productIds: [1, 2] }, { kind: 'manual', productIds: [1, 2] })).toBe(true);
+    expect(sameSource({ kind: 'manual', productIds: [1, 2] }, { kind: 'manual', productIds: [2, 1] })).toBe(false);
+    expect(sameSource({ kind: 'manual', productIds: [1] }, { kind: 'manual', productIds: [1, 2] })).toBe(false);
+    expect(sameSource({ kind: 'manual', productIds: [] }, { kind: 'bestsellers' })).toBe(false);
+  });
+});
 
 const NOW = new Date('2026-11-17T12:00:00Z');
 const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000);
