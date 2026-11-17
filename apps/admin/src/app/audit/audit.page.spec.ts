@@ -60,4 +60,19 @@ describe('AuditPageComponent', () => {
       'יישובים: אילת, שחר ← —',
     ]);
   });
+
+  it('shows a content page change readable, with HTML collapsed', async () => {
+    const el = await render([
+      entry({
+        action: 'content.page.update',
+        entityType: 'info_page',
+        entityId: '2',
+        before: { כותרת: 'משלוחים', תוכן: '<p>ישן</p>' },
+        after: { כותרת: 'משלוחים והחזרות', תוכן: '<p>חדש</p>' },
+      }),
+    ]);
+    expect(el.textContent).toContain('עדכון עמוד מידע');
+    expect(el.textContent).toContain('עמוד מידע');
+    expect(changes(el)).toEqual(['כותרת: משלוחים ← משלוחים והחזרות', 'תוכן: (טקסט) ← (טקסט)']);
+  });
 });

@@ -48,6 +48,16 @@ const ACTIONS: Record<string, string> = {
   'promotion.create': 'יצירת מבצע',
   'promotion.update': 'עדכון מבצע',
   'promotion.deactivate': 'השבתת מבצע',
+  'content.site.update': 'עדכון פרטי האתר',
+  'content.announcement.create': 'יצירת הודעה',
+  'content.announcement.update': 'עדכון הודעה',
+  'content.announcement.delete': 'מחיקת הודעה',
+  'content.page.create': 'יצירת עמוד מידע',
+  'content.page.update': 'עדכון עמוד מידע',
+  'content.page.delete': 'מחיקת עמוד מידע',
+  'content.faq.create': 'יצירת קבוצת שאלות',
+  'content.faq.update': 'עדכון קבוצת שאלות',
+  'content.faq.delete': 'מחיקת קבוצת שאלות',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -62,10 +72,22 @@ const ENTITIES: Record<string, string> = {
   shipping: 'מחירון משלוחים',
   shipping_zone: 'אזור משלוח',
   promotion: 'מבצע',
+  site_content: 'פרטי האתר',
+  announcement: 'הודעה',
+  info_page: 'עמוד מידע',
+  faq_group: 'קבוצת שאלות',
 };
 
 /** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
-const READABLE = new Set(['shipping', 'shipping_zone', 'promotion']);
+const READABLE = new Set([
+  'shipping',
+  'shipping_zone',
+  'promotion',
+  'site_content',
+  'announcement',
+  'info_page',
+  'faq_group',
+]);
 
 /** Prices are stored in agorot; show them in shekels. */
 const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice']);
@@ -282,7 +304,9 @@ function show(field: string, value: unknown): string {
   if (value == null || value === '') return '—';
   if (MONEY.has(field) && typeof value === 'number') return ILS.format(value / 100);
   // A description is HTML and can be long: say it changed rather than print it.
-  if (field === 'descriptionHe') return '(טקסט)';
+  if (field === 'descriptionHe' || field === 'תוכן' || field === 'טקסט משלוח' || /^תשובה \d+$/.test(field)) {
+    return '(טקסט)';
+  }
   if (typeof value === 'boolean') return value ? 'כן' : 'לא';
   if (Array.isArray(value)) return value.length ? value.join(', ') : '—';
   if (typeof value === 'object') {

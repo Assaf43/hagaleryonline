@@ -6,6 +6,7 @@
 
   @if (!done()) {
     <!-- Signed in, the session proves the owner: the phone is asked for only for a guest order (the step says so). -->
+    <p><a routerLink="/info/returns">מדיניות החזרות</a></p>
     <p class="intro">
       @if (signedIn()) {
         הזינו את מספר ההזמנה ובחרו אילו פריטים להחזיר או להחליף.

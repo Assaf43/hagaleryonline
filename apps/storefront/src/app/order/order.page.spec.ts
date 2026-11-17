@@ -9,6 +9,7 @@ import {
   type OrderStatus,
   type OrderView,
 } from '@hg/models';
+import { SiteContentStore } from '../content/site-content.store';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from '../checkout/checkout.api';
 import { OrderPage } from './order.page';
@@ -85,7 +86,7 @@ describe('OrderPage', () => {
   };
   const orderRequests = () => http.match((r) => r.url === URL);
 
-  async function setup(first: OrderView | 404) {
+  async function setup(first: OrderView | 404, withSite = true) {
     vi.useFakeTimers();
     assign = vi.fn();
     TestBed.configureTestingModule({
@@ -97,6 +98,16 @@ describe('OrderPage', () => {
       ],
     });
     http = TestBed.inject(HttpTestingController);
+    if (withSite) {
+      TestBed.inject(SiteContentStore).site.set({
+        supportPhone: '03-1234567',
+        supportEmail: 'help@example.test',
+        whatsapp: '',
+        shippingHtml: '',
+        announcement: null,
+        footerPages: [],
+      });
+    }
     metaSet = vi.spyOn(TestBed.inject(PageMeta), 'set');
     fixture = TestBed.createComponent(OrderPage);
     fixture.componentRef.setInput('number', '100001');
@@ -374,6 +385,14 @@ describe('OrderPage', () => {
         http.match('/api/cart');
       },
     );
+
+    it('hides empty tel and mailto links when the site details are missing', async () => {
+      await setup(order('paid'), false);
+      const line = el().querySelector('.support')!;
+      expect(line.textContent).toContain('לביטול ההזמנה פנו לשירות הלקוחות');
+      expect(line.querySelector('a')).toBeNull();
+      http.match('/api/cart');
+    });
 
     it.each(['delivered', 'cancelled', 'pending_payment', 'payment_failed'] as const)(
       'has no support line for %s',

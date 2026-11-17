@@ -3,6 +3,7 @@ import { signal } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { MenuData } from './menu-data';
+import { SiteContentStore } from '../content/site-content.store';
 import { SiteFooter } from './site-footer';
 
 describe('SiteFooter', () => {
@@ -48,5 +49,38 @@ describe('SiteFooter', () => {
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('hg-newsletter-form input[type="email"]'),
     ).not.toBeNull();
+  });
+
+  it('lists the CMS footer pages first, then the fixed links (spec section 9)', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(),
+        provideRouter([]),
+        { provide: MenuData, useValue: { rooms: signal([]), categories: signal([]) } },
+      ],
+    });
+    TestBed.inject(SiteContentStore).site.set({
+      supportPhone: '',
+      supportEmail: '',
+      whatsapp: '',
+      shippingHtml: '',
+      announcement: null,
+      footerPages: [
+        { slug: 'shipping', labelHe: 'משלוחים' },
+        { slug: 'terms', labelHe: 'תקנון' },
+      ],
+    });
+    const fixture = TestBed.createComponent(SiteFooter);
+    fixture.detectChanges();
+    const links = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>('.links a'));
+    expect(links.map((a) => [a.textContent?.trim(), a.getAttribute('href')])).toEqual([
+      ['משלוחים', '/info/shipping'],
+      ['תקנון', '/info/terms'],
+      ['שאלות ותשובות', '/faq'],
+      ['מדריך מידות', '/sizing-guide'],
+      ['החזרות והחלפות', '/returns'],
+      ['צור קשר', '/contact'],
+      ['מצב ההזמנה שלי', '/order-status'],
+    ]);
   });
 });

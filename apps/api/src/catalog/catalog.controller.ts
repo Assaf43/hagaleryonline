@@ -9,12 +9,16 @@ import type {
   SearchSuggestions,
   SitemapData,
 } from '@hg/models';
+import { ContentService } from '../content/content.service.js';
 import { CatalogService } from './catalog.service.js';
 import { parseCardIds, parseProductListQuery } from './product-list-query.js';
 
 @Controller()
 export class CatalogController {
-  constructor(private readonly catalog: CatalogService) {}
+  constructor(
+    private readonly catalog: CatalogService,
+    private readonly content: ContentService,
+  ) {}
 
   @Get('categories')
   categories(): Promise<CategoryNode[]> {
@@ -56,8 +60,10 @@ export class CatalogController {
     return this.catalog.suggest(typeof q === 'string' ? q.slice(0, 100) : '');
   }
 
+  /** Catalog items plus the published, indexable info pages (Phase 8 §9). */
   @Get('seo/sitemap')
-  sitemap(): Promise<SitemapData> {
-    return this.catalog.sitemap();
+  async sitemap(): Promise<SitemapData> {
+    const [catalog, infoPages] = await Promise.all([this.catalog.sitemap(), this.content.sitemapPages()]);
+    return { ...catalog, infoPages };
   }
 }

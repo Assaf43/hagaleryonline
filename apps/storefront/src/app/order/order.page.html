@@ -56,13 +56,19 @@
           } @else if (contactSupport()) {
             <p class="support muted">
               לביטול ההזמנה פנו לשירות הלקוחות:
-              <bdi dir="ltr"
-                ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
-              >
-              ·
-              <bdi dir="ltr"
-                ><a [href]="'mailto:' + support.email">{{ support.email }}</a></bdi
-              >
+              @if (support().phone) {
+                <bdi dir="ltr"
+                  ><a [href]="'tel:' + support().phone">{{ support().phone }}</a></bdi
+                >
+              }
+              @if (support().phone && support().email) {
+                ·
+              }
+              @if (support().email) {
+                <bdi dir="ltr"
+                  ><a [href]="'mailto:' + support().email">{{ support().email }}</a></bdi
+                >
+              }
             </p>
           }
           <p class="retry-error" role="alert">{{ retryError() }}</p>

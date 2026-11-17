@@ -139,13 +139,13 @@ describe('CheckoutPage', () => {
     );
   });
 
-  it('has the four sections and the terms checkbox with a link to /terms', async () => {
+  it('has the four sections and the terms checkbox with a link to /info/terms', async () => {
     await setup();
     const headings = Array.from(el().querySelectorAll('h2')).map((h) => h.textContent?.trim());
     expect(headings).toEqual(['פרטים', 'כתובת ומסירה', 'שיטת משלוח', 'סיכום']);
     const terms = q('label[for="chk-acceptTerms"]');
     expect(terms.textContent?.replace(/\s+/g, ' ').trim()).toBe('קראתי ואני מסכים/ה לתנאי השימוש (נפתח בחלון חדש)');
-    const link = q<HTMLAnchorElement>('a[href="/terms"]');
+    const link = q<HTMLAnchorElement>('a[href="/info/terms"]');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.querySelector('.visually-hidden')?.textContent?.trim()).toBe('(נפתח בחלון חדש)');
     expect(q('button[type="submit"]').textContent?.trim()).toBe('למעבר לתשלום');

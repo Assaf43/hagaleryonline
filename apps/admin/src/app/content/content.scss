@@ -1,0 +1,244 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+}
+
+h1,
+h2 {
+  margin: 0;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+.back {
+  justify-self: start;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+// Phones: a card per row. From tablet width the cells sit on one line.
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.name {
+  font-weight: 700;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  font-size: var(--font-small);
+  color: var(--color-text-secondary);
+}
+
+.badge,
+.state {
+  justify-self: start;
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-alt);
+}
+
+.badge.interim {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.row[data-state='active'] .state {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.row[data-state='scheduled'] .state {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.empty {
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-5);
+  max-inline-size: 48rem;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+@media (width >= 768px) {
+  .fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) 8rem auto;
+    gap: var(--space-3);
+  }
+
+  .row-actions {
+    grid-column: auto;
+  }
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-inline-size: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+legend {
+  padding: 0;
+  margin-block-end: var(--space-2);
+  font-weight: 700;
+}
+
+.date-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+@media (width >= 480px) {
+  .date-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+// 44px touch targets for the native checkboxes (ADM-15).
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--icon-button-size);
+  cursor: pointer;
+
+  input {
+    inline-size: var(--icon-size-ui);
+    block-size: var(--icon-size-ui);
+    margin: 0;
+    accent-color: var(--color-accent);
+  }
+
+  input:disabled,
+  input:disabled + span {
+    cursor: not-allowed;
+  }
+}
+
+.switch-row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--font-small);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
+// FAQ items.
+.items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.item {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.item-head h3 {
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--font-body);
+}

@@ -12,7 +12,7 @@ import {
 } from '@hg/models';
 import { errorMessage } from '../core/errors';
 import { SupportApi, type TicketFilter } from '../core/support.api';
-import { israelDateTime } from '../promotions/israel-time';
+import { israelDateTime } from '../core/israel-time';
 
 interface Filter<T> {
   value: T | null;

@@ -212,4 +212,6 @@ export interface SitemapData {
   categories: { slug: string }[];
   /** Rooms with at least one shown product. */
   rooms: { slug: string }[];
+  /** Published info pages that are not noindex (Phase 8 §9), served at /info/:slug. */
+  infoPages: { slug: string; updatedAt: string }[];
 }

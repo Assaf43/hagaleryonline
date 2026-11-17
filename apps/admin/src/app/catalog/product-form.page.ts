@@ -45,7 +45,7 @@ import { errorMessage } from '../core/errors';
 import { FULFILLMENT_LABEL, categoryOptions, suggestSlug, toAgorot, toShekels } from './catalog-format';
 import { ProductImages, type ColorOption } from './product-images';
 import { ProductRelations } from './product-relations';
-import { RichTextEditor } from './rich-text-editor';
+import { RichTextEditor } from '../shared/rich-text-editor';
 import {
   VariantBulkDialog,
   VariantGeneratorDialog,

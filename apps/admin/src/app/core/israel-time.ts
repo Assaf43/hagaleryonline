@@ -140,3 +140,7 @@ export function israelDateTime(iso: string): string {
   const { wall, time } = fields(iso);
   return `${wall.day}.${wall.month}.${wall.year} ${time}`;
 }
+
+/** The years the content and promotion APIs accept (and the date inputs' min/max). */
+export const MIN_DATE = '2000-01-01';
+export const MAX_DATE = '2100-12-31';

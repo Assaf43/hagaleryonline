@@ -3,8 +3,17 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { BRAND } from '@hg/models';
-import type { CategoryNode, RoomMenuItem } from '@hg/models';
+import type { CategoryNode, RoomMenuItem, SiteContentView } from '@hg/models';
 import { App } from './app';
+
+const site: SiteContentView = {
+  supportPhone: '',
+  supportEmail: '',
+  whatsapp: '',
+  shippingHtml: '',
+  announcement: null,
+  footerPages: [],
+};
 
 describe('App', () => {
   beforeEach(async () => {
@@ -23,6 +32,7 @@ describe('App', () => {
     const categories: CategoryNode[] = [{ slug: 'sofas', nameHe: 'ספות', children: [] }];
     http.expectOne('/api/rooms').flush(rooms);
     http.expectOne('/api/categories').flush(categories);
+    http.expectOne('/api/content/site').flush(site);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -45,6 +55,7 @@ describe('App', () => {
     const http = TestBed.inject(HttpTestingController);
     http.expectOne('/api/rooms').flush([]);
     http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush(site);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -52,5 +63,53 @@ describe('App', () => {
     expect(link.getAttribute('aria-label')).toBe('המועדפים שלי (2)');
     expect(link.querySelector('.count')?.textContent?.trim()).toBe('2');
     localStorage.clear();
+  });
+
+  it('puts the skip link first, and shows the static strip only while no announcement is live', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush({
+      ...site,
+      announcement: { id: 1, version: 1, textHe: 'מבצע', linkUrl: null, linkLabelHe: null },
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const focusable = el.querySelectorAll<HTMLElement>('a[href], button');
+    expect(focusable[0].classList.contains('skip-link')).toBe(true);
+    expect(el.querySelector('.bar')).toBeTruthy();
+    expect(el.querySelector('.announce')).toBeNull();
+  });
+
+  it('shows the static strip when there is no announcement', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush(site);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.announce')).toBeTruthy();
+  });
+
+  it('shows neither the bar nor the static strip after the visitor closes the live announcement', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush({
+      ...site,
+      announcement: { id: 1, version: 1, textHe: 'מבצע', linkUrl: null, linkLabelHe: null },
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('.bar button')!.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.bar')).toBeNull();
+    expect(el.querySelector('.announce')).toBeNull();
+    document.cookie = 'hg-ann=; Max-Age=0; Path=/';
   });
 });

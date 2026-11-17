@@ -82,3 +82,10 @@
 .content {
   padding: var(--space-6) var(--gutter);
 }
+
+.nav-heading {
+  margin: var(--space-3) var(--space-4) var(--space-1);
+  font-size: var(--font-caption);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}

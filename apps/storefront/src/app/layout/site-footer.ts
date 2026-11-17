@@ -2,11 +2,12 @@ import { BRAND } from '@hg/models';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { NewsletterForm } from '../newsletter/newsletter-form';
+import { SiteContentStore } from '../content/site-content.store';
 import { MenuData } from './menu-data';
 
 /**
- * Footer: rooms and furniture types. "My order status", the sizing guide and the interim terms are linked; the other service
- * and policy pages (shipping, returns, privacy, accessibility statement) come with the content pages in Phase 8.
+ * Footer: rooms and furniture types, the newsletter and the "מידע ושירות" column: the info pages marked "show in
+ * footer" (from the CMS), then the fixed links (spec Phase 8 §9).
  */
 @Component({
   selector: 'hg-site-footer',
@@ -46,13 +47,21 @@ import { MenuData } from './menu-data';
           }
         </div>
         <hg-newsletter-form class="newsletter" />
-        <ul class="links">
-          <li><a routerLink="/order-status">מצב ההזמנה שלי</a></li>
-          <li><a routerLink="/returns">החזרות והחלפות</a></li>
-          <li><a routerLink="/contact">צור קשר</a></li>
-          <li><a routerLink="/sizing-guide">מדריך מידות</a></li>
-          <li><a routerLink="/terms">תנאי שימוש</a></li>
-        </ul>
+        <nav aria-labelledby="footer-info">
+          <h2 id="footer-info">מידע ושירות</h2>
+          <ul class="links">
+            @for (p of content.footerPages(); track p.slug) {
+              <li>
+                <a [routerLink]="['/info', p.slug]">{{ p.labelHe }}</a>
+              </li>
+            }
+            <li><a routerLink="/faq">שאלות ותשובות</a></li>
+            <li><a routerLink="/sizing-guide">מדריך מידות</a></li>
+            <li><a routerLink="/returns">החזרות והחלפות</a></li>
+            <li><a routerLink="/contact">צור קשר</a></li>
+            <li><a routerLink="/order-status">מצב ההזמנה שלי</a></li>
+          </ul>
+        </nav>
         <p class="bottom">© {{ year }} {{ brand }}</p>
       </div>
     </footer>
@@ -114,12 +123,16 @@ import { MenuData } from './menu-data';
       text-decoration: underline;
     }
 
+    nav[aria-labelledby='footer-info'] {
+      margin-block-start: var(--space-5);
+    }
+
     .newsletter {
       margin-block-start: var(--space-5);
     }
 
     .links {
-      margin-block-start: var(--space-4);
+      margin-block-start: var(--space-2);
       display: flex;
       flex-wrap: wrap;
       gap: var(--space-2) var(--space-5);
@@ -137,5 +150,6 @@ import { MenuData } from './menu-data';
 export class SiteFooter {
   protected readonly brand = BRAND.name;
   protected readonly menu = inject(MenuData);
+  protected readonly content = inject(SiteContentStore);
   protected readonly year = new Date().getFullYear();
 }

@@ -1,6 +1,13 @@
 import type { AdminPromotion } from '@hg/models';
 import { emptyForm, promotionInput, serverFieldOf, toForm, type PromotionForm } from './promotion-form';
-import { endFields, formatIsraelDate, israelDay, israelEndToUtc, israelStartToUtc, startFields } from './israel-time';
+import {
+  endFields,
+  formatIsraelDate,
+  israelDay,
+  israelEndToUtc,
+  israelStartToUtc,
+  startFields,
+} from '../core/israel-time';
 
 const COUPON: AdminPromotion = {
   id: 4,

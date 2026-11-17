@@ -5,6 +5,7 @@ import {
   Injector,
   PLATFORM_ID,
   afterNextRender,
+  computed,
   effect,
   inject,
   signal,
@@ -23,7 +24,8 @@ import {
 import { CustomerStore } from '../account/customer.store';
 import { isEmail, isPhone, normalizePhone } from '../account/account-forms';
 import { PageMeta } from '../core/page-meta';
-import { SUPPORT_CONTACT, whatsappLink } from '../core/support-contact';
+import { whatsappLink } from '../core/support-contact';
+import { SiteContentStore } from '../content/site-content.store';
 import { SupportApi, supportErrorMessage, supportFailure, supportSuccessText } from './support.api';
 
 type ContactField = 'fullName' | 'phone' | 'email' | 'subject' | 'message' | 'orderNumber';
@@ -33,7 +35,7 @@ const id = (field: ContactField) => `ct-${field}`;
 
 /**
  * Contact `/contact` (spec §7.1, SRV-05): name, phone, e-mail, subject, message and an optional order number, plus
- * the customer-service phone and a WhatsApp button (INTERIM numbers, `SUPPORT_CONTACT`). A signed-in customer's details
+ * the customer-service phone and a WhatsApp button (from the site details, `SiteContentStore`). A signed-in customer's details
  * are prefilled in the browser. `noindex`, never in the sitemap.
  */
 @Component({
@@ -49,8 +51,8 @@ export class ContactPage {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
 
-  protected readonly support = SUPPORT_CONTACT;
-  protected readonly whatsapp = whatsappLink(SUPPORT_CONTACT.whatsapp);
+  protected readonly support = inject(SiteContentStore).contact;
+  protected readonly whatsapp = computed(() => whatsappLink(this.support().whatsapp));
   protected readonly id = id;
   protected readonly limits = {
     ...SUPPORT_LIMITS,

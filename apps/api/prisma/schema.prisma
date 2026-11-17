@@ -1370,3 +1370,94 @@ model CustomerFavorite {
   @@index([customerId, createdAt])
   @@map("customer_favorites")
 }
+
+/// Site details (Phase 8 §4.4): one row (id 1, SQL CHECK, inserted by migration content_pages with today's interim
+/// values). Replaces the storefront's SUPPORT_CONTACT and SHIPPING_INFO.
+model SiteContent {
+  id           Int      @id @default(1)
+  supportPhone String   @map("support_phone")
+  supportEmail String   @map("support_email")
+  /// Digits only, international form without "+" (for https://wa.me/<number>).
+  whatsapp     String
+  /// Product-page shipping text: inline rich text (`sanitizeContentHtml(…, 'inline')`).
+  shippingHtml String   @map("shipping_html")
+  /// Seeded interim values not yet saved by an editor (decision 100).
+  interim      Boolean  @default(true)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("site_content")
+}
+
+/// The announcement bar (Phase 8 §4.1, NAV-04): at most one shows — active, inside its dates, lowest `sortOrder`,
+/// then the newest `startsAt`. `version` is bumped when the text or the link changes, so a closed bar shows again.
+model Announcement {
+  id          Int       @id @default(autoincrement())
+  /// At most 120 characters (CONTENT_LIMITS).
+  textHe      String    @map("text_he")
+  /// https or a site path (`isSafeContentLink`).
+  linkUrl     String?   @map("link_url")
+  linkLabelHe String?   @map("link_label_he")
+  active      Boolean   @default(true)
+  sortOrder   Int       @default(0) @map("sort_order")
+  startsAt    DateTime? @map("starts_at")
+  /// Inclusive: 23:59:59.999 of the Israel day.
+  endsAt      DateTime? @map("ends_at")
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([active, sortOrder])
+  @@map("announcements")
+}
+
+/// An info page at /info/:slug (Phase 8 §4.2, SRV-04). System pages (`systemKey` set: terms, privacy, shipping,
+/// returns, warranty) cannot be deleted, keep their slug and stay published.
+model InfoPage {
+  id                Int      @id @default(autoincrement())
+  slug              String   @unique
+  systemKey         String?  @unique @map("system_key")
+  titleHe           String   @map("title_he")
+  /// Page rich text (`sanitizeContentHtml(…, 'page')`).
+  bodyHtml          String   @map("body_html")
+  metaDescriptionHe String?  @map("meta_description_he")
+  published         Boolean  @default(false)
+  noindex           Boolean  @default(false)
+  showInFooter      Boolean  @default(false) @map("show_in_footer")
+  footerLabelHe     String?  @map("footer_label_he")
+  footerOrder       Int      @default(0) @map("footer_order")
+  /// Seeded interim text not yet saved by an editor (decision 100).
+  interim           Boolean  @default(false)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("info_pages")
+}
+
+/// A group of questions on /faq (Phase 8 §4.3); saved as a whole with its items.
+model FaqGroup {
+  id        Int      @id @default(autoincrement())
+  titleHe   String   @map("title_he")
+  sortOrder Int      @default(0) @map("sort_order")
+  published Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items FaqItem[]
+
+  @@map("faq_groups")
+}
+
+model FaqItem {
+  id         Int     @id @default(autoincrement())
+  groupId    Int     @map("group_id")
+  /// Plain text.
+  questionHe String  @map("question_he")
+  /// Inline rich text (`sanitizeContentHtml(…, 'inline')`).
+  answerHtml String  @map("answer_html")
+  sortOrder  Int     @default(0) @map("sort_order")
+  published  Boolean @default(true)
+
+  group FaqGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, sortOrder])
+  @@map("faq_items")
+}

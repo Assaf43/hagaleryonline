@@ -24,6 +24,7 @@ import { formatDate } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { CustomerStore } from '../account/customer.store';
 import { returnOpen } from '../order/return-window';
+import { RouterLink } from '@angular/router';
 import { OrderStep } from './order-step';
 import { SupportApi, supportErrorMessage, supportFailure, supportSuccessText, type SupportOrder } from './support.api';
 
@@ -39,7 +40,7 @@ const IDS = { items: 'rt-line-0', type: 'rt-type-return', reasonCode: 'rt-reason
  */
 @Component({
   selector: 'hg-return-page',
-  imports: [OrderStep],
+  imports: [OrderStep, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './return.page.html',
   styleUrl: './support.scss',

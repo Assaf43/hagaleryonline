@@ -47,14 +47,14 @@
   </div>
 </details>
 
-<details class="group">
-  <summary>
-    משלוח, הרכבה והחזרות
-    <svg lucideChevronDown aria-hidden="true"></svg>
-  </summary>
-  <div class="content">
-    @for (t of shipping; track t) {
-      <p>{{ t }}</p>
-    }
-  </div>
-</details>
+@if (shipping()) {
+  <details class="group">
+    <summary>
+      משלוח, הרכבה והחזרות
+      <svg lucideChevronDown aria-hidden="true"></svg>
+    </summary>
+    <div class="content">
+      <hg-rich-text [html]="shipping()" />
+    </div>
+  </details>
+}

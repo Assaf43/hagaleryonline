@@ -79,6 +79,30 @@
           מבצעים וקופונים
         </a>
       }
+      @if (can('content.manage')) {
+        <p class="nav-heading">תוכן</p>
+        <a
+          class="nav-link"
+          routerLink="/content/announcements"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideMegaphone></svg>
+          פס הודעות
+        </a>
+        <a class="nav-link" routerLink="/content/pages" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideBookOpen></svg>
+          עמודי מידע
+        </a>
+        <a class="nav-link" routerLink="/content/faq" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideCircleQuestionMark></svg>
+          שאלות ותשובות
+        </a>
+        <a class="nav-link" routerLink="/content/site" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideInfo></svg>
+          פרטי האתר
+        </a>
+      }
       @if (can('orders.view')) {
         <a class="nav-link" routerLink="/orders" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideReceipt></svg>

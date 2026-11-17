@@ -4,7 +4,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import type { CodeTemplateOption, IssuedPersonalCode, PersonalCodeSend } from '@hg/models';
 import { CustomersApi } from '../core/customers.api';
 import { errorMessage } from '../core/errors';
-import { israelDay } from '../promotions/israel-time';
+import { israelDay } from '../core/israel-time';
 import { formatPrice } from '../catalog/catalog-format';
 import { discountText } from './discount-text';
 

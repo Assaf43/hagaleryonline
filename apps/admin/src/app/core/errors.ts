@@ -132,6 +132,69 @@ function catalogMessage(body: {
   }
 }
 
+/** Field names of the content API (Phase 8a), in Hebrew. */
+const CONTENT_FIELDS: Record<string, string> = {
+  textHe: 'טקסט ההודעה',
+  linkUrl: 'קישור',
+  linkLabelHe: 'טקסט הקישור',
+  startsAt: 'תאריך התחלה',
+  endsAt: 'תאריך סיום',
+  sortOrder: 'סדר',
+  slug: 'כתובת באתר',
+  titleHe: 'כותרת',
+  bodyHtml: 'תוכן העמוד',
+  metaDescriptionHe: 'תיאור לגוגל',
+  footerLabelHe: 'שם בכותרת התחתונה',
+  footerOrder: 'סדר בכותרת התחתונה',
+  supportPhone: 'טלפון',
+  supportEmail: 'דוא"ל',
+  whatsapp: 'וואטסאפ',
+  shippingHtml: 'טקסט המשלוח',
+  items: 'שאלות ותשובות',
+  expectedUpdatedAt: 'גרסת העמוד',
+};
+
+function contentFieldLabel(field: string): string {
+  const item = /^items\.(\d+)\.(\w+)$/.exec(field);
+  if (item) {
+    const n = Number(item[1]) + 1;
+    return item[2] === 'answerHtml' ? `תשובה ${n}` : `שאלה ${n}`;
+  }
+  return Object.hasOwn(CONTENT_FIELDS, field) ? CONTENT_FIELDS[field] : 'שדה';
+}
+
+/**
+ * Content errors (Phase 8a): `invalid_link` here always names a field (the auth code of the same name has none),
+ * `invalid` only when the field is a content one, `slug_taken` and `system_page`.
+ */
+function contentMessage(body: { code?: string; field?: string }, url?: string | null): string | null {
+  const field = body.field ?? '';
+  switch (body.code) {
+    case 'conflict':
+      // The catalog wording talks about a product; the same code on a content screen gets its own.
+      return url?.includes('/api/admin/content/')
+        ? 'מישהו אחר שמר את הדף הזה בינתיים. טענו מחדש כדי לראות את הגרסה החדשה.'
+        : null;
+    case 'invalid_link':
+      if (!field) return null;
+      return `הקישור בשדה "${contentFieldLabel(field)}" לא תקין. אפשר https://, mailto:, tel: או כתובת באתר שמתחילה ב-/.`;
+    case 'slug_taken':
+      return 'כבר יש עמוד עם הכתובת הזו. בחרו כתובת אחרת.';
+    case 'system_page':
+      if (field === 'slug') return 'עמוד מערכת: אי אפשר לשנות את הכתובת.';
+      if (field === 'published') return 'עמוד מערכת: תמיד מפורסם.';
+      return 'עמוד מערכת: אי אפשר למחוק אותו.';
+    case 'invalid':
+      if (field === 'linkLabelHe') return 'יש להוסיף קישור לטקסט הקישור, או למחוק את טקסט הקישור.';
+      if (Object.hasOwn(CONTENT_FIELDS, field) || /^items\.\d+\./.test(field)) {
+        return `יש לבדוק את השדה: ${contentFieldLabel(field)}.`;
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
 /** 409 of the shipping zones: a locality is in one zone only (spec §4.1). */
 function shippingMessage(body: { code?: ShippingAdminErrorCode; localityNameHe?: string; zoneName?: string }) {
   if (body.code !== 'locality_taken') return null;
@@ -243,6 +306,8 @@ export function errorMessage(error: unknown): string {
   if (order) return order;
   const promotion = promotionMessage(error.error ?? {});
   if (promotion) return promotion;
+  const content = contentMessage(error.error ?? {}, error.url);
+  if (content) return content;
   const catalog = catalogMessage(error.error ?? {});
   if (catalog) return catalog;
   const body = (error.error ?? {}) as { code?: AuthErrorCode; reason?: string; retryAfterSeconds?: number };

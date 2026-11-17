@@ -4,7 +4,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { ADMIN_CUSTOMERS_QUERY_MAX, CUSTOMER_ORIGIN_LABELS_HE, type CustomerPage } from '@hg/models';
 import { CustomersApi } from '../core/customers.api';
 import { errorMessage } from '../core/errors';
-import { israelDateTime } from '../promotions/israel-time';
+import { israelDateTime } from '../core/israel-time';
 
 /**
  * "לקוחות" (spec §4.5, CLB-09, permission customers.view): the accounts, newest first, 30 per page. The search (name,

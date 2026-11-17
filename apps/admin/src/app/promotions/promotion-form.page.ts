@@ -34,13 +34,12 @@ import {
 } from '@hg/models';
 import { ProductRelations } from '../catalog/product-relations';
 import { errorMessage } from '../core/errors';
+import { MAX_DATE, MIN_DATE } from '../core/israel-time';
 import { PromotionsApi } from '../core/promotions.api';
 import {
   FIELD_IDS,
   FIELD_ORDER,
-  MAX_DATE,
   MESSAGES,
-  MIN_DATE,
   emptyForm,
   promotionInput,
   serverFieldOf,

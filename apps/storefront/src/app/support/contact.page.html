@@ -3,15 +3,21 @@
 
   <div class="stack">
     <p class="intro">
-      אפשר להתקשר אל
-      <bdi dir="ltr"
-        ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
-      >
-      או לכתוב לנו בוואטסאפ, ואפשר גם למלא את הטופס.
+      @if (support().phone) {
+        אפשר להתקשר אל
+        <bdi dir="ltr"
+          ><a [href]="'tel:' + support().phone">{{ support().phone }}</a></bdi
+        >
+        או לכתוב לנו בוואטסאפ, ואפשר גם למלא את הטופס.
+      } @else {
+        אפשר לכתוב לנו בטופס שלמטה.
+      }
     </p>
-    <div class="actions">
-      <a class="btn btn-secondary" [href]="whatsapp" target="_blank" rel="noopener">שליחת הודעה בוואטסאפ</a>
-    </div>
+    @if (support().whatsapp) {
+      <div class="actions">
+        <a class="btn btn-secondary" [href]="whatsapp()" target="_blank" rel="noopener">שליחת הודעה בוואטסאפ</a>
+      </div>
+    }
   </div>
 
   <!-- Always rendered, so the confirmation is announced; focus moves here after sending. -->

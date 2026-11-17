@@ -12,7 +12,7 @@ import {
   type RelatedPick,
 } from '@hg/models';
 import { parseShekels, toShekelText } from '../shipping/shipping-form';
-import { endFields, israelEndToUtc, israelStartToUtc, startFields } from './israel-time';
+import { MAX_DATE, MIN_DATE, endFields, israelEndToUtc, israelStartToUtc, startFields } from '../core/israel-time';
 
 /**
  * The promotion form (spec §6, ADM-05): amounts typed in whole shekels and sent in agorot, a percent as a whole number,
@@ -100,9 +100,6 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const WHOLE = /^\d+$/;
 const MAX_LIMIT = 1_000_000;
-/** The years the API accepts (and the date inputs' min/max). */
-export const MIN_DATE = '2000-01-01';
-export const MAX_DATE = '2100-12-31';
 
 /** Agorot of a whole-shekel amount ("150", "150.00"); null when empty; undefined otherwise. */
 function wholeShekels(text: string): number | null | undefined {

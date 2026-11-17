@@ -23,7 +23,7 @@ import { JoinContact, type JoinContactData } from '../account/join-contact';
 import { SignUpDraft } from '../account/sign-up-draft';
 import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
-import { SUPPORT_CONTACT } from '../core/support-contact';
+import { SiteContentStore } from '../content/site-content.store';
 import { CheckoutApi, ExternalNavigation, apiErrorCode, checkoutErrorMessage } from '../checkout/checkout.api';
 import { returnOpen } from './return-window';
 
@@ -72,7 +72,7 @@ export class OrderPage {
   /** Message of the last retry or cancel attempt (one alert for both). */
   protected readonly retryError = signal('');
   protected readonly cancelling = signal(false);
-  protected readonly support = SUPPORT_CONTACT;
+  protected readonly support = inject(SiteContentStore).contact;
   private readonly cancelDialog = viewChild<ElementRef<HTMLDialogElement>>('cancelDialog');
 
   protected readonly title = computed(() => {

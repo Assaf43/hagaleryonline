@@ -1,9 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { LucideChevronDown } from '@lucide/angular';
 import type { ProductDetail, VariantDetail } from '@hg/models';
 import { dimensionRows } from './dimension-rows';
-import { SHIPPING_INFO } from './shipping-info';
+import { RichText } from '../content/rich-text';
+import { SiteContentStore } from '../content/site-content.store';
 
 /** Warranty in natural Hebrew ("שנה", "חודשיים"…); null or 0 means no warranty row. */
 export function warrantyText(months: number | null): string | null {
@@ -15,7 +16,7 @@ export function warrantyText(months: number | null): string | null {
 /** The product page accordion (PRD-06, PRD-08, PRD-10): description, dimensions, specs, shipping and returns. */
 @Component({
   selector: 'hg-product-details',
-  imports: [LucideChevronDown, RouterLink],
+  imports: [LucideChevronDown, RouterLink, RichText],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './product-details.html',
   styleUrl: './product-details.scss',
@@ -24,7 +25,7 @@ export class ProductDetails {
   readonly product = input.required<ProductDetail>();
   readonly variant = input.required<VariantDetail>();
 
-  protected readonly shipping = SHIPPING_INFO.paragraphsHe;
+  protected readonly shipping = inject(SiteContentStore).shippingHtml;
   protected readonly dimensions = computed(() => dimensionRows(this.variant().dimensions));
   protected readonly specRows = computed(() => {
     const p = this.product();

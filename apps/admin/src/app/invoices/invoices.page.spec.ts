@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { AdminInvoicesMonth, AdminVatRate } from '@hg/models';
-import { israelMonthOf, shiftMonth } from '../promotions/israel-time';
+import { israelMonthOf, shiftMonth } from '../core/israel-time';
 import { InvoicesPage } from './invoices.page';
 import { VatPage } from '../settings/vat.page';
 
