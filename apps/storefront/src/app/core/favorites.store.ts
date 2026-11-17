@@ -5,6 +5,8 @@ import { AccountApi } from '../account/account.api';
 import { CustomerStore } from '../account/customer.store';
 
 export const FAVORITES_KEY = 'hg.favorites';
+/** The account id the device list was last merged into; set after a merge, cleared on sign-out. */
+export const FAVORITES_MERGED_KEY = 'hg.favorites.merged';
 export { FAVORITES_MAX };
 
 /** Stored JSON → valid ids: positive integers, each once, at most `FAVORITES_MAX`. Anything else is dropped. */
@@ -75,6 +77,8 @@ export class FavoritesStore {
     const next = this.ids().filter((i) => !drop.has(i));
     if (next.length === this.ids().length) return;
     if (!account) return this.save(next);
+    // A removal also leaves the device list, so it is never merged back into the account.
+    this.save(this.device().filter((i) => !drop.has(i)));
     this.account.set({ customerId: account.customerId, ids: next });
     const removed = account.ids.filter((i) => drop.has(i));
     this.writeThrough(account.customerId, () => Promise.all(removed.map((i) => this.api.removeFavorite(i))));
@@ -92,14 +96,22 @@ export class FavoritesStore {
   /** The customer changed (or signed out): drop the old account copy and, for an account, merge the device list in. */
   private follow(customerId: string | null): void {
     if (customerId === this.following) return;
+    const wasSignedIn = this.following !== null;
     this.following = customerId;
+    if (!customerId && wasSignedIn) this.setMarker(null);
     this.account.set(null);
     if (customerId) void this.merge(customerId);
   }
 
   private async merge(customerId: string): Promise<void> {
     try {
+      // The device list goes in once per device and account; after that (a reload) only the account list is read.
+      if (this.marker() === customerId) {
+        this.take(customerId, await this.api.favorites());
+        return;
+      }
       this.take(customerId, await this.api.mergeFavorites(untracked(this.device)));
+      if (this.following === customerId) this.setMarker(customerId);
     } catch {
       // The merge failed: the device list stays shown and kept; the next sign-in merges again.
     }
@@ -119,6 +131,23 @@ export class FavoritesStore {
         // Offline or signed out: the screen keeps the optimistic list until the next load.
       }
     });
+  }
+
+  private marker(): string | null {
+    try {
+      return localStorage.getItem(FAVORITES_MERGED_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  private setMarker(customerId: string | null): void {
+    try {
+      if (customerId) localStorage.setItem(FAVORITES_MERGED_KEY, customerId);
+      else localStorage.removeItem(FAVORITES_MERGED_KEY);
+    } catch {
+      // Storage is blocked: the device list is merged again at the next start, which only adds what is missing.
+    }
   }
 
   private read(): number[] {

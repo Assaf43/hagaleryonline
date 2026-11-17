@@ -54,10 +54,13 @@ export class FavoritesPage {
     this.loadFailed.set(false);
     this.loadedFor = untracked(this.favorites.source);
     void this.tasks.run(async () => {
+      const source = this.loadedFor;
       const ids = untracked(this.favorites.ids);
       if (!ids.length) return this.cards.set([]);
       try {
         const found = new Map((await firstValueFrom(this.api.cards(ids))).map((c) => [c.id, c]));
+        // The list was swapped (sign-in or out) while the cards loaded: the newer load owns the page.
+        if (this.loadedFor !== source) return;
         const missing = ids.filter((id) => !found.has(id));
         if (missing.length) this.favorites.remove(missing);
         this.cards.set(ids.flatMap((id) => found.get(id) ?? []));

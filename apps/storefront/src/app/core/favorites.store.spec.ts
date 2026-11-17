@@ -158,7 +158,7 @@ describe('FavoritesStore', () => {
       expect(saved()).toEqual([3, 2]);
     });
 
-    it('writes through while signed in and leaves the device list alone', async () => {
+    it('writes through while signed in; a removal also leaves the device list', async () => {
       localStorage.setItem(FAVORITES_KEY, '[1]');
       const s = store();
       me.set(customer('a'));
@@ -173,7 +173,8 @@ describe('FavoritesStore', () => {
       await settle();
       expect(api.removeFavorite).toHaveBeenCalledWith(1);
       expect(server['a']).toEqual([5]);
-      expect(saved()).toEqual([1]);
+      // A removal also leaves the device list; an add does not enter it.
+      expect(saved()).toEqual([]);
     });
 
     it('shows the device list again on sign-out, and another account never sees the earlier account list', async () => {
@@ -215,6 +216,71 @@ describe('FavoritesStore', () => {
       await settle();
       expect(api.favorites).toHaveBeenCalled();
       expect(s.ids()).toEqual([1]);
+    });
+
+    it('merges once per device and account: a reload does not bring a removed favorite back', async () => {
+      localStorage.setItem(FAVORITES_KEY, '[2,1]');
+      me.set(customer('a'));
+      let s = store();
+      await settle();
+      expect(api.mergeFavorites).toHaveBeenCalledTimes(1);
+      s.toggle(1);
+      await settle();
+      expect(server['a']).toEqual([2]);
+      expect(saved()).toEqual([2]);
+
+      // A reload: a new store, the session is still there.
+      TestBed.resetTestingModule();
+      s = store();
+      await settle();
+      expect(api.mergeFavorites).not.toHaveBeenCalled();
+      expect(api.favorites).toHaveBeenCalled();
+      expect(s.ids()).toEqual([2]);
+      expect(s.source()).toBe('a');
+      expect(server['a']).toEqual([2]);
+    });
+
+    it('merges the device list once for each different account on the same device', async () => {
+      localStorage.setItem(FAVORITES_KEY, '[1]');
+      me.set(customer('a'));
+      store();
+      await settle();
+      me.set(null);
+      await settle();
+      me.set(customer('b'));
+      await settle();
+      expect(api.mergeFavorites).toHaveBeenCalledTimes(2);
+      expect(server['b']).toEqual([1]);
+      TestBed.resetTestingModule();
+      store();
+      await settle();
+      expect(api.mergeFavorites).not.toHaveBeenCalled();
+    });
+
+    it('merges again after a sign-out and a sign-in of the same account', async () => {
+      localStorage.setItem(FAVORITES_KEY, '[1]');
+      me.set(customer('a'));
+      store();
+      await settle();
+      me.set(null);
+      await settle();
+      me.set(customer('a'));
+      await settle();
+      expect(api.mergeFavorites).toHaveBeenCalledTimes(2);
+    });
+
+    it('works without localStorage for the merge marker', async () => {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      me.set(customer('a'));
+      const s = store();
+      await settle();
+      expect(api.mergeFavorites).toHaveBeenCalledTimes(1);
+      expect(s.source()).toBe('a');
     });
 
     it('ignores a merge that answers after the customer changed', async () => {
