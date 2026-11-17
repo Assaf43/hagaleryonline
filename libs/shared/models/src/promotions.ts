@@ -196,3 +196,24 @@ export interface PromotionCategoryOption {
   /** 0 for a top-level category. */
   depth: number;
 }
+
+// ---------- Personal codes issued by staff (Phase 7c, spec §4.5, decision 94) ----------
+
+/** How the issued code reaches the customer: not sent (staff hand it over), or by e-mail or SMS. */
+export type PersonalCodeSend = 'none' | 'email' | 'sms';
+
+/**
+ * `POST /api/admin/customers/:id/codes` (`club.manage`): a personal code from an active template. 404 `not_found` for
+ * an unknown customer; 400 `invalid` (`field: 'templateId'`) when the promotion is no active personal-code template or
+ * its end has passed; 409 `email_not_verified` (`field: 'send'`) for `send: 'email'` without a verified e-mail.
+ */
+export interface IssuePersonalCodeRequest {
+  templateId: number;
+  send: PersonalCodeSend;
+}
+
+/** The answer: the code (shown to staff once more on the customer's profile) and its ISO expiry. */
+export interface IssuedPersonalCode {
+  code: string;
+  expiresAt: string;
+}

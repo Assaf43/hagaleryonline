@@ -39,6 +39,13 @@ export interface IssueInput {
   now: Date;
 }
 
+/** A code just issued: its row id (outbox jobs carry only the id, never the code), the code and its expiry. */
+export interface IssuedCode {
+  id: number;
+  code: string;
+  expiresAt: Date;
+}
+
 /**
  * Issues a personal code from an active template, in the caller's transaction. The code is never equal to another
  * personal code or a coupon code: a drawn code that is taken is drawn again. (Two concurrent issues drawing the same
@@ -49,7 +56,7 @@ export async function issuePersonalCode(
   tx: Prisma.TransactionClient,
   { templateId, customerId, issuedById, now }: IssueInput,
   generate: () => string = generateCode,
-): Promise<{ code: string; expiresAt: Date }> {
+): Promise<IssuedCode> {
   const template = await tx.promotion.findUnique({ where: { id: templateId } });
   if (!template || template.kind !== DbPromotionKind.PERSONAL_TEMPLATE || !template.active || !template.validityDays)
     throw new Error(`Promotion ${templateId} is not an active personal-code template`);
@@ -58,10 +65,11 @@ export async function issuePersonalCode(
     const code = generate();
     if (await tx.personalCode.findUnique({ where: { code }, select: { id: true } })) continue;
     if (await tx.promotion.findUnique({ where: { code }, select: { id: true } })) continue;
-    await tx.personalCode.create({
+    const { id } = await tx.personalCode.create({
       data: { code, promotionId: templateId, customerId, issuedById, expiresAt, createdAt: now },
+      select: { id: true },
     });
-    return { code, expiresAt };
+    return { id, code, expiresAt };
   }
   throw new Error('Could not find a free personal code');
 }

@@ -96,7 +96,7 @@ describe('issuePersonalCode', () => {
       personalCode: {
         findUnique: ({ where }: { where: { code: string } }) =>
           Promise.resolve(where.code === 'NST-TAKEN222' ? { id: 1 } : null),
-        create: ({ data }: { data: Record<string, unknown> }) => Promise.resolve(created.push(data)),
+        create: ({ data }: { data: Record<string, unknown> }) => Promise.resolve({ id: 40 + created.push(data) }),
       },
     };
     return { tx: tx as unknown as Prisma.TransactionClient, created };
@@ -109,7 +109,7 @@ describe('issuePersonalCode', () => {
     const issued = await issuePersonalCode(tx, { templateId: 7, customerId: OWNER, issuedById: 4, now: NOW }, () =>
       draws.shift()!,
     );
-    expect(issued).toEqual({ code: 'NST-FREE2345', expiresAt: new Date(NOW.getTime() + 30 * DAY) });
+    expect(issued).toEqual({ id: 41, code: 'NST-FREE2345', expiresAt: new Date(NOW.getTime() + 30 * DAY) });
     expect(created).toEqual([
       {
         code: 'NST-FREE2345',

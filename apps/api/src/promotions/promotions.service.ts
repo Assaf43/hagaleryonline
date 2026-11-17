@@ -104,6 +104,17 @@ export async function hasPaidOrder(db: Db, customerId: string): Promise<boolean>
   return found !== null;
 }
 
+/** The welcome template now: active, a template, marked welcome, inside its dates (at most one, by a unique index). */
+export function welcomeTemplateWhere(now: Date): Prisma.PromotionWhereInput {
+  return {
+    kind: DbPromotionKind.PERSONAL_TEMPLATE,
+    active: true,
+    isWelcome: true,
+    OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+    AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
+  };
+}
+
 export function toRule(p: Promotion): PromotionRule {
   return {
     id: p.id,
@@ -201,13 +212,7 @@ export class PromotionsService {
    */
   async welcomeBenefit(now = new Date()): Promise<WelcomeBenefit | null> {
     const row = await this.prisma.promotion.findFirst({
-      where: {
-        kind: DbPromotionKind.PERSONAL_TEMPLATE,
-        active: true,
-        isWelcome: true,
-        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
-        AND: [{ OR: [{ endsAt: null }, { endsAt: { gte: now } }] }],
-      },
+      where: welcomeTemplateWhere(now),
       select: { name: true },
     });
     return row ? { labelHe: row.name } : null;

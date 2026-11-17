@@ -1,12 +1,15 @@
 import type { AddressInfo } from 'node:net';
+import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import {
   COUPON_MESSAGES_HE,
+  type AccountBenefit,
   type CartView,
   type CheckoutRequest,
   type CheckoutResponse,
+  type IssuedPersonalCode,
   type OrderView,
   type ShippingQuote,
 } from '@hg/models';
@@ -17,14 +20,24 @@ import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import {
   DiscountType,
+  NotificationChannel,
   OrderStatus,
   PromotionKind,
   PromotionTarget,
   type Prisma,
 } from './../src/generated/prisma/client.js';
+import {
+  EMAIL_PROVIDER,
+  SMS_PROVIDER,
+  type EmailProvider,
+  type SmsProvider,
+} from './../src/notifications/notification-provider.js';
 import { CheckoutService } from './../src/orders/checkout.service.js';
+import { OutboxService } from './../src/outbox/outbox.service.js';
 import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { deleteMarketingContacts } from './test-marketing.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
 
@@ -40,6 +53,13 @@ const CUSTOMER_PASSWORD = 'correct horse 9';
 describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
   let app: NestExpressApplication;
   let prisma: PrismaService;
+  let outbox: OutboxService;
+  let smsSpy: MockInstance<SmsProvider['sendSms']>;
+  let emailSpy: MockInstance<EmailProvider['sendEmail']>;
+  /** The Super Admin (every permission but the opt-in ones, so `club.manage` too). */
+  let owner: AdminBrowser;
+  /** Customer service: no `club.manage`. */
+  let service: AdminBrowser;
   /** 50,000 a unit. */
   let lamp: number;
   const uniqueId = uniqueIds(9);
@@ -158,12 +178,56 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     return { customer, b };
   };
 
+  /** Website sign-up (decision 80): both codes, read from the mock providers' calls, then the account. */
+  const signUp = async () => {
+    const id = uniqueId();
+    const phone = `05${id}`;
+    const email = `new${id}${CUSTOMER_DOMAIN}`;
+    const b = browser();
+    const post = (path: string, body: object) => b.agent.post(`/api/account/${path}`).set('Origin', ORIGIN).send(body);
+    const details = { fullName: 'ZZ נועה חדשה', phone, email, marketingConsent: false };
+    await post('sign-up', details).expect(200, { verify: true });
+    const codeOf = (calls: { to: string; text: string }[], to: string) =>
+      /(\d{6})/.exec(calls.filter((m) => m.to === to).at(-1)!.text)![1];
+    const first = await post('otp/verify', {
+      target: phone,
+      code: codeOf(
+        smsSpy.mock.calls.map(([m]) => m),
+        phone,
+      ),
+      purpose: 'sign_up',
+    }).expect(200);
+    const second = await post('otp/verify', {
+      target: email,
+      code: codeOf(
+        emailSpy.mock.calls.map(([m]) => m),
+        email,
+      ),
+      purpose: 'sign_up',
+      signUpToken: first.body.signUpToken,
+    }).expect(200);
+    await post('sign-up', { ...details, signUpToken: second.body.signUpToken }).expect(200);
+    const customer = await prisma.customer.findUniqueOrThrow({ where: { email } });
+    return { b, customer };
+  };
+  const benefits = async (b: ReturnType<typeof browser>) => {
+    const res = await b.agent.get('/api/account/benefits').expect(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    return res.body as AccountBenefit[];
+  };
+  const runJobs = () => outbox.runDue(100);
+  const sentEmails = (to: string) => emailSpy.mock.calls.map(([m]) => m).filter((m) => m.to === to);
+  const sentSms = (to: string) => smsSpy.mock.calls.map(([m]) => m).filter((m) => m.to === to);
+
   const cleanup = async () => {
     await deleteOrders(prisma);
     await prisma.cart.deleteMany();
+    await prisma.outboxJob.deleteMany({});
+    await prisma.otpCode.deleteMany({});
     await prisma.personalCode.deleteMany();
     await prisma.promotion.deleteMany();
     await prisma.customer.deleteMany({ where: { email: { endsWith: CUSTOMER_DOMAIN } } });
+    await deleteMarketingContacts(prisma, { email: { endsWith: CUSTOMER_DOMAIN } });
   };
 
   beforeAll(async () => {
@@ -172,7 +236,13 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     await app.listen(0, '127.0.0.1');
     process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     prisma = app.get(PrismaService);
+    outbox = app.get(OutboxService);
+    smsSpy = vi.spyOn(app.get<SmsProvider>(SMS_PROVIDER), 'sendSms');
+    emailSpy = vi.spyOn(app.get<EmailProvider>(EMAIL_PROVIDER), 'sendEmail');
+    // resetAdminData TRUNCATEs admin_users CASCADE (customers, orders and codes go too): every fixture comes after it.
+    await resetAdminData(prisma);
     await cleanup();
+    ({ owner, other: service } = await signInOwnerAnd(app, 'customer_service'));
     await prisma.product.deleteMany({ where: { modelName: 'ZZCODES' } });
     await prisma.category.deleteMany({ where: { slug: 'zz-codes' } });
     const category = await prisma.category.create({
@@ -211,6 +281,7 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
 
   afterAll(async () => {
     await cleanup();
+    await resetAdminData(prisma);
     await prisma.product.deleteMany({ where: { modelName: 'ZZCODES' } });
     await prisma.category.deleteMany({ where: { slug: 'zz-codes' } });
     await app.get(CacheStore).invalidate('catalog:');
@@ -521,5 +592,201 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     await complete(firstTx, 'success').expect(200);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: first.id } })).status).toBe(OrderStatus.PAID);
     expect((await prisma.personalCode.findUniqueOrThrow({ where: { code } })).orderId).toBe(second.id);
+  });
+
+  describe('issuing (CLB-04, CLB-05, decisions 93–94)', () => {
+    it('website sign-up with an active welcome template: one welcome code, one welcome_code e-mail with it', async () => {
+      const welcome = await template({ name: 'ZZ הטבת הצטרפות', isWelcome: true, validityDays: 30 });
+      const before = new Date();
+      const { b, customer } = await signUp();
+      const codes = await prisma.personalCode.findMany({ where: { customerId: customer.id } });
+      expect(codes).toHaveLength(1);
+      const [issued] = codes;
+      expect(issued).toMatchObject({ promotionId: welcome.id, issuedById: null, orderId: null });
+      expect(issued.expiresAt.getTime()).toBeGreaterThanOrEqual(before.getTime() + 30 * DAY);
+
+      // One message job, which carries the code's id only; never the code in a job or in the audit log.
+      const jobs = await prisma.outboxJob.findMany({ where: { type: { contains: 'code' } } });
+      expect(jobs.map((j) => [j.type, j.dedupeKey])).toEqual([['email.welcome_code', `welcome_code:${issued.id}`]]);
+      expect(JSON.stringify(jobs)).not.toContain(issued.code);
+      expect(JSON.stringify(await prisma.auditLog.findMany())).not.toContain(issued.code);
+
+      await runJobs();
+      const mails = sentEmails(customer.email!).filter((m) => m.text.includes(issued.code));
+      expect(mails).toHaveLength(1);
+      expect(mails[0].html).toContain(`<bdi>${issued.code}</bdi>`);
+      expect(mails[0].text).toContain('ZZ הטבת הצטרפות');
+      expect(
+        await prisma.notificationLog.count({ where: { template: 'welcome_code', channel: NotificationChannel.EMAIL } }),
+      ).toBe(1);
+
+      expect(await benefits(b)).toEqual([
+        {
+          code: issued.code,
+          labelHe: 'ZZ הטבת הצטרפות',
+          expiresAt: issued.expiresAt.toISOString(),
+          status: 'active',
+        },
+      ]);
+      // The code works for its owner at once.
+      await b.add(lamp, 1);
+      expect(((await b.apply(issued.code).expect(200)).body as CartView).discount?.amount).toBe(5_000);
+    });
+
+    it('no active welcome template: sign-up still succeeds, with no code and no message', async () => {
+      await template({ name: 'ZZ הצטרפות כבויה', isWelcome: true, active: false });
+      await template({ name: 'ZZ קוד צוות' });
+      const { b, customer } = await signUp();
+      expect(await prisma.personalCode.count({ where: { customerId: customer.id } })).toBe(0);
+      expect(await prisma.outboxJob.count({ where: { type: { contains: 'code' } } })).toBe(0);
+      expect(await benefits(b)).toEqual([]);
+    });
+
+    it('a welcome template whose end has passed gives no code', async () => {
+      await template({ name: 'ZZ הצטרפות שהסתיימה', isWelcome: true, endsAt: new Date(Date.now() - DAY) });
+      const { customer } = await signUp();
+      expect(await prisma.personalCode.count({ where: { customerId: customer.id } })).toBe(0);
+    });
+
+    it('"ההטבות שלי" lists the own codes, newest first, as active, used or expired; it needs a session', async () => {
+      const t = await template({ name: 'ZZ עשרה אחוז' });
+      const off = await template({ name: 'ZZ תבנית שכובתה' });
+      const welcome = await template({ name: 'ZZ הטבת הצטרפות', isWelcome: true });
+      const { customer, b } = await member();
+      const used = await issue(t.id, customer.id, new Date(Date.now() - 5_000));
+      const expired = await issue(t.id, customer.id, new Date(Date.now() - 4_000));
+      const voided = await issue(off.id, customer.id, new Date(Date.now() - 3_000));
+      const welcomeCode = await issue(welcome.id, customer.id, new Date(Date.now() - 2_000));
+      const active = await issue(t.id, customer.id);
+      await prisma.personalCode.update({
+        where: { code: expired.code },
+        data: { expiresAt: new Date(Date.now() - 1) },
+      });
+      await prisma.promotion.update({ where: { id: off.id }, data: { active: false } });
+      // Another account's code is never listed.
+      const { customer: other } = await member();
+      await issue(t.id, other.id);
+
+      // The welcome code is active until the account has a paid order (paid here with another code).
+      const statuses = async () => Object.fromEntries((await benefits(b)).map((x) => [x.code, x.status]));
+      expect((await statuses())[welcomeCode.code]).toBe('active');
+      await b.add(lamp, 1);
+      await b.apply(used.code).expect(200);
+      await complete(txOf(await b.checkout()), 'success').expect(200);
+
+      const list = await benefits(b);
+      expect(list.map((x) => x.code)).toEqual([active.code, welcomeCode.code, voided.code, expired.code, used.code]);
+      expect(await statuses()).toEqual({
+        [active.code]: 'active',
+        [welcomeCode.code]: 'expired',
+        [voided.code]: 'expired',
+        [expired.code]: 'expired',
+        [used.code]: 'used',
+      });
+      expect(list[0]).toEqual({
+        code: active.code,
+        labelHe: 'ZZ עשרה אחוז',
+        expiresAt: active.expiresAt.toISOString(),
+        status: 'active',
+      });
+
+      await browser().agent.get('/api/account/benefits').expect(401);
+    });
+
+    it('staff issue a personal code (club.manage): sent by SMS, audited with the template id only', async () => {
+      const t = await template({ name: 'ZZ קוד צוות', validityDays: 14 });
+      const { customer } = await member();
+      const res = await owner.post(`/customers/${customer.id}/codes`, { templateId: t.id, send: 'sms' });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const issued = res.body as IssuedPersonalCode;
+      expect(issued.code).toMatch(/^NST-[A-Z2-9]{8}$/);
+      const row = await prisma.personalCode.findUniqueOrThrow({ where: { code: issued.code } });
+      const ownerId = (await prisma.adminUser.findUniqueOrThrow({ where: { email: 'owner@example.test' } })).id;
+      expect(row).toMatchObject({ promotionId: t.id, customerId: customer.id, issuedById: ownerId });
+      expect(issued.expiresAt).toBe(row.expiresAt.toISOString());
+
+      const audit = await prisma.auditLog.findMany({ where: { action: 'customer.code_issued' } });
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ actorId: ownerId, entityType: 'customer', entityId: customer.id });
+      expect(audit[0].after).toEqual({ templateId: t.id });
+      expect(JSON.stringify(await prisma.auditLog.findMany())).not.toContain(issued.code);
+
+      const jobs = await prisma.outboxJob.findMany({ where: { type: { contains: 'code' } } });
+      expect(jobs.map((j) => [j.type, j.dedupeKey])).toEqual([['sms.personal_code', `personal_code:${row.id}`]]);
+      expect(JSON.stringify(jobs)).not.toContain(issued.code);
+      await runJobs();
+      const sms = sentSms(customer.phone).filter((m) => m.text.includes(issued.code));
+      expect(sms).toHaveLength(1);
+      expect(sms[0].text).toContain('ZZ קוד צוות');
+      expect(
+        await prisma.notificationLog.count({ where: { template: 'personal_code', channel: NotificationChannel.SMS } }),
+      ).toBe(1);
+
+      // By e-mail (verified), or not sent at all.
+      const byMail = (
+        await owner.post(`/customers/${customer.id}/codes`, { templateId: t.id, send: 'email' }).expect(201)
+      ).body as IssuedPersonalCode;
+      const handed = (
+        await owner.post(`/customers/${customer.id}/codes`, { templateId: t.id, send: 'none' }).expect(201)
+      ).body as IssuedPersonalCode;
+      await runJobs();
+      expect(sentEmails(customer.email!).filter((m) => m.html.includes(`<bdi>${byMail.code}</bdi>`))).toHaveLength(1);
+      expect(sentEmails(customer.email!).some((m) => m.text.includes(handed.code))).toBe(false);
+      expect(sentSms(customer.phone).some((m) => m.text.includes(handed.code))).toBe(false);
+      expect(await prisma.outboxJob.count({ where: { type: { contains: 'code' } } })).toBe(2);
+    });
+
+    it('staff issue: refusals, and 403 without club.manage', async () => {
+      const t = await template({ name: 'ZZ קוד צוות' });
+      const { customer } = await member();
+      const issueFor = (customerId: string, body: object) => owner.post(`/customers/${customerId}/codes`, body);
+
+      await service.post(`/customers/${customer.id}/codes`, { templateId: t.id, send: 'none' }).expect(403);
+      await issueFor('00000000-0000-4000-8000-000000000000', { templateId: t.id, send: 'none' }).expect(404);
+      await issueFor('not-a-uuid', { templateId: t.id, send: 'none' }).expect(404);
+      expect((await issueFor(customer.id, { templateId: t.id, send: 'fax' }).expect(400)).body).toMatchObject({
+        code: 'invalid',
+        field: 'send',
+      });
+      expect((await issueFor(customer.id, { templateId: 'x', send: 'none' }).expect(400)).body).toMatchObject({
+        code: 'invalid',
+        field: 'templateId',
+      });
+      const off = await template({ name: 'ZZ כבויה', active: false });
+      const ended = await template({ name: 'ZZ שהסתיימה', endsAt: new Date(Date.now() - DAY) });
+      const coupon = await prisma.promotion.create({
+        data: {
+          name: 'ZZ קופון',
+          kind: PromotionKind.COUPON,
+          code: 'ZZCOUPON',
+          discountType: DiscountType.PERCENT,
+          value: 5,
+          target: PromotionTarget.ORDER,
+        },
+      });
+      for (const templateId of [off.id, ended.id, coupon.id, 999_999])
+        expect((await issueFor(customer.id, { templateId, send: 'none' }).expect(400)).body).toMatchObject({
+          code: 'invalid',
+          field: 'templateId',
+        });
+
+      // An unverified e-mail (a store quick account) cannot receive it; nothing is issued.
+      const quick = await prisma.customer.create({
+        data: {
+          fullName: 'ZZ רון',
+          phone: `05${uniqueId()}`,
+          email: `quick${uniqueId()}${CUSTOMER_DOMAIN}`,
+          phoneVerifiedAt: new Date(),
+        },
+      });
+      expect((await issueFor(quick.id, { templateId: t.id, send: 'email' }).expect(409)).body).toMatchObject({
+        code: 'email_not_verified',
+        field: 'send',
+      });
+      expect(await prisma.personalCode.count()).toBe(0);
+      expect(await prisma.auditLog.count({ where: { action: 'customer.code_issued', entityId: quick.id } })).toBe(0);
+      // By SMS it can.
+      await issueFor(quick.id, { templateId: t.id, send: 'sms' }).expect(201);
+    });
   });
 });

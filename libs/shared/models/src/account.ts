@@ -233,3 +233,23 @@ export interface AccountConsent {
   consentAt: string | null;
   emailVerified: boolean;
 }
+
+// ---------- Club benefits (Phase 7c, spec §4.3, decisions 93–94) ----------
+
+/**
+ * A personal code's state in "ההטבות שלי": `used` by a paid order; `expired` past its expiry, its template turned off
+ * (that voids unused codes), or — a welcome code — once the account has a paid order; `active` otherwise.
+ */
+export type AccountBenefitStatus = 'active' | 'used' | 'expired';
+
+/**
+ * One row of `GET /api/account/benefits` (no-store): the account's own personal codes (the welcome code and codes from
+ * staff), newest first. `labelHe` is the template's name (the same label the cart's discount line shows), `expiresAt`
+ * an ISO time (never after the template's end).
+ */
+export interface AccountBenefit {
+  code: string;
+  labelHe: string;
+  expiresAt: string;
+  status: AccountBenefitStatus;
+}

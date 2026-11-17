@@ -1,5 +1,12 @@
 import { storeWelcome, type StoreWelcomeData } from './account.js';
 import {
+  personalCodeEmail,
+  personalCodeSms,
+  welcomeCodeEmail,
+  welcomeCodeSms,
+  type PersonalCodeMessageData,
+} from './club.js';
+import {
   newsletterConfirm,
   storeConsentSms,
   type NewsletterConfirmData,
@@ -21,6 +28,7 @@ import { ticketAlert, ticketReceived, type TicketAlertData, type TicketReceivedD
 import type { RenderedEmail } from './layout.js';
 
 export type { StoreWelcomeData } from './account.js';
+export type { PersonalCodeMessageData } from './club.js';
 export type { RenderedEmail } from './layout.js';
 export type { NewsletterConfirmData, StoreConsentSmsData } from './marketing.js';
 export type { OrderLinkData, OrderPaidData, OrderPaidLine, RefundData } from './order-messages.js';
@@ -40,6 +48,8 @@ export interface EmailTemplateData {
   ticket_alert: TicketAlertData;
   store_welcome: StoreWelcomeData;
   newsletter_confirm: NewsletterConfirmData;
+  welcome_code: PersonalCodeMessageData;
+  personal_code: PersonalCodeMessageData;
 }
 export type EmailTemplate = keyof EmailTemplateData;
 
@@ -47,6 +57,8 @@ export interface SmsTemplateData {
   delivery_slot: DeliverySlotSmsData;
   otp: OtpData;
   store_consent: StoreConsentSmsData;
+  welcome_code: PersonalCodeMessageData;
+  personal_code: PersonalCodeMessageData;
 }
 export type SmsTemplate = keyof SmsTemplateData;
 
@@ -61,12 +73,16 @@ const EMAIL: { [T in EmailTemplate]: (data: EmailTemplateData[T]) => RenderedEma
   ticket_alert: ticketAlert,
   store_welcome: storeWelcome,
   newsletter_confirm: newsletterConfirm,
+  welcome_code: welcomeCodeEmail,
+  personal_code: personalCodeEmail,
 };
 
 const SMS: { [T in SmsTemplate]: (data: SmsTemplateData[T]) => string } = {
   delivery_slot: deliverySlotSms,
   otp: otpText,
   store_consent: storeConsentSms,
+  welcome_code: welcomeCodeSms,
+  personal_code: personalCodeSms,
 };
 
 export function renderEmail<T extends EmailTemplate>(template: T, data: EmailTemplateData[T]): RenderedEmail {

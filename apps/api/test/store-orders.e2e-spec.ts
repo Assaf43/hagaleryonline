@@ -37,7 +37,6 @@ import {
   type SmsProvider,
 } from './../src/notifications/notification-provider.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
-import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { MarketingService } from './../src/marketing/marketing.service.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
@@ -599,17 +598,14 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     });
     await newSale(sellerA, [[plenty, 3]]);
     const customer = await quickAccount(sellerA);
-    // Task 13 issues the welcome code with the quick account and puts it on the store cart; here it is done by hand,
-    // the seller entering the code.
-    const { code } = await issuePersonalCode(prisma, {
-      templateId: welcome.id,
-      customerId: customer.id,
-      issuedById: null,
-      now: new Date(),
-    });
-    await sellerA.post('/store-cart/coupon', { code }).expect(201);
+    // The quick account gets its welcome code with the account, already on the sale's cart: nobody types it.
+    const codes = await prisma.personalCode.findMany({ where: { customerId: customer.id } });
+    expect(codes).toHaveLength(1);
+    const [{ code }] = codes;
+    expect(codes[0]).toMatchObject({ promotionId: welcome.id, issuedById: null });
     const view = (await sellerA.get('/store-cart').expect(200)).body as StoreCartView;
     expect(view.customer).toMatchObject({ id: customer.id, isNew: true });
+    expect(view.couponCode).toBe(code);
     expect(view.subtotal).toBe(150_000);
     expect(view.discount).toEqual({ labelHe: 'ZZ הטבת הצטרפות', amount: 15_000, source: 'coupon', code });
 
@@ -656,6 +652,50 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     ).order;
     expect(webOrder).toMatchObject({ subtotal: order.subtotal, shippingTotal: order.shippingTotal, discount: 0 });
     expect(webOrder.total - order.total).toBe(15_000);
+
+    // The code also goes to the verified phone by SMS (the quick account's e-mail is not verified).
+    expect(
+      (await prisma.outboxJob.findMany({ where: { type: { contains: 'code' } } })).map((j) => [j.type, j.dedupeKey]),
+    ).toEqual([['sms.welcome_code', `welcome_code:${codes[0].id}`]]);
+    await outbox.runDue(100);
+    expect(smsSpy.mock.calls.filter(([m]) => m.to === customer.phone && m.text.includes(code))).toHaveLength(1);
+    expect(emailSpy.mock.calls.some(([m]) => m.text.includes(code))).toBe(false);
+  });
+
+  it('a welcome code only for a new account: an existing account confirmed at the store gets none', async () => {
+    await prisma.promotion.create({
+      data: {
+        name: 'ZZ הטבת הצטרפות',
+        kind: PromotionKind.PERSONAL_TEMPLATE,
+        discountType: DiscountType.PERCENT,
+        value: 10,
+        target: PromotionTarget.ORDER,
+        validityDays: 30,
+        isWelcome: true,
+      },
+    });
+    const existing = await existingAccount();
+    await newSale(sellerA, [[plenty, 1]]);
+    await confirm(sellerA, existing.phone);
+    expect(await prisma.personalCode.count({ where: { customerId: existing.id } })).toBe(0);
+    expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBeNull();
+
+    // A coupon the seller entered before the new customer was attached is kept; the welcome code waits in the account.
+    await prisma.promotion.create({
+      data: {
+        name: 'ZZ קופון חנות',
+        kind: PromotionKind.COUPON,
+        code: 'ZZSTORE5',
+        discountType: DiscountType.PERCENT,
+        value: 5,
+        target: PromotionTarget.ORDER,
+      },
+    });
+    await newSale(sellerA, [[plenty, 1]]);
+    await sellerA.post('/store-cart/coupon', { code: 'ZZSTORE5' }).expect(201);
+    const customer = await quickAccount(sellerA);
+    expect(await prisma.personalCode.count({ where: { customerId: customer.id } })).toBe(1);
+    expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe('ZZSTORE5');
   });
 
   it('a website order still has channel web and the tokened confirmation path', async () => {

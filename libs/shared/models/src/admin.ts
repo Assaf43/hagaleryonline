@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   { key: 'audit.view', labelHe: 'צפייה ביומן השינויים' },
   { key: 'invoices.export', labelHe: 'חשבוניות ודוחות לרואה החשבון' },
   { key: 'support.manage', labelHe: 'תיבת פניות' },
+  { key: 'customers.view', labelHe: 'צפייה בלקוחות' },
+  { key: 'club.manage', labelHe: 'מועדון לקוחות וקופונים אישיים' },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]['key'];

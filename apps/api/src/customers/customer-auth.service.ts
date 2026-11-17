@@ -7,6 +7,7 @@ import { CartService } from '../cart/cart.service.js';
 import { MarketingService } from '../marketing/marketing.service.js';
 import { maskEmail } from '../notifications/masking.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PersonalCodesService } from '../promotions/personal-codes.service.js';
 import {
   emailTaken,
   invalidCode,
@@ -100,6 +101,7 @@ export class CustomerAuthService {
     private readonly cart: CartService,
     private readonly audit: AuditService,
     private readonly marketing: MarketingService,
+    private readonly codes: PersonalCodesService,
   ) {}
 
   /** `CustomerMe` with the consent of the account's marketing contact. */
@@ -309,7 +311,8 @@ export class CustomerAuthService {
    * matches only a still-unverified holder, so one verified meanwhile makes the create fail on the unique e-mail
    * (then `assertFree` answers `email_taken`). The released e-mail's marketing contact is released too (its consent
    * never moves to the new account, spec §5.3). The new account's e-mail is verified: with the marketing box it is
-   * subscribed at once (source `signup`), otherwise an existing contact of it is only linked to the account.
+   * subscribed at once (source `signup`), otherwise an existing contact of it is only linked to the account. With an
+   * active welcome template the account gets its welcome code here, sent by e-mail through the outbox (decision 93).
    */
   private async create(details: NewCustomer, client: ClientInfo): Promise<SignedIn> {
     const now = new Date();
@@ -350,7 +353,8 @@ export class CustomerAuthService {
             emailVerifiedAt: now,
           },
         });
-        // The marketing lock is the last lock (locks.ts): after the customer insert.
+        await this.codes.issueWelcome(tx, created.id, 'email', now);
+        // The marketing lock is the last lock (locks.ts): after the customer insert and the welcome code.
         if (releasedHolder) await this.marketing.releaseEmail(tx, details.email, 'released');
         if (details.marketingConsent)
           await this.marketing.subscribeVerified(tx, {

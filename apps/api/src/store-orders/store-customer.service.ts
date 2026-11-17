@@ -19,6 +19,7 @@ import { maskEmail } from '../notifications/masking.js';
 import { customerNotConfirmed } from '../orders/order-errors.js';
 import { THROTTLE_RETRY_AFTER_SECONDS, WriteThrottle } from '../orders/write-throttle.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PersonalCodesService } from '../promotions/personal-codes.service.js';
 import { StoreCartService } from './store-cart.service.js';
 import { isConfirmationLive } from './store-confirmation.js';
 
@@ -129,6 +130,7 @@ export class StoreCustomerService {
     private readonly throttle: WriteThrottle,
     private readonly storeCarts: StoreCartService,
     private readonly audit: AuditService,
+    private readonly codes: PersonalCodesService,
   ) {}
 
   /** Whether the phone has an account, and the masked e-mail the seller may offer (per-seller limit `store_lookup`). */
@@ -162,8 +164,11 @@ export class StoreCustomerService {
 
   /**
    * Checks the code and attaches the customer to the seller's open cart (created when there is none); a new phone
-   * gets its quick account in the same transaction. Every refusal that needs no code comes before the check, so it
-   * spends no attempt. Returns the cart id.
+   * gets its quick account in the same transaction, with its welcome code (an active welcome template, decisions 93,
+   * 96): sent by SMS to the verified phone through the outbox and put on the open cart (`couponCode`) unless the
+   * seller already entered a coupon there, so the sale that created the account gets it without typing. An existing
+   * account gets no code (a phone taken meanwhile rolls the whole transaction back, the code with it). Every refusal
+   * that needs no code comes before the check, so it spends no attempt. Returns the cart id.
    */
   async verify(actor: SellerActor, input: StoreVerifyInput): Promise<string> {
     // Counted first, on every call: the refusals below (400 / 409 / 401) would otherwise tell, without a limit,
@@ -186,6 +191,11 @@ export class StoreCustomerService {
           where: { id: cart.id },
           data: { storeCustomerId: customerId, storeConfirmedAt: new Date() },
         });
+        if (plan.kind === 'new') {
+          const welcome = await this.codes.issueWelcome(tx, customerId, 'sms');
+          if (welcome)
+            await tx.cart.updateMany({ where: { id: cart.id, couponCode: null }, data: { couponCode: welcome } });
+        }
         await this.audit.record(
           {
             actorId: actor.sellerId,

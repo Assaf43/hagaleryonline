@@ -9,8 +9,10 @@ import { OrdersModule } from '../orders/orders.module.js';
 import { WriteThrottleModule } from '../orders/write-throttle.module.js';
 import { WriteThrottle } from '../orders/write-throttle.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PromotionsModule } from '../promotions/promotions.module.js';
 import { AccountController } from './account.controller.js';
 import { AccountService } from './account.service.js';
+import { BenefitsController } from './benefits.controller.js';
 import { CustomerAuthController } from './customer-auth.controller.js';
 import { CustomerAuthService } from './customer-auth.service.js';
 import { CustomerCleanupService } from './customer-cleanup.service.js';
@@ -31,9 +33,10 @@ import { OtpService, resolveOtpPepper } from './otp.service.js';
     MarketingModule,
     NotificationsModule,
     OrdersModule,
+    PromotionsModule,
     WriteThrottleModule,
   ],
-  controllers: [CustomerAuthController, AccountController],
+  controllers: [CustomerAuthController, AccountController, BenefitsController],
   providers: [
     CustomerAuthService,
     AccountService,

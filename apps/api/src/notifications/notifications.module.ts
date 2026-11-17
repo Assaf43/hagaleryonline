@@ -9,11 +9,13 @@ import { NotificationsAdminController } from './notifications-admin.controller.j
 import { NotificationsService } from './notifications.service.js';
 import { DeliverySlotSmsJob } from './delivery-slot-sms.job.js';
 import { OrderMessagesJob } from './order-messages.job.js';
+import { PersonalCodeMessagesJob } from './personal-code-messages.job.js';
 
 /**
  * E-mail and SMS (spec §5.2). The active adapters come from `EMAIL_PROVIDER` and `SMS_PROVIDER` (both required, no
  * default); adapters are built only when selected, so the mock refusal to run in production stops the API only
- * when it is the one configured. The outbox handlers of the order e-mails are registered here.
+ * when it is the one configured. The outbox handlers of the order e-mails and of personal-code messages are registered
+ * here.
  */
 @Module({
   imports: [AuthModule, OutboxModule],
@@ -22,6 +24,7 @@ import { OrderMessagesJob } from './order-messages.job.js';
     NotificationsService,
     OrderMessagesJob,
     DeliverySlotSmsJob,
+    PersonalCodeMessagesJob,
     {
       provide: EMAIL_PROVIDER,
       inject: [ConfigService],
