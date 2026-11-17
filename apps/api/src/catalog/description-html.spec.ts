@@ -145,4 +145,15 @@ describe('sanitizeContentHtml strips hostile input', () => {
     expect(sanitizeContentHtml('<p><br></p>', 'inline')).toBe('');
     expect(sanitizeContentHtml('<script>x</script>', 'page')).toBe('');
   });
+
+  it('closes a safe link that follows a dropped one with </a>', () => {
+    expect(
+      sanitizeContentHtml(
+        '<p><a href="javascript:x">רע</a> <a href="https://good.example/a">טוב</a> <a href="//evil.example"><strong>רחוק</strong></a> <a href="/info/shipping">משלוחים</a></p>',
+        'page',
+      ),
+    ).toBe(
+      '<p>רע <a href="https://good.example/a" rel="noopener">טוב</a> <strong>רחוק</strong> <a href="/info/shipping">משלוחים</a></p>',
+    );
+  });
 });

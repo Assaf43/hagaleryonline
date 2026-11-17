@@ -143,6 +143,24 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
           .findMany({ where: { id: { in: idsOf('promotion') } } })
           .then((l) => l.map((p) => ({ id: p.id, label: p.name }))),
       ],
+      [
+        'info_page',
+        this.prisma.infoPage
+          .findMany({ where: { id: { in: idsOf('info_page') } } })
+          .then((l) => l.map((p) => ({ id: p.id, label: p.titleHe }))),
+      ],
+      [
+        'announcement',
+        this.prisma.announcement
+          .findMany({ where: { id: { in: idsOf('announcement') } } })
+          .then((l) => l.map((a) => ({ id: a.id, label: a.textHe }))),
+      ],
+      [
+        'faq_group',
+        this.prisma.faqGroup
+          .findMany({ where: { id: { in: idsOf('faq_group') } } })
+          .then((l) => l.map((g) => ({ id: g.id, label: g.titleHe }))),
+      ],
     ];
     const labels = new Map<string, string>();
     for (const [type, lookup] of lookups) {
@@ -163,7 +181,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 /** A deleted entity has no row to name it; fall back to what was recorded about it. */
 function deletedLabel(before: Prisma.JsonValue): string | null {
   const b = (before ?? {}) as Record<string, unknown>;
-  for (const key of ['sku', 'modelName', 'labelHe', 'nameHe', 'שם'])
+  for (const key of ['sku', 'modelName', 'labelHe', 'nameHe', 'שם', 'כותרת', 'טקסט'])
     if (typeof b[key] === 'string') return b[key] as string;
   return null;
 }

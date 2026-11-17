@@ -39,7 +39,7 @@ function oneOf<T extends string>(value: unknown, list: readonly T[], field: stri
  * A real calendar time between 2000 and 2100: the written date and time must exist as written (no 31.2, no 24:00,
  * no year 0000) — `Date` would roll them over silently.
  */
-function time(value: unknown, field: string): Date | null {
+export function time(value: unknown, field: string): Date | null {
   if (value === null || value === undefined) return null;
   const match = typeof value === 'string' ? ISO.exec(value) : null;
   if (!match) throw invalid(field);

@@ -13,7 +13,24 @@ export const CONTENT_LIMITS = {
   /** Rich-text HTML, after sanitizing. */
   body: 50_000,
   faqQuestion: 200,
+  /** The announcement link label and an info page's footer label. */
+  linkLabel: 40,
+  /** An info page slug (`CONTENT_SLUG_PATTERN`). */
+  slug: 80,
+  /** Items in one FAQ group. */
+  faqItems: 100,
 } as const;
+
+/** An info page slug: lower-case English letters and digits, words joined by single dashes. */
+export const CONTENT_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * Admin content errors (`code` + optional `field`), mapped to Hebrew by the admin's `core/errors.ts`:
+ * `conflict` (someone saved the row after it was opened), `invalid` (bad or missing field), `invalid_link`
+ * (a link field that is not https, mailto, tel or a site path), `slug_taken`, `system_page` (a system page cannot be
+ * deleted, renamed or unpublished), `not_found`.
+ */
+export type ContentErrorCode = 'conflict' | 'invalid' | 'invalid_link' | 'slug_taken' | 'system_page' | 'not_found';
 
 /** The announcement bar message shown now (at most one). The `hg-ann` cookie holds `id:version` of a closed bar. */
 export interface AnnouncementView {
@@ -126,4 +143,56 @@ export interface AdminFaqGroup {
   published: boolean;
   items: AdminFaqItem[];
   updatedAt: string;
+}
+
+// ---- Admin inputs. `expectedUpdatedAt` is required on every update (PUT) and ignored on create. ----
+
+export interface AdminSiteContentInput {
+  supportPhone: string;
+  supportEmail: string;
+  whatsapp: string;
+  shippingHtml: string;
+  expectedUpdatedAt?: string;
+}
+
+export interface AdminAnnouncementInput {
+  textHe: string;
+  linkUrl: string | null;
+  linkLabelHe: string | null;
+  active: boolean;
+  sortOrder: number;
+  /** ISO times; the admin sends the start of the first Israel day and 23:59:59.999 of the last. */
+  startsAt: string | null;
+  endsAt: string | null;
+  expectedUpdatedAt?: string;
+}
+
+export interface AdminInfoPageInput {
+  slug: string;
+  titleHe: string;
+  bodyHtml: string;
+  metaDescriptionHe: string | null;
+  published: boolean;
+  noindex: boolean;
+  showInFooter: boolean;
+  footerLabelHe: string | null;
+  footerOrder: number;
+  expectedUpdatedAt?: string;
+}
+
+export interface AdminFaqItemInput {
+  /** An existing item of this group; left out for a new item. Items not sent are deleted. */
+  id?: number;
+  questionHe: string;
+  answerHtml: string;
+  published: boolean;
+}
+
+/** A FAQ group with all its items, in order (the item order is the array order). */
+export interface AdminFaqGroupInput {
+  titleHe: string;
+  sortOrder: number;
+  published: boolean;
+  items: AdminFaqItemInput[];
+  expectedUpdatedAt?: string;
 }

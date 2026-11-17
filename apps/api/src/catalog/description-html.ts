@@ -68,9 +68,14 @@ export function isSafeContentLink(href: string): boolean {
   return HTTPS_LINK.test(href) || MAILTO_LINK.test(href) || TEL_LINK.test(href) || SITE_PATH.test(href);
 }
 
+/**
+ * An unsafe link keeps its tag name but loses every attribute; `exclusiveFilter` then drops the tag and keeps its text.
+ * (Renaming it to a disallowed tag, as descriptions do, leaves a stale entry in sanitize-html 2.18's close-tag map:
+ * the next link at the same depth would be closed with `</span>`.)
+ */
 const contentLink = (_: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag => {
   const href = attribs['href'] ?? '';
-  if (!isSafeContentLink(href)) return { tagName: 'span', attribs: {} };
+  if (!isSafeContentLink(href)) return { tagName: 'a', attribs: {} };
   return { tagName: 'a', attribs: HTTPS_LINK.test(href) ? { href, rel: 'noopener' } : { href } };
 };
 
@@ -98,6 +103,7 @@ const contentOptions = (mode: ContentHtmlMode): sanitizeHtml.IOptions => {
       h6: page ? 'h3' : 'p',
       a: contentLink,
     },
+    exclusiveFilter: (frame) => (frame.tag === 'a' && !frame.attribs['href'] ? 'excludeTag' : false),
   };
 };
 
