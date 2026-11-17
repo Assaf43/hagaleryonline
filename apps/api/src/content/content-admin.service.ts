@@ -20,11 +20,12 @@ import {
   type SiteContent,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { auditDiff, type AuditView } from '../shipping/shipping-audit.js';
+import type { AuditView } from '../shipping/shipping-audit.js';
+import { recordContentChange, type ContentMeta } from './content-audit.js';
 import { CONTENT_CACHE_PREFIX } from './content.service.js';
 import { conflict, invalid, notFound, slugTaken, systemPageDelete, systemPageField } from './content-errors.js';
 
-type Meta = { actorId: number; ip?: string };
+type Meta = ContentMeta;
 type Tx = Prisma.TransactionClient;
 type GroupWithItems = FaqGroup & { items: FaqItem[] };
 
@@ -286,8 +287,7 @@ export class ContentAdminService {
 
   // ---- Audit ----
 
-  /** Create / delete keep the whole view; an update keeps only the changed keys (nothing changed: no entry). */
-  private async record(
+  private record(
     tx: Tx,
     meta: Meta,
     action: string,
@@ -296,12 +296,7 @@ export class ContentAdminService {
     before: AuditView | null,
     after: AuditView | null,
   ): Promise<void> {
-    if (before && after) {
-      const change = auditDiff(before, after);
-      if (!change) return;
-      ({ before, after } = change);
-    }
-    await this.audit.record({ actorId: meta.actorId, ip: meta.ip, action, entityType, entityId, before, after }, tx);
+    return recordContentChange(this.audit, tx, meta, action, entityType, entityId, before, after);
   }
 }
 

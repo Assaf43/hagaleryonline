@@ -49,6 +49,32 @@ describe('processImage', () => {
   });
 });
 
+describe('processImage widths option (content photos, Phase 8 §6)', () => {
+  const content = { widths: [480, 960, 1600, 2400], minLongSide: 1200 };
+
+  it('makes 2400 only when asked; the catalog default stays 480 / 960 / 1600', async () => {
+    const input = await photo(3000, 1500).jpeg().toBuffer();
+    expect((await processImage(input)).copies.map((c) => c.width)).toEqual([480, 960, 1600]);
+    const result = await processImage(input, content);
+    expect(result).toMatchObject({ originalExt: 'jpg', width: 3000, height: 1500 });
+    expect(result.copies.map((c) => c.width)).toEqual([480, 960, 1600, 2400]);
+    expect((await sharp(result.copies[3].webp).metadata()).width).toBe(2400);
+  });
+
+  it('a photo narrower than 2400 gets its own width instead (never upscaled)', async () => {
+    const result = await processImage(await photo(1300, 1300).png().toBuffer(), content);
+    expect(result.copies.map((c) => c.width)).toEqual([480, 960, 1300]);
+  });
+
+  it('refuses a content photo under 1200 px on the long side that the catalog still accepts', async () => {
+    const small = await photo(1100, 800).jpeg().toBuffer();
+    await expect(processImage(small, content)).rejects.toMatchObject({ problem: 'too_small' });
+    expect((await processImage(small)).copies.map((c) => c.width)).toEqual([480, 960, 1100]);
+    // A portrait photo counts its height.
+    expect((await processImage(await photo(700, 1250).jpeg().toBuffer(), content)).height).toBe(1250);
+  });
+});
+
 describe('processPrivatePhoto (support photos, spec §7.1)', () => {
   it('one upright WebP of at most 1600 px wide, without GPS or camera data', async () => {
     const input = await photo(3000, 2000)

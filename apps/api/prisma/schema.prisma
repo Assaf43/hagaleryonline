@@ -1461,3 +1461,54 @@ model FaqItem {
   @@index([groupId, sortOrder])
   @@map("faq_items")
 }
+
+/// A content photo (Phase 8 §6): banners and landing pages. Processed like product photos (`processImage`, WebP + AVIF,
+/// no metadata) in `CONTENT_IMAGE.widths`; the original is kept privately. A photo in use cannot be deleted; unused
+/// photos are not cleaned up in this phase.
+model ContentImage {
+  id          Int      @id @default(autoincrement())
+  /// `content/<random>`.
+  storageKey  String   @unique @map("storage_key")
+  /// Widths generated for srcset, ascending.
+  widths      Int[]
+  width       Int
+  height      Int
+  /// Extension of the private original, from its content (jpg, png, webp).
+  originalExt String   @map("original_ext")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  banners       Banner[] @relation("BannerImage")
+  mobileBanners Banner[] @relation("BannerMobileImage")
+
+  @@map("content_images")
+}
+
+/// A banner (Phase 8 §4.5, NAV-05), used by home-page sections. Shown only while active and inside its dates
+/// (`endsAt` inclusive, 23:59:59.999 of the Israel day).
+model Banner {
+  id            Int       @id @default(autoincrement())
+  /// Internal name (admin only).
+  nameHe        String    @map("name_he")
+  headlineHe    String    @map("headline_he")
+  sublineHe     String?   @map("subline_he")
+  ctaLabelHe    String?   @map("cta_label_he")
+  /// https, mailto, tel or a site path (`isSafeContentLink`).
+  linkUrl       String    @map("link_url")
+  imageId       Int       @map("image_id")
+  /// Null = the desktop image on every screen.
+  mobileImageId Int?      @map("mobile_image_id")
+  altHe         String    @map("alt_he")
+  active        Boolean   @default(true)
+  startsAt      DateTime? @map("starts_at")
+  /// Inclusive: 23:59:59.999 of the Israel day.
+  endsAt        DateTime? @map("ends_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  image       ContentImage  @relation("BannerImage", fields: [imageId], references: [id], onDelete: Restrict)
+  mobileImage ContentImage? @relation("BannerMobileImage", fields: [mobileImageId], references: [id], onDelete: Restrict)
+
+  @@index([imageId])
+  @@index([mobileImageId])
+  @@map("banners")
+}

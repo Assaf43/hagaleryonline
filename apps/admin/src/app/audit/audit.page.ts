@@ -58,6 +58,10 @@ const ACTIONS: Record<string, string> = {
   'content.faq.create': 'יצירת קבוצת שאלות',
   'content.faq.update': 'עדכון קבוצת שאלות',
   'content.faq.delete': 'מחיקת קבוצת שאלות',
+  'content.image.create': 'העלאת תמונת תוכן',
+  'content.banner.create': 'יצירת באנר',
+  'content.banner.update': 'עדכון באנר',
+  'content.banner.delete': 'מחיקת באנר',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -76,6 +80,8 @@ const ENTITIES: Record<string, string> = {
   announcement: 'הודעה',
   info_page: 'עמוד מידע',
   faq_group: 'קבוצת שאלות',
+  banner: 'באנר',
+  content_image: 'תמונת תוכן',
 };
 
 /** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
@@ -87,6 +93,8 @@ const READABLE = new Set([
   'announcement',
   'info_page',
   'faq_group',
+  'banner',
+  'content_image',
 ]);
 
 /** Prices are stored in agorot; show them in shekels. */

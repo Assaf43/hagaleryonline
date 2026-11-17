@@ -3,7 +3,9 @@
  * info pages, FAQ and site details (8a). Rich-text fields hold HTML already sanitized by the API
  * (`sanitizeContentHtml`): `page` mode (h2, h3) for info pages, `inline` mode (no headings) for the shipping text and
  * FAQ answers. Dates are ISO strings; an `endsAt` is inclusive (23:59:59.999 of the Israel day).
+ * 8b adds content images and banners (NAV-05).
  */
+import type { ImageRef } from './catalog.js';
 
 /** Length limits (characters, after trimming). */
 export const CONTENT_LIMITS = {
@@ -19,6 +21,25 @@ export const CONTENT_LIMITS = {
   slug: 80,
   /** Items in one FAQ group. */
   faqItems: 100,
+  /** A banner's internal name (admin lists only). */
+  bannerName: 80,
+  bannerHeadline: 80,
+  bannerSubline: 160,
+  /** A banner's button label. */
+  bannerCta: 30,
+  /** A banner's image alt text. */
+  bannerAlt: 160,
+} as const;
+
+/**
+ * Content photo uploads (banners, landing pages; Phase 8 §6): JPG, PNG or WebP up to 15MB, at least 1200px on the
+ * long side, made in four widths (2400 for full-width heroes on large screens).
+ */
+export const CONTENT_IMAGE = {
+  widths: [480, 960, 1600, 2400],
+  minLongSide: 1200,
+  maxBytes: 15 * 1024 * 1024,
+  types: ['image/jpeg', 'image/png', 'image/webp'],
 } as const;
 
 /** An info page slug: lower-case English letters and digits, words joined by single dashes. */
@@ -26,11 +47,13 @@ export const CONTENT_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
  * Admin content errors (`code` + optional `field`), mapped to Hebrew by the admin's `core/errors.ts`:
- * `conflict` (someone saved the row after it was opened), `invalid` (bad or missing field), `invalid_link`
- * (a link field that is not https, mailto, tel or a site path), `slug_taken`, `system_page` (a system page cannot be
- * deleted, renamed or unpublished), `not_found`.
+ * `conflict` (someone saved the row after it was opened), `invalid` (bad or missing field; an image upload names the
+ * problem in `value`, an `ImageUploadProblem`), `invalid_link` (a link field that is not https, mailto, tel or a site
+ * path), `slug_taken`, `system_page` (a system page cannot be deleted, renamed or unpublished), `banner_in_use` (a
+ * banner a home section uses cannot be deleted; `sections` names them), `not_found`.
  */
-export type ContentErrorCode = 'conflict' | 'invalid' | 'invalid_link' | 'slug_taken' | 'system_page' | 'not_found';
+export type ContentErrorCode =
+  'conflict' | 'invalid' | 'invalid_link' | 'slug_taken' | 'system_page' | 'banner_in_use' | 'not_found';
 
 /** The announcement bar message shown now (at most one). The `hg-ann` cookie holds `id:version` of a closed bar. */
 export interface AnnouncementView {
@@ -194,5 +217,65 @@ export interface AdminFaqGroupInput {
   sortOrder: number;
   published: boolean;
   items: AdminFaqItemInput[];
+  expectedUpdatedAt?: string;
+}
+
+// ---- Content images and banners (8b, NAV-05) ----
+
+/** `POST /api/admin/content/images` (multipart `file`): the stored photo. `image.altHe` is empty (alt text lives on
+ * the row that uses the photo). */
+export interface AdminContentImage {
+  id: number;
+  image: ImageRef;
+}
+
+/** A live banner as the site shows it. `mobileImage` null = the desktop image on every screen. */
+export interface BannerView {
+  id: number;
+  headlineHe: string;
+  sublineHe: string | null;
+  ctaLabelHe: string | null;
+  linkUrl: string;
+  /** `altHe` of both images is the banner's alt text. */
+  image: ImageRef;
+  mobileImage: ImageRef | null;
+  altHe: string;
+}
+
+export interface AdminBanner {
+  id: number;
+  /** Internal name, shown only in the admin. */
+  nameHe: string;
+  headlineHe: string;
+  sublineHe: string | null;
+  ctaLabelHe: string | null;
+  linkUrl: string;
+  imageId: number;
+  image: ImageRef;
+  mobileImageId: number | null;
+  mobileImage: ImageRef | null;
+  altHe: string;
+  active: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminBannerInput {
+  nameHe: string;
+  headlineHe: string;
+  sublineHe: string | null;
+  ctaLabelHe: string | null;
+  /** Required: https, mailto, tel or a site path (else `invalid_link`). */
+  linkUrl: string;
+  /** A content image (`POST /api/admin/content/images`). */
+  imageId: number;
+  mobileImageId: number | null;
+  altHe: string;
+  active: boolean;
+  /** ISO times; the admin sends the start of the first Israel day and 23:59:59.999 of the last. */
+  startsAt: string | null;
+  endsAt: string | null;
   expectedUpdatedAt?: string;
 }

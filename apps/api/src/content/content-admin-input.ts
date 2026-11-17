@@ -3,6 +3,7 @@ import {
   CONTENT_LIMITS,
   CONTENT_SLUG_PATTERN,
   type AdminAnnouncementInput,
+  type AdminBannerInput,
   type AdminFaqGroupInput,
   type AdminFaqItemInput,
   type AdminInfoPageInput,
@@ -162,4 +163,42 @@ export function parseFaqGroupInput(raw: unknown): AdminFaqGroupInput {
     };
   });
   return { titleHe, sortOrder, published, items };
+}
+
+/** The id of a content image (`POST /api/admin/content/images`); whether it exists is checked by the service. */
+function imageId(b: Body, key: string, required: boolean): number | null {
+  const value = b[key];
+  if (!required && (value === undefined || value === null)) return null;
+  return int(b, key, 1, 2 ** 31 - 1);
+}
+
+export function parseBannerInput(raw: unknown): AdminBannerInput {
+  const b = asBody(raw);
+  const nameHe = line(b, 'nameHe', CONTENT_LIMITS.bannerName);
+  const headlineHe = line(b, 'headlineHe', CONTENT_LIMITS.bannerHeadline);
+  const sublineHe = optionalLine(b, 'sublineHe', CONTENT_LIMITS.bannerSubline);
+  const ctaLabelHe = optionalLine(b, 'ctaLabelHe', CONTENT_LIMITS.bannerCta);
+  // The whole banner is a link, so the address is required (a missing one is `invalid_link` like a bad one).
+  const linkUrl = link(b, 'linkUrl');
+  if (!linkUrl) throw invalidLink('linkUrl');
+  const image = imageId(b, 'imageId', true)!;
+  const mobileImageId = imageId(b, 'mobileImageId', false);
+  const altHe = line(b, 'altHe', CONTENT_LIMITS.bannerAlt);
+  const active = flag(b, 'active');
+  const startsAt = time(b.startsAt, 'startsAt');
+  const endsAt = time(b.endsAt, 'endsAt');
+  if (startsAt && endsAt && endsAt <= startsAt) throw invalid('endsAt');
+  return {
+    nameHe,
+    headlineHe,
+    sublineHe,
+    ctaLabelHe,
+    linkUrl,
+    imageId: image,
+    mobileImageId,
+    altHe,
+    active,
+    startsAt: startsAt?.toISOString() ?? null,
+    endsAt: endsAt?.toISOString() ?? null,
+  };
 }
