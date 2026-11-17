@@ -5,7 +5,7 @@ import { INVOICE_TYPE_LABELS_HE, type AdminInvoicesMonth } from '@hg/models';
 import { formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { InvoicesApi } from '../core/invoices.api';
-import { israelDay, israelMonthOf, shiftMonth } from '../promotions/israel-time';
+import { israelDay, israelMonthOf, shiftMonth } from '../core/israel-time';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MONTH_NAME = new Intl.DateTimeFormat('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });

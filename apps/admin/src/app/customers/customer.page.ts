@@ -17,7 +17,7 @@ import { formatPrice } from '../catalog/catalog-format';
 import { AuthService } from '../core/auth.service';
 import { CustomersApi } from '../core/customers.api';
 import { errorMessage } from '../core/errors';
-import { israelDateTime, israelDay } from '../promotions/israel-time';
+import { israelDateTime, israelDay } from '../core/israel-time';
 import { discountText } from './discount-text';
 import { IssueCodeDialog, type IssueCodeDialogData } from './issue-code.dialog';
 

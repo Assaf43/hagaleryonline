@@ -13,7 +13,7 @@ import {
 import { AuthService } from '../core/auth.service';
 import { errorMessage, NOTE_MESSAGE } from '../core/errors';
 import { SupportApi } from '../core/support.api';
-import { israelDateTime } from '../promotions/israel-time';
+import { israelDateTime } from '../core/israel-time';
 
 /**
  * One support ticket (spec §7.2, permission support.manage): type and status, the sender's contact, the order link

@@ -4,6 +4,7 @@ import {
   ElementRef,
   OnDestroy,
   afterNextRender,
+  computed,
   input,
   model,
   signal,
@@ -12,23 +13,82 @@ import {
 import { MatButtonModule } from '@angular/material/button';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { LucideBold, LucideHeading, LucideItalic, LucideLink, LucideList, LucideListOrdered } from '@lucide/angular';
+import {
+  LucideBold,
+  LucideHeading,
+  LucideHeading2,
+  LucideHeading3,
+  LucideItalic,
+  LucideLink,
+  LucideList,
+  LucideListOrdered,
+} from '@lucide/angular';
 
-type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link';
+type Mark = 'bold' | 'italic' | 'heading' | 'h2' | 'h3' | 'bulletList' | 'orderedList' | 'link';
 
 /**
- * Product description editor (decision 56): heading, bold, italic, lists and links only — no colors
+ * `description`: product description (h3 only, https / mailto links, as before). `page`: info pages (h2 and h3).
+ * `inline`: short texts such as FAQ answers (no headings). `page` and `inline` links follow the server rule.
+ */
+export type EditorMode = 'description' | 'page' | 'inline';
+
+const SITE_PATH = /^\/(?![/\\])/;
+const HTTPS_LINK = /^https:\/\/[^/?#\\@\s]+(?:[/?#]|$)/i;
+const MAILTO_LINK = /^mailto:[^/\\]/i;
+const TEL_LINK = /^tel:\+?[0-9][0-9-]*$/i;
+
+/** Whether the editor accepts this link address. Content modes mirror the API: https, mailto, tel or a `/path`. */
+export function linkAllowed(url: string, mode: EditorMode): boolean {
+  if (mode === 'description') return /^(https?:\/\/|mailto:)/i.test(url);
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what is refused here.
+  if (!url || /[\s\\\u0000-\u001f\u007f]/.test(url)) return false;
+  return HTTPS_LINK.test(url) || MAILTO_LINK.test(url) || TEL_LINK.test(url) || SITE_PATH.test(url);
+}
+
+/** The toolbar buttons of a mode, in order. */
+export function editorButtons(mode: EditorMode): { mark: Mark; label: string }[] {
+  const heading: { mark: Mark; label: string }[] =
+    mode === 'page'
+      ? [
+          { mark: 'h2', label: 'כותרת' },
+          { mark: 'h3', label: 'כותרת משנה' },
+        ]
+      : mode === 'description'
+        ? [{ mark: 'heading', label: 'כותרת' }]
+        : [];
+  return [
+    ...heading,
+    { mark: 'bold', label: 'מודגש' },
+    { mark: 'italic', label: 'נטוי' },
+    { mark: 'bulletList', label: 'רשימה' },
+    { mark: 'orderedList', label: 'רשימה ממוספרת' },
+    { mark: 'link', label: 'קישור' },
+  ];
+}
+
+/**
+ * Rich-text editor (decision 56, 99; modes above). Description mode: heading, bold, italic, lists and links only — no colors
  * or font sizes, so every product page follows the brand. The API sanitizes the HTML again.
  */
 @Component({
   selector: 'hga-rich-text-editor',
-  imports: [MatButtonModule, LucideBold, LucideHeading, LucideItalic, LucideLink, LucideList, LucideListOrdered],
+  imports: [
+    MatButtonModule,
+    LucideBold,
+    LucideHeading,
+    LucideHeading2,
+    LucideHeading3,
+    LucideItalic,
+    LucideLink,
+    LucideList,
+    LucideListOrdered,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="rte" [class.focused]="focused()">
       <span class="rte-label" [id]="labelId">{{ label() }}</span>
       <div class="rte-toolbar" role="toolbar" [attr.aria-label]="'עיצוב ' + label()">
-        @for (b of buttons; track b.mark) {
+        @for (b of buttons(); track b.mark) {
           <button
             matIconButton
             type="button"
@@ -40,6 +100,12 @@ type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link
             @switch (b.mark) {
               @case ('heading') {
                 <svg lucideHeading></svg>
+              }
+              @case ('h2') {
+                <svg lucideHeading2></svg>
+              }
+              @case ('h3') {
+                <svg lucideHeading3></svg>
               }
               @case ('bold') {
                 <svg lucideBold></svg>
@@ -113,6 +179,11 @@ type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link
       margin-block: 0 var(--space-2);
     }
 
+    .rte-body ::ng-deep .ProseMirror h2 {
+      font-size: var(--font-h2);
+      margin-block: var(--space-2);
+    }
+
     .rte-body ::ng-deep .ProseMirror h3 {
       font-size: var(--font-h3);
       margin-block: var(--space-2);
@@ -126,18 +197,12 @@ type Mark = 'bold' | 'italic' | 'heading' | 'bulletList' | 'orderedList' | 'link
 export class RichTextEditor implements OnDestroy {
   readonly label = input('תיאור');
   readonly value = model('');
+  readonly mode = input<EditorMode>('description');
   private readonly host = viewChild.required<ElementRef<HTMLElement>>('host');
   protected readonly labelId = `rte-${Math.random().toString(36).slice(2, 8)}`;
   protected readonly focused = signal(false);
   protected readonly active = signal(new Set<Mark>());
-  protected readonly buttons: { mark: Mark; label: string }[] = [
-    { mark: 'heading', label: 'כותרת' },
-    { mark: 'bold', label: 'מודגש' },
-    { mark: 'italic', label: 'נטוי' },
-    { mark: 'bulletList', label: 'רשימה' },
-    { mark: 'orderedList', label: 'רשימה ממוספרת' },
-    { mark: 'link', label: 'קישור' },
-  ];
+  protected readonly buttons = computed(() => editorButtons(this.mode()));
   private editor?: Editor;
 
   constructor() {
@@ -147,14 +212,18 @@ export class RichTextEditor implements OnDestroy {
         content: this.value(),
         extensions: [
           StarterKit.configure({
-            heading: { levels: [3] },
+            heading: this.mode() === 'inline' ? false : { levels: this.mode() === 'page' ? [2, 3] : [3] },
             blockquote: false,
             code: false,
             codeBlock: false,
             horizontalRule: false,
             strike: false,
             underline: false,
-            link: { openOnClick: false, autolink: true, protocols: ['mailto'] },
+            link: {
+              openOnClick: false,
+              autolink: this.mode() === 'description',
+              protocols: this.mode() === 'description' ? ['mailto'] : ['mailto', 'tel'],
+            },
           }),
         ],
         editorProps: {
@@ -180,6 +249,12 @@ export class RichTextEditor implements OnDestroy {
       case 'heading':
         chain.toggleHeading({ level: 3 }).run();
         break;
+      case 'h2':
+        chain.toggleHeading({ level: 2 }).run();
+        break;
+      case 'h3':
+        chain.toggleHeading({ level: 3 }).run();
+        break;
       case 'bold':
         chain.toggleBold().run();
         break;
@@ -197,8 +272,14 @@ export class RichTextEditor implements OnDestroy {
           chain.unsetLink().run();
           break;
         }
-        const url = prompt('כתובת הקישור (מתחילה ב-https://)', 'https://');
-        if (url && /^(https?:\/\/|mailto:)/i.test(url)) chain.setLink({ href: url }).run();
+        const url = prompt(
+          this.mode() === 'description'
+            ? 'כתובת הקישור (מתחילה ב-https://)'
+            : 'כתובת הקישור (https://, mailto:, tel: או כתובת באתר שמתחילה ב-/)',
+          'https://',
+        );
+        const href = url !== null && this.mode() !== 'description' ? url.trim() : url;
+        if (href && linkAllowed(href, this.mode())) chain.setLink({ href }).run();
         break;
       }
     }
@@ -208,7 +289,8 @@ export class RichTextEditor implements OnDestroy {
     const editor = this.editor;
     if (!editor) return;
     const on = new Set<Mark>();
-    if (editor.isActive('heading', { level: 3 })) on.add('heading');
+    if (editor.isActive('heading', { level: 3 })) on.add(this.mode() === 'page' ? 'h3' : 'heading');
+    if (editor.isActive('heading', { level: 2 })) on.add('h2');
     for (const mark of ['bold', 'italic', 'bulletList', 'orderedList', 'link'] as const) {
       if (editor.isActive(mark)) on.add(mark);
     }

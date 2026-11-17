@@ -7,7 +7,7 @@ import { PROMOTION_KIND_LABELS_HE, PROMOTION_TARGET_LABELS_HE, type AdminPromoti
 import { formatPrice } from '../catalog/catalog-format';
 import { errorMessage } from '../core/errors';
 import { PromotionsApi } from '../core/promotions.api';
-import { formatIsraelDate } from './israel-time';
+import { formatIsraelDate } from '../core/israel-time';
 
 export type PromotionState = 'active' | 'inactive' | 'ended' | 'exhausted' | 'scheduled';
 
