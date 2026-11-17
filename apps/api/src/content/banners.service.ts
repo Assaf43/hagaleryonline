@@ -2,14 +2,15 @@ import { Injectable } from '@nestjs/common';
 import type { AdminBanner, AdminBannerInput } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import { CacheStore } from '../cache/cache-store.js';
-import type { Banner, Prisma } from '../generated/prisma/client.js';
+import { HomeSectionKind, type Banner, type Prisma } from '../generated/prisma/client.js';
 import { StorageProvider } from '../media/storage.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuditView } from '../shipping/shipping-audit.js';
 import { recordContentChange, type ContentMeta } from './content-audit.js';
 import { bannerImages, contentImageRef, type BannerWithImages } from './content-image-ref.js';
-import { conflict, invalid, notFound } from './content-errors.js';
+import { bannerInUse, conflict, invalid, notFound } from './content-errors.js';
 import { CONTENT_CACHE_PREFIX } from './content.service.js';
+import { bannerIdsOf, homeSectionName, KIND, storedConfig } from './home/home-config.js';
 
 type Tx = Prisma.TransactionClient;
 
@@ -89,14 +90,22 @@ export class BannersService {
   }
 
   /**
-   * Deletes the banner; its photos stay (nothing deletes photos in this phase). A banner used by a home section is
-   * refused with 409 `banner_in_use` (`bannerInUse`) once sections exist (Task 7); until then nothing is checked.
+   * Deletes the banner; its photos stay (nothing deletes photos in this phase). A banner a home section uses (hidden
+   * sections too) is refused with 409 `banner_in_use` naming those sections. The row lock comes first: a home save
+   * adding this banner reads it FOR SHARE, so either that save commits first and is seen here, or it waits and then
+   * finds the banner gone.
    */
   async remove(id: number, meta: ContentMeta): Promise<void> {
     await this.write(async (tx) => {
       await tx.$queryRaw`SELECT id FROM banners WHERE id = ${id} FOR UPDATE`;
       const existing = await tx.banner.findUnique({ where: { id } });
       if (!existing) throw notFound();
+      const sections = await tx.homeSection.findMany({
+        where: { kind: { in: [HomeSectionKind.HERO, HomeSectionKind.BANNER_PAIR] } },
+        orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+      });
+      const using = sections.filter((s) => bannerIdsOf(storedConfig(s)).includes(id));
+      if (using.length) throw bannerInUse(using.map((s) => homeSectionName(s.titleHe, KIND[s.kind])));
       await tx.banner.delete({ where: { id } });
       await recordContentChange(
         this.audit,

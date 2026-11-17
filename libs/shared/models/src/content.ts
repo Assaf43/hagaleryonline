@@ -3,9 +3,9 @@
  * info pages, FAQ and site details (8a). Rich-text fields hold HTML already sanitized by the API
  * (`sanitizeContentHtml`): `page` mode (h2, h3) for info pages, `inline` mode (no headings) for the shipping text and
  * FAQ answers. Dates are ISO strings; an `endsAt` is inclusive (23:59:59.999 of the Israel day).
- * 8b adds content images and banners (NAV-05).
+ * 8b adds content images, banners and the managed home page (NAV-05, decision 98).
  */
-import type { ImageRef } from './catalog.js';
+import type { ImageRef, ProductCard } from './catalog.js';
 
 /** Length limits (characters, after trimming). */
 export const CONTENT_LIMITS = {
@@ -29,6 +29,17 @@ export const CONTENT_LIMITS = {
   bannerCta: 30,
   /** A banner's image alt text. */
   bannerAlt: 160,
+  /** Sections on the home page. */
+  homeSections: 20,
+  /** Banners of a hero section (the first live one shows). */
+  heroBanners: 5,
+  /** Banners of a banner pair (the first two live ones show). */
+  pairBanners: 4,
+  /** Category tiles of a categories section. */
+  categoryTilesMin: 2,
+  categoryTilesMax: 8,
+  /** Products picked by hand (a manual product source). */
+  manualProducts: 48,
 } as const;
 
 /**
@@ -50,10 +61,18 @@ export const CONTENT_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
  * `conflict` (someone saved the row after it was opened), `invalid` (bad or missing field; an image upload names the
  * problem in `value`, an `ImageUploadProblem`), `invalid_link` (a link field that is not https, mailto, tel or a site
  * path), `slug_taken`, `system_page` (a system page cannot be deleted, renamed or unpublished), `banner_in_use` (a
- * banner a home section uses cannot be deleted; `sections` names them), `not_found`.
+ * banner a home section uses cannot be deleted; `sections` names them), `invalid_source` (a product source naming a
+ * promotion that is not automatic, gives its discount on the whole order or is for members only), `not_found`.
  */
 export type ContentErrorCode =
-  'conflict' | 'invalid' | 'invalid_link' | 'slug_taken' | 'system_page' | 'banner_in_use' | 'not_found';
+  | 'conflict'
+  | 'invalid'
+  | 'invalid_link'
+  | 'slug_taken'
+  | 'system_page'
+  | 'banner_in_use'
+  | 'invalid_source'
+  | 'not_found';
 
 /** The announcement bar message shown now (at most one). The `hg-ann` cookie holds `id:version` of a closed bar. */
 export interface AnnouncementView {
@@ -277,5 +296,140 @@ export interface AdminBannerInput {
   /** ISO times; the admin sends the start of the first Israel day and 23:59:59.999 of the last. */
   startsAt: string | null;
   endsAt: string | null;
+  expectedUpdatedAt?: string;
+}
+
+// ---- Managed home page (8b, NAV-05, decision 98) ----
+
+/**
+ * Where a product row or grid gets its products (home sections and landing pages): best sellers, newest, a category
+ * (its sub-categories included) or a room in the default listing order, the products a promotion targets (only a live
+ * automatic promotion on categories or products that is not members-only; anything else gives nothing), or products
+ * picked by hand, in their order. Only products shown on the site appear; a missing reference drops silently.
+ */
+export type ProductSource =
+  | { kind: 'bestsellers' | 'newest' }
+  | { kind: 'category' | 'room' | 'promotion'; id: number }
+  | { kind: 'manual'; productIds: number[] };
+
+export type HomeSectionKind = 'hero' | 'trust' | 'rooms' | 'categories' | 'products' | 'banner_pair';
+
+/** Hebrew names of the section kinds (admin screen, audit entries, `banner_in_use`). */
+export const HOME_SECTION_LABELS_HE: Record<HomeSectionKind, string> = {
+  hero: 'באנר ראשי',
+  trust: 'שורת יתרונות',
+  rooms: 'חדרים וסוגי רהיטים',
+  categories: 'אריחי קטגוריות',
+  products: 'שורת מוצרים',
+  banner_pair: 'זוג באנרים',
+};
+
+/** Products in a product row. */
+export const HOME_PRODUCT_COUNTS = [4, 8, 12] as const;
+export type HomeProductCount = (typeof HOME_PRODUCT_COUNTS)[number];
+
+/** A section's kind with its settings (the settings are `home_sections.config`). */
+export type HomeSectionConfig =
+  | { kind: 'hero'; bannerIds: number[] }
+  | { kind: 'trust' }
+  | { kind: 'rooms' }
+  | { kind: 'categories'; categoryIds: number[] }
+  | { kind: 'products'; source: ProductSource; count: HomeProductCount }
+  | { kind: 'banner_pair'; bannerIds: number[] };
+
+/** A link of the static hero or a tile: an English slug and the Hebrew name. */
+export interface HomeLink {
+  slug: string;
+  nameHe: string;
+}
+
+/**
+ * The static hero shown when no banner of the hero section is live (today's hero): the fixed text stays in the
+ * storefront; the photo is the first best seller's, the buttons go to the first furniture type ("לכל ה…") and the
+ * first room ("קנייה לפי חדר").
+ */
+export interface HomeHeroFallback {
+  image: ImageRef | null;
+  /** The first top-level category with products (today's `menu.categories()[0]`). */
+  category: HomeLink | null;
+  /** The first room with products (today's `menu.rooms()[0]`). */
+  room: HomeLink | null;
+}
+
+/** A furniture-type tile: the photo of the category's first product in the default listing order. */
+export interface HomeCategoryTile extends HomeLink {
+  image: ImageRef | null;
+}
+
+/** A room with its top-level furniture types, as the main menu lists them (decision 44), with tile photos. */
+export interface HomeRoom extends HomeLink {
+  categories: HomeCategoryTile[];
+}
+
+interface HomeSectionBase {
+  id: number;
+  /** The editor's title; null = none (the rooms block titles each room by its name). */
+  titleHe: string | null;
+}
+
+/**
+ * One resolved section of `GET /api/content/home`. Hidden sections and sections with nothing to show (no room, no
+ * category tile left, no product, no live banner in a pair) are left out; a hero always shows (its fallback).
+ */
+export type HomeSectionView =
+  | (HomeSectionBase & { kind: 'hero'; banner: BannerView | null; fallback: HomeHeroFallback })
+  | (HomeSectionBase & { kind: 'trust' })
+  | (HomeSectionBase & { kind: 'rooms'; rooms: HomeRoom[] })
+  | (HomeSectionBase & { kind: 'categories'; categories: HomeCategoryTile[] })
+  | (HomeSectionBase & {
+      kind: 'products';
+      items: ProductCard[];
+      /** "לכל המוצרים": `/category/<slug>` or `/room/<slug>` for those sources, else null. */
+      link: string | null;
+    })
+  | (HomeSectionBase & {
+      kind: 'banner_pair';
+      /** One or two live banners (one → full width). */
+      banners: BannerView[];
+    });
+
+/** `GET /api/content/home`: the visible sections in order. */
+export interface HomeView {
+  sections: HomeSectionView[];
+}
+
+/** References of a section the site cannot show now (deleted, hidden, inactive or ended); the admin marks them. */
+export interface HomeSectionUnavailable {
+  bannerIds: number[];
+  categoryIds: number[];
+  productIds: number[];
+  /** The category, room or promotion of a product source is gone, hidden, or not a live usable promotion. */
+  source: boolean;
+}
+
+/** A section in the admin: its kind and settings, title and switch, and what the site cannot show of it now. */
+export type AdminHomeSection = HomeSectionConfig & {
+  id: number;
+  titleHe: string | null;
+  visible: boolean;
+  unavailable: HomeSectionUnavailable;
+};
+
+/** `GET /api/admin/content/home`: every section in order; `updatedAt` (the newest section's) is sent back on save. */
+export interface AdminHome {
+  sections: AdminHomeSection[];
+  updatedAt: string;
+}
+
+/** A section of the save: `id` of an existing section, left out for a new one. */
+export type AdminHomeSectionInput = HomeSectionConfig & {
+  id?: number;
+  titleHe: string | null;
+  visible: boolean;
+};
+
+/** `PUT /api/admin/content/home`: the whole list in page order (1–20 sections); sections not sent are removed. */
+export interface AdminHomeInput {
+  sections: AdminHomeSectionInput[];
   expectedUpdatedAt?: string;
 }

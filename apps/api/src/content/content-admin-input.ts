@@ -2,12 +2,17 @@ import {
   CHECKOUT_EMAIL_PATTERN,
   CONTENT_LIMITS,
   CONTENT_SLUG_PATTERN,
+  HOME_PRODUCT_COUNTS,
   type AdminAnnouncementInput,
   type AdminBannerInput,
   type AdminFaqGroupInput,
   type AdminFaqItemInput,
+  type AdminHomeSectionInput,
   type AdminInfoPageInput,
   type AdminSiteContentInput,
+  type HomeProductCount,
+  type HomeSectionConfig,
+  type ProductSource,
 } from '@hg/models';
 import { isSafeContentLink, sanitizeContentHtml, type ContentHtmlMode } from '../catalog/description-html.js';
 import { time } from '../promotions/promotions-admin-input.js';
@@ -201,4 +206,98 @@ export function parseBannerInput(raw: unknown): AdminBannerInput {
     startsAt: startsAt?.toISOString() ?? null,
     endsAt: endsAt?.toISOString() ?? null,
   };
+}
+
+const MAX_ID = 2 ** 31 - 1;
+
+/** A list of distinct positive ids, `min`..`max` long (order kept). */
+function idList(b: Body, key: string, min: number, max: number, field: string): number[] {
+  const value = b[key];
+  if (!Array.isArray(value) || value.length < min || value.length > max) throw invalid(field);
+  for (const id of value)
+    if (typeof id !== 'number' || !Number.isInteger(id) || id < 1 || id > MAX_ID) throw invalid(field);
+  if (new Set(value).size !== value.length) throw invalid(field);
+  return value as number[];
+}
+
+function productSource(raw: unknown, field: string): ProductSource {
+  const b = asBody(raw);
+  switch (b.kind) {
+    case 'bestsellers':
+    case 'newest':
+      return { kind: b.kind };
+    case 'category':
+    case 'room':
+    case 'promotion':
+      return { kind: b.kind, id: int(b, 'id', 1, MAX_ID, `${field}.id`) };
+    case 'manual':
+      return {
+        kind: 'manual',
+        productIds: idList(b, 'productIds', 1, CONTENT_LIMITS.manualProducts, `${field}.productIds`),
+      };
+    default:
+      throw invalid(`${field}.kind`);
+  }
+}
+
+/** One section's kind and settings; fields are named `sections.<i>.<key>`. */
+function homeConfig(b: Body, field: (key: string) => string): HomeSectionConfig {
+  switch (b.kind) {
+    case 'hero':
+      return { kind: 'hero', bannerIds: idList(b, 'bannerIds', 0, CONTENT_LIMITS.heroBanners, field('bannerIds')) };
+    case 'banner_pair':
+      return {
+        kind: 'banner_pair',
+        bannerIds: idList(b, 'bannerIds', 0, CONTENT_LIMITS.pairBanners, field('bannerIds')),
+      };
+    case 'trust':
+    case 'rooms':
+      return { kind: b.kind };
+    case 'categories':
+      return {
+        kind: 'categories',
+        categoryIds: idList(
+          b,
+          'categoryIds',
+          CONTENT_LIMITS.categoryTilesMin,
+          CONTENT_LIMITS.categoryTilesMax,
+          field('categoryIds'),
+        ),
+      };
+    case 'products': {
+      const count = b.count;
+      if (!HOME_PRODUCT_COUNTS.includes(count as HomeProductCount)) throw invalid(field('count'));
+      return { kind: 'products', source: productSource(b.source, field('source')), count: count as HomeProductCount };
+    }
+    default:
+      throw invalid(field('kind'));
+  }
+}
+
+/**
+ * The whole home-page list (Phase 8 §4.6, §5): 1–20 sections in page order, each with an optional existing `id`
+ * (distinct), its kind and settings, an optional title and the visible switch. Whether the ids, banners, categories,
+ * rooms, products and promotions exist is checked by the service.
+ */
+export function parseHomeInput(raw: unknown): AdminHomeSectionInput[] {
+  const b = asBody(raw);
+  if (!Array.isArray(b.sections) || b.sections.length < 1 || b.sections.length > CONTENT_LIMITS.homeSections)
+    throw invalid('sections');
+  const seen = new Set<number>();
+  return (b.sections as unknown[]).map((rawSection, i): AdminHomeSectionInput => {
+    const section = asBody(rawSection);
+    const field = (key: string) => `sections.${i}.${key}`;
+    let id: number | undefined;
+    if (section.id !== undefined && section.id !== null) {
+      id = int(section, 'id', 1, MAX_ID, field('id'));
+      if (seen.has(id)) throw invalid(field('id'));
+      seen.add(id);
+    }
+    return {
+      ...homeConfig(section, field),
+      ...(id === undefined ? {} : { id }),
+      titleHe: optionalLine(section, 'titleHe', CONTENT_LIMITS.title, field('titleHe')),
+      visible: flag(section, 'visible', field('visible')),
+    };
+  });
 }

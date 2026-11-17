@@ -1512,3 +1512,32 @@ model Banner {
   @@index([mobileImageId])
   @@map("banners")
 }
+
+/// Kinds of home-page sections (Phase 8 §4.6, decision 98); their look is fixed in code.
+enum HomeSectionKind {
+  HERO        @map("hero")
+  TRUST       @map("trust")
+  ROOMS       @map("rooms")
+  CATEGORIES  @map("categories")
+  PRODUCTS    @map("products")
+  BANNER_PAIR @map("banner_pair")
+
+  @@map("home_section_kind")
+}
+
+/// One section of the managed home page (Phase 8 §4.6, NAV-05, decision 98), in `sortOrder`. The editor saves the whole
+/// list at once (`expectedUpdatedAt` = the newest `updatedAt`). `config` by kind (`HomeSectionConfig` in @hg/models):
+/// hero / banner_pair `{ bannerIds }`, categories `{ categoryIds }`, products `{ source, count }`, trust / rooms `{}`.
+/// Migration home_sections creates today's page: hero, trust, rooms, best sellers, new arrivals.
+model HomeSection {
+  id        Int             @id @default(autoincrement())
+  sortOrder Int             @map("sort_order")
+  kind      HomeSectionKind
+  titleHe   String?         @map("title_he")
+  visible   Boolean         @default(true)
+  config    Json            @default("{}")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  @@index([sortOrder])
+  @@map("home_sections")
+}

@@ -6,6 +6,7 @@ import type {
   ProductCard,
   ProductListQuery,
   ProductListResponse,
+  ProductSort,
   Swatch,
 } from '@hg/models';
 import type { CatalogSnapshot, SnapshotProduct, SnapshotVariant } from './catalog-snapshot.js';
@@ -233,6 +234,16 @@ function rangeOf(
 }
 
 // ---------- sorting ----------
+
+const NO_FILTERS: Filters = { productAttrs: new Map(), variantChecks: new Map(), selected: new Map() };
+
+/**
+ * Products in a listing order without filters or search (home rows, landing grids, category tiles): the same order
+ * `/api/products?sort=…` gives for them.
+ */
+export function sortUnfiltered(products: SnapshotProduct[], sort: ProductSort, now: Date): SnapshotProduct[] {
+  return sortProducts(products, { sort }, NO_FILTERS, { now });
+}
 
 function sortProducts(
   products: SnapshotProduct[],

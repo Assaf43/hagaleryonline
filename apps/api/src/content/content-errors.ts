@@ -20,5 +20,7 @@ export const systemPageField = (field: 'slug' | 'published') =>
 /** An upload that is not a usable photo: 400 `invalid` on `file`, the reason in `value` (as product photos). */
 export const invalidImage = (problem: ImageUploadProblem) =>
   new ContentError(HttpStatus.BAD_REQUEST, 'invalid', { field: 'file', value: problem });
-/** A banner a home section uses cannot be deleted (409, wired in Task 7); `sections` names the sections. */
+/** A banner a home section uses cannot be deleted (409); `sections` names the sections (`homeSectionName`). */
 export const bannerInUse = (sections: string[]) => new ContentError(HttpStatus.CONFLICT, 'banner_in_use', { sections });
+/** A product source naming a promotion that is not automatic, is on the whole order or is members-only (400). */
+export const invalidSource = (field: string) => new ContentError(HttpStatus.BAD_REQUEST, 'invalid_source', { field });
