@@ -90,16 +90,13 @@ import { RichText } from './rich-text';
 export class FaqPage {
   private readonly api = inject(ContentApi);
   private readonly tasks = inject(PendingTasks);
+  private readonly meta = inject(PageMeta);
 
   protected readonly faq = signal<FaqView | null>(null);
   protected readonly failed = signal(false);
 
   constructor() {
-    inject(PageMeta).set({
-      title: 'שאלות ותשובות',
-      description: 'תשובות לשאלות נפוצות על משלוחים, החזרות ועוד.',
-      path: '/faq',
-    });
+    this.setMeta();
     this.load();
   }
 
@@ -108,9 +105,19 @@ export class FaqPage {
       this.failed.set(false);
       try {
         this.faq.set(await this.api.faq());
+        this.setMeta();
       } catch {
         this.failed.set(true);
+        this.meta.serverError();
       }
+    });
+  }
+
+  private setMeta(): void {
+    this.meta.set({
+      title: 'שאלות ותשובות',
+      description: 'תשובות לשאלות נפוצות על משלוחים, החזרות ועוד.',
+      path: '/faq',
     });
   }
 }

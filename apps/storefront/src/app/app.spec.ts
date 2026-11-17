@@ -64,4 +64,33 @@ describe('App', () => {
     expect(link.querySelector('.count')?.textContent?.trim()).toBe('2');
     localStorage.clear();
   });
+
+  it('puts the skip link first, and shows the static strip only while no announcement is live', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush({
+      ...site,
+      announcement: { id: 1, version: 1, textHe: 'מבצע', linkUrl: null, linkLabelHe: null },
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const focusable = el.querySelectorAll<HTMLElement>('a[href], button');
+    expect(focusable[0].classList.contains('skip-link')).toBe(true);
+    expect(el.querySelector('.bar')).toBeTruthy();
+    expect(el.querySelector('.announce')).toBeNull();
+  });
+
+  it('shows the static strip when there is no announcement', async () => {
+    const fixture = TestBed.createComponent(App);
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/rooms').flush([]);
+    http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush(site);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.announce')).toBeTruthy();
+  });
 });

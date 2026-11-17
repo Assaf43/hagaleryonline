@@ -1,3 +1,4 @@
+import { SiteContentStore } from '../content/site-content.store';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
@@ -98,6 +99,34 @@ describe('OrderDetailPage (account)', () => {
   it('does not show that line when payment cannot be retried', async () => {
     await setup(orderView('paid'));
     expect(text()).not.toContain('להשלמת התשלום');
+  });
+
+  it('hides empty tel and mailto links while the site details are missing', async () => {
+    await setup(orderView('paid'));
+    const hint = el().querySelector('.hint')!;
+    expect(hint.textContent).toContain('לביטול ההזמנה פנו לשירות הלקוחות');
+    expect(hint.querySelector('a')).toBeNull();
+  });
+
+  it('shows the phone and e-mail links when the site details are there', async () => {
+    http = provideAccountTesting();
+    signedIn(TestBed.inject(CustomerStore));
+    TestBed.inject(SiteContentStore).site.set({
+      supportPhone: '03-1234567',
+      supportEmail: 'help@example.test',
+      whatsapp: '',
+      shippingHtml: '',
+      announcement: null,
+      footerPages: [],
+    });
+    fixture = TestBed.createComponent(OrderDetailPage);
+    fixture.componentRef.setInput('number', '100001');
+    fixture.detectChanges();
+    await tick();
+    http.expectOne(URL).flush(orderView('paid'));
+    await settle();
+    expect(el().querySelector('.hint a[href^="tel:"]')?.textContent).toBe('03-1234567');
+    expect(el().querySelector('.hint a[href^="mailto:"]')?.textContent).toBe('help@example.test');
   });
 
   it('cancels an unpaid order with the account endpoint after a confirmation', async () => {

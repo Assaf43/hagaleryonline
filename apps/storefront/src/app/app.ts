@@ -14,6 +14,7 @@ import { SiteContentStore } from './content/site-content.store';
   imports: [RouterOutlet, SiteHeader, SiteFooter, AnnouncementBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <a class="skip-link" href="#main">דילוג לתוכן</a>
     <hg-announcement-bar />
     <hg-site-header />
     <main id="main" tabindex="-1">
@@ -22,6 +23,20 @@ import { SiteContentStore } from './content/site-content.store';
     <hg-site-footer />
   `,
   styles: `
+    .skip-link {
+      position: absolute;
+      inset-inline-start: var(--space-3);
+      inset-block-start: -100px;
+      z-index: 50;
+      padding: var(--space-2) var(--space-4);
+      background: var(--color-surface);
+      border-radius: var(--radius-sm);
+
+      &:focus {
+        inset-block-start: var(--space-3);
+      }
+    }
+
     main {
       display: block;
       min-block-size: 60vh;

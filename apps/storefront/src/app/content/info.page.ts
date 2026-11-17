@@ -79,6 +79,7 @@ export class InfoPage {
   protected readonly notFound = signal(false);
   protected readonly failed = signal(false);
   protected readonly date = formatPageDate;
+  private generation = 0;
 
   constructor() {
     effect(() => {
@@ -88,12 +89,14 @@ export class InfoPage {
   }
 
   protected load(slug: string): void {
+    const generation = ++this.generation;
     void this.tasks.run(async () => {
       this.page.set(null);
       this.notFound.set(false);
       this.failed.set(false);
       try {
         const page = await this.api.page(slug);
+        if (generation !== this.generation) return;
         this.page.set(page);
         this.meta.set({
           title: page.titleHe,
@@ -102,6 +105,7 @@ export class InfoPage {
           noindex: page.noindex,
         });
       } catch (error) {
+        if (generation !== this.generation) return;
         if (error instanceof HttpErrorResponse && error.status === 404) {
           this.notFound.set(true);
           this.meta.notFound();

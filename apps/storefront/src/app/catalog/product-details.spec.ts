@@ -59,7 +59,7 @@ describe('ProductDetails', () => {
     ]);
 
   it('details renders four sections with the description open', async () => {
-    await setup(product(), variant(280));
+    await setup(product(), variant(280), '<p>משלוח</p>');
     const s = sections();
     expect(s.map((d) => d.querySelector('summary')?.textContent?.trim())).toEqual([
       'תיאור',
@@ -125,6 +125,18 @@ describe('ProductDetails', () => {
     await setup(product(), variant(280), '<p>משלוח חינם</p><p>עד הבית</p>');
     const ps = Array.from(sections()[3].querySelectorAll('p')).map((p) => p.textContent);
     expect(ps).toEqual(['משלוח חינם', 'עד הבית']);
+  });
+});
+
+describe('ProductDetails without shipping text', () => {
+  it('hides the shipping section when the site details are missing', async () => {
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    const fixture = TestBed.createComponent(ProductDetails);
+    fixture.componentRef.setInput('product', product());
+    fixture.componentRef.setInput('variant', variant(280));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('משלוח, הרכבה והחזרות');
   });
 });
 

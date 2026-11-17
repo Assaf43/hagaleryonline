@@ -48,4 +48,24 @@ describe('InfoPage', () => {
     expect(notFound).toHaveBeenCalled();
     expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('הדף לא נמצא');
   });
+
+  it('ignores a slow answer for the previous slug', async () => {
+    const { fixture, http } = open('a');
+    const first = http.expectOne('/api/content/pages/a');
+    fixture.componentRef.setInput('slug', 'b');
+    fixture.detectChanges();
+    const second = http.expectOne('/api/content/pages/b');
+    const page = (slug: string) => ({
+      slug,
+      titleHe: slug === 'a' ? 'ראשון' : 'שני',
+      bodyHtml: '<p>x</p>',
+      metaDescriptionHe: null,
+      noindex: false,
+      updatedAt: '2026-11-05T10:00:00.000Z',
+    });
+    second.flush(page('b'));
+    first.flush(page('a'));
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe('שני');
+  });
 });
