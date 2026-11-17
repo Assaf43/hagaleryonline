@@ -262,6 +262,23 @@ describe('CheckoutPage', () => {
     await render();
   });
 
+  it('a guest checkout keeps the contact on the device for the order page; a signed-in one does not', async () => {
+    sessionStorage.clear();
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+    await render();
+    expect(JSON.parse(sessionStorage.getItem('hg.join-contact') ?? 'null')).toEqual({
+      fullName: 'דנה כהן',
+      phone: '050-1234567',
+      email: 'dana@example.com',
+    });
+    sessionStorage.clear();
+  });
+
   it('says when shipping is not available', async () => {
     await setup();
     await pickLocality();

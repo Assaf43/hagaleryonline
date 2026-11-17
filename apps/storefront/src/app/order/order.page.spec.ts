@@ -1,11 +1,20 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
-import { ORDER_STATUS_LABELS_HE, PROMOTION_ENDED_MESSAGE_HE, type OrderStatus, type OrderView } from '@hg/models';
+import { Router, provideRouter } from '@angular/router';
+import {
+  ORDER_STATUS_LABELS_HE,
+  PROMOTION_ENDED_MESSAGE_HE,
+  type CustomerMe,
+  type OrderStatus,
+  type OrderView,
+} from '@hg/models';
 import { PageMeta } from '../core/page-meta';
 import { ExternalNavigation } from '../checkout/checkout.api';
 import { OrderPage } from './order.page';
+import { SignUpDraft } from '../account/sign-up-draft';
+import { JoinContact } from '../account/join-contact';
+import { customerMe } from '../account/account.testing';
 
 function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
   return {
@@ -102,6 +111,8 @@ describe('OrderPage', () => {
   afterEach(() => {
     // A paid order refreshes the cart; tests that do not check that load drain it here.
     http.match('/api/cart');
+    // A purchased order also reads the session for the join box; those tests answer it themselves.
+    http.match('/api/account/me');
     http.verify();
     vi.useRealTimers();
   });
@@ -545,6 +556,72 @@ describe('OrderPage', () => {
     it('has no documents section before any document is issued', async () => {
       await setup(order('paid'));
       expect(el().querySelector('section.documents')).toBeNull();
+    });
+  });
+
+  describe('join box at the end of a purchase', () => {
+    const box = () => el().querySelector('.join-box');
+    /** Answers the session read and the welcome offer that follow a purchased order. */
+    async function answer(me: CustomerMe | null, welcome: { labelHe: string } | null = { labelHe: 'הנחה של 10%' }) {
+      http.expectOne('/api/account/me').flush(me);
+      await render();
+      if (me === null) {
+        http.expectOne('/api/promotions/welcome').flush(welcome);
+        await render();
+      }
+      http.match('/api/cart');
+    }
+
+    it('invites a guest with the welcome offer, and the link carries the contact through the draft only', async () => {
+      sessionStorage.clear();
+      await setup(order('paid'));
+      TestBed.inject(JoinContact).save({ fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' });
+      const go = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      await answer(null);
+      expect(box()?.textContent).toContain('הנחה של 10%');
+      const link = box()!.querySelector<HTMLAnchorElement>('a.join-link')!;
+      expect(link.getAttribute('href')).toBe('/account/sign-up');
+      expect(link.getAttribute('href')).not.toContain('100001');
+      link.click();
+      expect(TestBed.inject(SignUpDraft).current()).toEqual({
+        fullName: 'דנה כהן',
+        phone: '0501234567',
+        email: 'dana@example.com',
+        signUpToken: null,
+        verified: { phone: null, email: null },
+      });
+      expect(go).toHaveBeenCalledWith('/account/sign-up');
+      expect(TestBed.inject(JoinContact).read()).toBeNull();
+    });
+
+    it('shows nothing when no welcome offer is active', async () => {
+      await setup(order('paid'));
+      await answer(null, null);
+      expect(box()).toBeNull();
+    });
+
+    it('shows nothing to a signed-in customer (and asks for no offer)', async () => {
+      await setup(order('paid'));
+      await answer(customerMe());
+      expect(box()).toBeNull();
+      http.expectNone('/api/promotions/welcome');
+    });
+
+    it('shows nothing until the session is known', async () => {
+      await setup(order('paid'));
+      expect(box()).toBeNull();
+      http.expectOne('/api/account/me').flush(null);
+      await render();
+      http.expectOne('/api/promotions/welcome').flush({ labelHe: 'הנחה' });
+      await render();
+      expect(box()).not.toBeNull();
+      http.match('/api/cart');
+    });
+
+    it('does not read the session for an unpaid order', async () => {
+      await setup(order('pending_payment'));
+      http.expectNone('/api/account/me');
+      expect(box()).toBeNull();
     });
   });
 });

@@ -10,7 +10,7 @@ export interface PersonalCodeMessageData {
   labelHe: string;
   /** Display date of the expiry in Israel, e.g. 17.12.2026. */
   expiresOn: string;
-  /** Absolute link to the sign-in / account page (/account). */
+  /** Absolute link to the sign-in / account page (/account/benefits). */
   link: string;
 }
 

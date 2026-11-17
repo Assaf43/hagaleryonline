@@ -181,7 +181,7 @@ describe('personal-code messages (decisions 93–94, 96)', () => {
     code: 'NST-AB23CD45',
     labelHe: '10% <i>הנחה</i>',
     expiresOn: '17.12.2026',
-    link: 'https://shop.test/account',
+    link: 'https://shop.test/account/benefits',
   };
 
   it('welcome_code e-mail: the code isolated in <bdi>, the label escaped, expiry, sign-in link, never the store', () => {
@@ -191,11 +191,11 @@ describe('personal-code messages (decisions 93–94, 96)', () => {
     expect(m.html).toContain('<strong><bdi>NST-AB23CD45</bdi></strong>');
     expect(m.html).toContain('10% &lt;i&gt;הנחה&lt;/i&gt;');
     expect(m.html).not.toContain('<b>לוי</b>');
-    expect(m.html).toContain('href="https://shop.test/account"');
+    expect(m.html).toContain('href="https://shop.test/account/benefits"');
     expect(m.text).toContain('הקוד שלך: NST-AB23CD45');
     expect(m.text).toContain('לרכישה הראשונה');
     expect(m.text).toContain('בתוקף עד 17.12.2026 לרכישה אחת');
-    expect(m.text).toContain('כניסה לחשבון: https://shop.test/account');
+    expect(m.text).toContain('כניסה לחשבון: https://shop.test/account/benefits');
     for (const part of [m.subject, m.html, m.text]) expect(part).not.toMatch(/חנות|מוכר|סניף/);
   });
 
@@ -209,10 +209,10 @@ describe('personal-code messages (decisions 93–94, 96)', () => {
 
   it('welcome_code and personal_code SMS: brand, label, code, expiry and link', () => {
     expect(renderSms('welcome_code', data)).toBe(
-      'NESTO: ברוכים הבאים למועדון! קוד ההטבה שלך לרכישה הראשונה (10% <i>הנחה</i>): NST-AB23CD45, בתוקף עד 17.12.2026. הזינו אותו בסל כשאתם מחוברים לחשבון: https://shop.test/account',
+      'NESTO: ברוכים הבאים למועדון! קוד ההטבה שלך לרכישה הראשונה (10% <i>הנחה</i>): NST-AB23CD45, בתוקף עד 17.12.2026. הזינו אותו בסל כשאתם מחוברים לחשבון: https://shop.test/account/benefits',
     );
     expect(renderSms('personal_code', data)).toBe(
-      'NESTO: קוד הטבה אישי עבורך (10% <i>הנחה</i>): NST-AB23CD45, בתוקף עד 17.12.2026. הזינו אותו בסל כשאתם מחוברים לחשבון: https://shop.test/account',
+      'NESTO: קוד הטבה אישי עבורך (10% <i>הנחה</i>): NST-AB23CD45, בתוקף עד 17.12.2026. הזינו אותו בסל כשאתם מחוברים לחשבון: https://shop.test/account/benefits',
     );
   });
 });

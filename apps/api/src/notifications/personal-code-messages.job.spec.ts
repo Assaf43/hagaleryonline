@@ -35,6 +35,12 @@ describe('PersonalCodeMessagesJob (decisions 93–94)', () => {
     expect(sms).toHaveBeenCalledTimes(1);
   });
 
+  it('links to the benefits page (the code is listed there)', async () => {
+    const { job, sms } = setup(code());
+    await job.send({ personalCodeId: 1 }, 'sms', 'welcome_code');
+    expect(sms.mock.calls[0][2]).toMatchObject({ link: 'https://shop.test/account/benefits' });
+  });
+
   it('skips a code that is gone, used, void or expired (also by its template end)', async () => {
     for (const row of [
       null,

@@ -94,7 +94,10 @@ export class SignUpPage {
     });
     const d = this.draft;
     if (d) {
-      this.token = d.signUpToken;
+      this.token = d.signUpToken ?? undefined;
+      if (d.fullName) this.name.set(d.fullName);
+      if (!d.verified.phone && d.phone) this.phone.set(d.phone);
+      if (!d.verified.email && d.email) this.email.set(d.email);
       if (d.verified.phone) {
         this.phone.set(d.verified.phone);
         this.lockedPhone.set(true);

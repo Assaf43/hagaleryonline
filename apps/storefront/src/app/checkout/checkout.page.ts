@@ -27,6 +27,7 @@ import {
   type ShippingQuote,
 } from '@hg/models';
 import { CustomerStore } from '../account/customer.store';
+import { JoinContact } from '../account/join-contact';
 import { CartStore } from '../core/cart.store';
 import { deliveryEstimateText, formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
@@ -113,6 +114,7 @@ type Shopper = 'unknown' | 'guest' | 'customer';
 export class CheckoutPage {
   protected readonly cart = inject(CartStore);
   private readonly customer = inject(CustomerStore);
+  private readonly joinContact = inject(JoinContact);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly api = inject(CheckoutApi);
   private readonly router = inject(Router);
@@ -415,6 +417,9 @@ export class CheckoutPage {
     try {
       // The total on screen goes along: if it is no longer the price, the server refuses (price_changed).
       const { redirectUrl } = await this.api.checkout(toCheckoutRequest(form, this.total()));
+      // A guest's contact waits on the device for the order page's join offer (CLB-01); never sent anywhere.
+      if (this.shopper() === 'guest')
+        this.joinContact.save({ fullName: form.fullName.trim(), phone: form.phone, email: form.email.trim() });
       // The page is leaving: the button stays disabled.
       this.external.assign(redirectUrl);
     } catch (error) {

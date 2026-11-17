@@ -14,15 +14,21 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ORDER_STATUS_TITLES, OrderDetail } from './order-detail';
 import type { OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
+import { CustomerStore } from '../account/customer.store';
+import { JoinContact } from '../account/join-contact';
+import { SignUpDraft } from '../account/sign-up-draft';
 import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
 import { SUPPORT_CONTACT } from '../core/support-contact';
 import { CheckoutApi, ExternalNavigation, apiErrorCode, checkoutErrorMessage } from '../checkout/checkout.api';
 import { returnOpen } from './return-window';
+
+/** Statuses of an order the customer has paid (a join offer fits the end of a purchase, not a payment problem). */
+const PURCHASED = new Set(['paid', 'processing', 'delivery_scheduled', 'shipped', 'delivered']);
 
 const POLL_MS = 3000;
 /** A pending order is polled for at most this long; then the customer can check again by hand. */
@@ -51,6 +57,10 @@ export class OrderPage {
   private readonly external = inject(ExternalNavigation);
   private readonly meta = inject(PageMeta);
   private readonly browser = isPlatformBrowser(inject(PLATFORM_ID));
+  private readonly customer = inject(CustomerStore);
+  private readonly joinContact = inject(JoinContact);
+  private readonly draft = inject(SignUpDraft);
+  private readonly router = inject(Router);
 
   protected readonly order = signal<OrderView | null>(null);
   /** "החזרה או החלפה" only until the return deadline; the damaged-product link stays. */
@@ -90,6 +100,14 @@ export class OrderPage {
     return s === 'payment_failed' || s === 'expired';
   });
   protected readonly price = formatPrice;
+
+  /** The active welcome offer's label, read only for a guest after a paid order; null hides the join box. */
+  private readonly welcomeLabel = signal<string | null>(null);
+  private joinChecked = false;
+  /** The invitation: a guest (the session was read and nobody is signed in) and an active welcome offer. */
+  protected readonly joinOffer = computed(() =>
+    this.customer.ready() && !this.customer.me() ? this.welcomeLabel() : null,
+  );
 
   /** The document opens through the API with the order token, like the page itself (spec §5.4). */
   protected readonly documentUrl = (id: string): string => {
@@ -148,11 +166,40 @@ export class OrderPage {
     if (generation !== this.generation) return;
     this.order.set(view);
     this.state.set('ready');
+    if (PURCHASED.has(view.status)) void this.checkJoin();
     if (view.status === 'pending_payment') this.schedule(number, token, generation);
     if (view.status === 'paid' && !this.cartRefreshed) {
       this.cartRefreshed = true;
       void this.cart.load();
     }
+  }
+
+  /** Once per page: the session, then (for a guest) the welcome offer. Nothing is linked to this order (decision 77). */
+  private async checkJoin(): Promise<void> {
+    if (this.joinChecked) return;
+    this.joinChecked = true;
+    await this.customer.load();
+    if (this.customer.me()) return;
+    try {
+      this.welcomeLabel.set((await this.api.welcome())?.labelHe ?? null);
+    } catch {
+      // No offer: no box.
+    }
+  }
+
+  /** "הצטרפות": hands the checkout contact to the sign-up page in memory (never in the URL) and goes there. */
+  protected join(event: Event): void {
+    event.preventDefault();
+    const c = this.joinContact.read();
+    this.draft.set({
+      fullName: c?.fullName,
+      phone: c?.phone ?? null,
+      email: c?.email ?? null,
+      signUpToken: null,
+      verified: { phone: null, email: null },
+    });
+    this.joinContact.clear();
+    void this.router.navigateByUrl('/account/sign-up');
   }
 
   private schedule(number: string, token: string, generation: number): void {

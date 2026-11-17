@@ -66,7 +66,7 @@ export class PersonalCodeMessagesJob implements OnModuleInit {
       code: row.code,
       labelHe: promotion.name,
       expiresOn: displayDate(expiresAt),
-      link: `${this.notifications.siteUrl()}/account`,
+      link: `${this.notifications.siteUrl()}/account/benefits`,
     };
     if (channel === 'sms') {
       await this.notifications.sms(template, customer.phone, data);

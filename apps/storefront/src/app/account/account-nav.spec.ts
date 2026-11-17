@@ -48,4 +48,13 @@ describe('AccountNav', () => {
     expect(navigateByUrl).not.toHaveBeenCalled();
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('לא הצלחנו להתנתק');
   });
+
+  it('links to "ההטבות שלי"', () => {
+    provideAccountTesting();
+    signedIn(TestBed.inject(CustomerStore));
+    fixture = TestBed.createComponent(AccountNav);
+    fixture.detectChanges();
+    const link = Array.from(el().querySelectorAll('a')).find((a) => a.textContent?.includes('ההטבות שלי'));
+    expect(link?.getAttribute('href')).toBe('/account/benefits');
+  });
 });

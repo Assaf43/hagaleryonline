@@ -11,6 +11,7 @@ import { CustomerStore } from './customer.store';
     @if (store.me()) {
       <nav class="account-nav" aria-label="החשבון שלי">
         <a routerLink="/account/orders" routerLinkActive="active" ariaCurrentWhenActive="page">ההזמנות שלי</a>
+        <a routerLink="/account/benefits" routerLinkActive="active" ariaCurrentWhenActive="page">ההטבות שלי</a>
         <a routerLink="/account/details" routerLinkActive="active" ariaCurrentWhenActive="page">פרטים אישיים</a>
         <a routerLink="/account/addresses" routerLinkActive="active" ariaCurrentWhenActive="page">כתובות</a>
         <a routerLink="/account/consent" routerLinkActive="active" ariaCurrentWhenActive="page">דיוור ועדכונים</a>

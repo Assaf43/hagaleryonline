@@ -47,6 +47,11 @@ export const routes: Routes = [
     loadComponent: () => import('./account/order-detail.page').then((m) => m.OrderDetailPage),
   },
   {
+    path: 'account/benefits',
+    canActivate: [accountGuard],
+    loadComponent: () => import('./account/benefits.page').then((m) => m.BenefitsPage),
+  },
+  {
     path: 'account/details',
     canActivate: [accountGuard],
     loadComponent: () => import('./account/details.page').then((m) => m.DetailsPage),
