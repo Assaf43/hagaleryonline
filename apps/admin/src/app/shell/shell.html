@@ -91,6 +91,12 @@
           מכירה בחנות
         </a>
       }
+      @if (can('customers.view')) {
+        <a class="nav-link" routerLink="/customers" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideUsersRound></svg>
+          לקוחות
+        </a>
+      }
       @if (can('support.manage')) {
         <a class="nav-link" routerLink="/support" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideInbox></svg>

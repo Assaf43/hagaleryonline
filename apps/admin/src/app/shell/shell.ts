@@ -30,6 +30,7 @@ import {
   LucideTruck,
   LucideUserRound,
   LucideUsers,
+  LucideUsersRound,
 } from '@lucide/angular';
 import { BRAND } from '@hg/models';
 import type { Permission } from '@hg/models';
@@ -73,6 +74,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
     LucideTruck,
     LucideUserRound,
     LucideUsers,
+    LucideUsersRound,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shell.html',

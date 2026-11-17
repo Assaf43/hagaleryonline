@@ -1,0 +1,196 @@
+<a class="back" routerLink="/customers">› לכל הלקוחות</a>
+
+<div [attr.aria-busy]="loading()">
+  @if (loading() && !profile()) {
+    <p class="muted" role="status">טוען את הלקוח…</p>
+  }
+</div>
+
+@if (error()) {
+  <div class="form-error" role="alert">
+    <p>{{ error() }}</p>
+    <button matButton="outlined" type="button" (click)="retry()">נסו שוב</button>
+  </div>
+}
+
+@if (profile(); as p) {
+  <header class="head">
+    <h1>{{ p.fullName }}</h1>
+    <span class="origin">{{ originLabels[p.createdVia] }}</span>
+  </header>
+
+  <div class="grid">
+    <section class="panel details" aria-labelledby="details-title">
+      <h2 id="details-title">פרטים</h2>
+      <dl>
+        <dt>טלפון</dt>
+        <dd>
+          <bdi dir="ltr">{{ p.phone }}</bdi>
+          <span class="state phone-state" [attr.data-verified]="p.phoneVerified">{{
+            p.phoneVerified ? 'מאומת' : 'לא מאומת'
+          }}</span>
+        </dd>
+        <dt>מייל</dt>
+        <dd>
+          @if (p.email) {
+            <bdi dir="ltr">{{ p.email }}</bdi>
+            <span class="state email-state" [attr.data-verified]="p.emailVerified">{{
+              p.emailVerified ? 'מאומת' : 'לא מאומת'
+            }}</span>
+          } @else {
+            <span class="muted">אין</span>
+          }
+        </dd>
+        <dt>נוצר</dt>
+        <dd>
+          <bdi>{{ dateTime(p.createdAt) }}</bdi>
+        </dd>
+        <dt>ערוץ פתיחה</dt>
+        <dd>
+          {{ originLabels[p.createdVia] }}
+          @if (p.createdBySeller; as seller) {
+            <span class="muted">נפתח על ידי {{ seller.name }}</span>
+          }
+        </dd>
+      </dl>
+    </section>
+
+    <section class="panel orders" aria-labelledby="orders-title">
+      <h2 id="orders-title">הזמנות</h2>
+      @if (p.orders.length) {
+        <ul class="rows">
+          @for (o of p.orders; track o.number) {
+            <li>
+              @if (canSeeOrders()) {
+                <a [routerLink]="['/orders', o.number]"
+                  >הזמנה <bdi>{{ o.number }}</bdi></a
+                >
+              } @else {
+                <span
+                  >הזמנה <bdi>{{ o.number }}</bdi></span
+                >
+              }
+              <span class="muted"
+                ><bdi>{{ dateTime(o.createdAt) }}</bdi></span
+              >
+              <span class="chip" [attr.data-status]="o.status">{{ orderStatusLabels[o.status] }}</span>
+              <span class="muted">{{ channelLabels[o.channel] }}</span>
+              <span class="amount">{{ formatPrice(o.total) }}</span>
+            </li>
+          }
+        </ul>
+        @if (p.orderCount > p.orders.length) {
+          <p class="muted orders-note">
+            מוצגות <bdi>{{ p.orders.length }}</bdi> ההזמנות האחרונות מתוך <bdi>{{ p.orderCount }}</bdi
+            >.
+          </p>
+        }
+      } @else {
+        <p class="muted">אין הזמנות בחשבון הזה.</p>
+      }
+      <p class="muted">הזמנות כאורח לא מופיעות כאן, גם כשהטלפון או המייל זהים.</p>
+    </section>
+
+    <section class="panel favorites" aria-labelledby="favorites-title">
+      <h2 id="favorites-title">מועדפים</h2>
+      @if (p.favorites.length) {
+        <ul class="rows">
+          @for (f of p.favorites; track f.productId) {
+            <li>
+              <strong
+                ><bdi dir="ltr">{{ f.modelName }}</bdi></strong
+              >
+              <span>{{ f.nameHe }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">אין מוצרים מועדפים.</p>
+      }
+    </section>
+
+    <section class="panel interests" aria-labelledby="interests-title">
+      <h2 id="interests-title">תחומי עניין</h2>
+      @if (p.interests.length) {
+        <ul class="chips">
+          @for (i of p.interests; track i.slug) {
+            <li class="chip">{{ i.nameHe }}</li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">אין עדיין: תחומי העניין נלמדים ממועדפים ומהזמנות ששולמו.</p>
+      }
+    </section>
+
+    <section class="panel consent" aria-labelledby="consent-title">
+      <h2 id="consent-title">הסכמה לדיוור</h2>
+      <p class="consent-state" [attr.data-status]="p.consent.contact?.status ?? 'none'">
+        {{ p.consent.contact ? marketingLabels[p.consent.contact.status] : 'אין הסכמה רשומה' }}
+      </p>
+      @if (p.consent.contact; as c) {
+        <p class="muted">
+          מקור: {{ sourceLabels[c.source] }}
+          @if (c.consentAt) {
+            · אושר <bdi>{{ dateTime(c.consentAt) }}</bdi>
+          }
+          @if (c.unsubscribedAt) {
+            · בוטל <bdi>{{ dateTime(c.unsubscribedAt) }}</bdi>
+          }
+        </p>
+      }
+      @if (p.consent.history.length) {
+        <h3>היסטוריה</h3>
+        <ul class="rows history">
+          @for (e of p.consent.history; track $index) {
+            <li>
+              <strong>{{ actionLabels[e.action] }}</strong>
+              @if (e.source) {
+                <span>{{ sourceLabels[e.source] }}</span>
+              }
+              <span class="muted">{{ actorLabels[e.actor] }}</span>
+              <span class="muted"
+                ><bdi>{{ dateTime(e.at) }}</bdi></span
+              >
+              @if (e.textVersion) {
+                <span class="muted"
+                  >נוסח <bdi dir="ltr">{{ e.textVersion }}</bdi></span
+                >
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <section class="panel codes" aria-labelledby="codes-title">
+      <div class="panel-head">
+        <h2 id="codes-title">קודים אישיים</h2>
+        @if (canIssue()) {
+          <button matButton="outlined" type="button" class="issue-code" (click)="issue(p)">הנפקת קופון אישי</button>
+        }
+      </div>
+      @if (p.codes.length) {
+        <ul class="rows">
+          @for (c of p.codes; track c.code) {
+            <li>
+              <bdi dir="ltr" class="code">{{ c.code }}</bdi>
+              <span>{{ c.labelHe }}</span>
+              <span class="muted"
+                >{{ discountText(c.discountKind, c.discountValue) }}
+                @if (minimumText(c.minSubtotal); as min) {
+                  · {{ min }}
+                }
+              </span>
+              <span class="muted"
+                >עד <bdi>{{ day(c.expiresAt) }}</bdi></span
+              >
+              <span class="chip code-status" [attr.data-status]="c.status">{{ codeStatusLabels[c.status] }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">אין קודים אישיים.</p>
+      }
+    </section>
+  </div>
+}

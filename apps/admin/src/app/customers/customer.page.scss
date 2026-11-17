@@ -1,0 +1,185 @@
+:host {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+}
+
+.back {
+  color: var(--color-text-secondary);
+  justify-self: start;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+h2 {
+  font-size: var(--font-h3);
+}
+
+h3 {
+  font-size: var(--font-body);
+}
+
+.muted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.origin,
+.chip,
+.state {
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-alt);
+}
+
+.state {
+  margin-inline-start: var(--space-2);
+}
+
+.state[data-verified='true'],
+.chip[data-status='paid'],
+.chip[data-status='delivered'],
+.chip[data-status='active'] {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.state[data-verified='false'],
+.chip[data-status='pending_payment'] {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.chip[data-status='payment_failed'],
+.chip[data-status='cancelled'] {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+// Two columns from tablet width; one on a phone.
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.panel {
+  min-inline-size: 0;
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+}
+
+dt {
+  color: var(--color-text-secondary);
+}
+
+dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.rows,
+.chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.rows li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding-block-end: var(--space-2);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.rows li:last-child {
+  border-block-end: none;
+}
+
+.amount {
+  margin-inline-start: auto;
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.code {
+  font-weight: 700;
+}
+
+.consent-state {
+  font-weight: 700;
+}
+
+.consent-state[data-status='subscribed'] {
+  color: var(--color-success);
+}
+
+.consent-state[data-status='unsubscribed'] {
+  color: var(--color-danger);
+}
+
+.consent-state[data-status='pending'] {
+  color: var(--color-warning);
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
+@media (width >= 1024px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .orders,
+  .consent,
+  .codes {
+    grid-column: 1 / -1;
+  }
+}

@@ -104,6 +104,7 @@ describe('promotion form', () => {
       startsAt: '2026-11-30T22:00:00.000Z',
       endsAt: '2026-12-31T21:59:59.999Z',
       usageLimit: 100,
+      validityDays: null,
       active: true,
       isWelcome: false,
       membersOnly: false,
@@ -125,15 +126,34 @@ describe('promotion form', () => {
     });
   });
 
-  it('the welcome benefit: read from the promotion, sent only for an automatic one (decision 79)', () => {
+  it('the welcome mark: read from the promotion, sent only for a personal-code template (decision 93)', () => {
     expect(emptyForm().isWelcome).toBe(false);
-    expect(toForm({ ...COUPON, kind: 'automatic', code: null, isWelcome: true }).isWelcome).toBe(true);
-    expect(promotionInput(valid({ kind: 'automatic', isWelcome: true })).input).toMatchObject({
-      kind: 'automatic',
+    const template = { ...COUPON, kind: 'personal_template' as const, code: null, validityDays: 30, isWelcome: true };
+    expect(toForm(template).isWelcome).toBe(true);
+    expect(promotionInput(valid({ kind: 'personal_template', isWelcome: true })).input).toMatchObject({
+      kind: 'personal_template',
       isWelcome: true,
     });
-    // A coupon is never a welcome benefit, whatever the hidden box says.
+    // Any other kind is never the welcome one, whatever the hidden box says.
     expect(promotionInput(valid({ kind: 'coupon', isWelcome: true })).input?.isWelcome).toBe(false);
+    expect(promotionInput(valid({ kind: 'automatic', isWelcome: true })).input?.isWelcome).toBe(false);
+  });
+
+  it('a personal-code template: validity days 1-365 required and sent, no code, no usage limit', () => {
+    expect(emptyForm().validityDays).toBe('30');
+    expect(toForm({ ...COUPON, kind: 'personal_template', code: null, validityDays: 14 }).validityDays).toBe('14');
+    const { input } = promotionInput(
+      valid({ kind: 'personal_template', code: 'IGNORED', usageLimit: '5', validityDays: '14' }),
+    );
+    expect(input).toMatchObject({ kind: 'personal_template', code: null, usageLimit: null, validityDays: 14 });
+    // Other kinds never send days.
+    expect(promotionInput(valid({ kind: 'automatic', validityDays: '14' })).input?.validityDays).toBeNull();
+    for (const bad of ['', '0', '366', '1.5', 'x'])
+      expect(promotionInput(valid({ kind: 'personal_template', validityDays: bad })).errors.validityDays).toBe(
+        'מספר שלם בין 1 ל-365',
+      );
+    expect(promotionInput(valid({ kind: 'personal_template', validityDays: '365' })).errors).toEqual({});
+    expect(serverFieldOf('validityDays')).toBe('validityDays');
   });
 
   it('the club switches: read from the promotion, sent for either kind', () => {
