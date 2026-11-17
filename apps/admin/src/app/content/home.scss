@@ -1,0 +1,155 @@
+:host {
+  min-inline-size: 0;
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+h3 {
+  margin: 0;
+  font-size: var(--font-body);
+}
+
+.muted {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}
+
+.mark,
+.mark-note {
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-small);
+}
+
+.mark-note {
+  margin: 0;
+}
+
+// Pickers inside the section dialog.
+.list-field {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.dialog-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.picked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.pick .text {
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.pick .actions {
+  display: flex;
+  margin-inline-start: auto;
+}
+
+// The section list of the home page.
+.sections {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.hidden-section {
+  background: var(--color-surface-alt);
+}
+
+.hidden-section .name {
+  color: var(--color-text-secondary);
+}
+
+.section-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.num {
+  flex: none;
+  inline-size: var(--icon-size-ui);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.section-text {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-inline-size: 0;
+}
+
+.kind,
+.meta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+  overflow-wrap: anywhere;
+}
+
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (width >= 768px) {
+  .section {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
+
+.add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}

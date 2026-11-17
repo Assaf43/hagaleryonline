@@ -1,11 +1,16 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { HttpClient, type HttpEvent } from '@angular/common/http';
+import { firstValueFrom, type Observable } from 'rxjs';
 import type {
   AdminAnnouncement,
   AdminAnnouncementInput,
+  AdminBanner,
+  AdminBannerInput,
+  AdminContentImage,
   AdminFaqGroup,
   AdminFaqGroupInput,
+  AdminHome,
+  AdminHomeInput,
   AdminInfoPage,
   AdminInfoPageInput,
   AdminSiteContent,
@@ -72,5 +77,35 @@ export class ContentApi {
   }
   deleteFaqGroup(id: number) {
     return firstValueFrom(this.http.delete<void>(`${BASE}/faq/${id}`));
+  }
+
+  banners() {
+    return firstValueFrom(this.http.get<AdminBanner[]>(`${BASE}/banners`));
+  }
+  banner(id: number) {
+    return firstValueFrom(this.http.get<AdminBanner>(`${BASE}/banners/${id}`));
+  }
+  createBanner(input: AdminBannerInput) {
+    return firstValueFrom(this.http.post<AdminBanner>(`${BASE}/banners`, input));
+  }
+  updateBanner(id: number, input: AdminBannerInput) {
+    return firstValueFrom(this.http.put<AdminBanner>(`${BASE}/banners/${id}`, input));
+  }
+  deleteBanner(id: number) {
+    return firstValueFrom(this.http.delete<void>(`${BASE}/banners/${id}`));
+  }
+
+  /** Upload progress events, then the stored content photo (multipart field `file`). */
+  uploadImage(file: File): Observable<HttpEvent<AdminContentImage>> {
+    const body = new FormData();
+    body.append('file', file);
+    return this.http.post<AdminContentImage>(`${BASE}/images`, body, { reportProgress: true, observe: 'events' });
+  }
+
+  home() {
+    return firstValueFrom(this.http.get<AdminHome>(`${BASE}/home`));
+  }
+  saveHome(input: AdminHomeInput) {
+    return firstValueFrom(this.http.put<AdminHome>(`${BASE}/home`, input));
   }
 }
