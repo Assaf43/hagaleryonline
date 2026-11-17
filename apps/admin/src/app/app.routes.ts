@@ -100,6 +100,18 @@ export const routes: Routes = [
         title: 'מכירה בחנות',
       },
       {
+        path: 'customers',
+        canMatch: [hasPermission('customers.view')],
+        loadComponent: () => import('./customers/customers.page').then((m) => m.CustomersPage),
+        title: 'לקוחות',
+      },
+      {
+        path: 'customers/:id',
+        canMatch: [hasPermission('customers.view')],
+        loadComponent: () => import('./customers/customer.page').then((m) => m.CustomerPage),
+        title: 'לקוח',
+      },
+      {
         path: 'support',
         canMatch: [hasPermission('support.manage')],
         loadComponent: () => import('./support/inbox.page').then((m) => m.InboxPage),

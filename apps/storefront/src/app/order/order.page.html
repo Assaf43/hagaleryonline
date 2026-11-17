@@ -79,6 +79,17 @@
           </p>
         }
 
+        @if (joinOffer(); as offer) {
+          <aside class="join-box" aria-labelledby="join-title">
+            <h2 id="join-title">הצטרפו למועדון</h2>
+            <p>
+              פתחו חשבון וקבלו קוד הנחה אישי לרכישה הראשונה: <bdi>{{ offer }}</bdi
+              >. ההזמנה הזאת לא תחובר לחשבון.
+            </p>
+            <a class="btn btn-secondary join-link" href="/account/sign-up" (click)="join($event)">להצטרפות למועדון</a>
+          </aside>
+        }
+
         <hg-order-detail [order]="o" [documentUrl]="documentUrl" />
 
         <dialog #cancelDialog class="cancel-dialog" aria-labelledby="cancel-title" (close)="cancelling.set(false)">

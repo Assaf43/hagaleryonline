@@ -71,7 +71,14 @@ export class CouponRefused extends HttpException {
 }
 
 /** Coupon problems that will not go away by changing the cart: the code is removed from the cart (shown once). */
-const DROP_COUPON: ReadonlySet<CouponProblem> = new Set(['unknown', 'not_started', 'expired', 'exhausted']);
+const DROP_COUPON: ReadonlySet<CouponProblem> = new Set([
+  'unknown',
+  'not_started',
+  'expired',
+  'exhausted',
+  // A welcome code once the account has a paid order: it never works again (decision 93).
+  'first_order_only',
+]);
 
 const notFound = () => new CartError(HttpStatus.NOT_FOUND, 'not_found');
 const unavailable = () => new CartError(HttpStatus.CONFLICT, 'unavailable');
@@ -95,7 +102,7 @@ function emptyView(): CartView {
  * Server-side cart (spec §3.1, decision 68, CRT-02, CRT-04). Shown data and visibility come from the catalog
  * snapshot; price and stock are read fresh from the database on every request, so totals are always the server's.
  * A signed-in customer has one cart, found by the account (spec §6.4): every browser of the account sees and changes
- * the same cart, and the view offers the welcome benefit to an account without a paid order (decision 79). A guest's
+ * the same cart, and the view checks personal codes against the account (spec §5.2, decision 93). A guest's
  * cart is found by the `hg_cart` cookie.
  */
 @Injectable()
@@ -226,18 +233,22 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
             .map((l) => pricingLine(l, l.quantity)),
         )
       : [];
-    const buyer = cart ? await this.buyer(cart.id, owner) : { customerId: null, isMember: false };
-    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon against it; a members-only
-    // coupon also counts the account's own uses (once per account, decision 94).
-    const found = await this.promotions.coupon(
-      this.prisma,
-      code,
-      { cartId: cart?.id },
-      buyer.isMember ? buyer.customerId : null,
-    );
-    const message = couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date(), {
+    // No cart yet: a signed-in customer is still a member (a personal code is then "not applicable", never "sign in").
+    const buyer = cart
+      ? await this.buyer(cart.id, owner)
+      : { customerId: owner.store ? null : owner.customerId, isMember: !owner.store && owner.customerId !== null };
+    // Uses as checkout counts them: this cart's own pending orders do not hold the coupon (or personal code) against
+    // it; a members-only coupon also counts the account's own uses (once per account, decision 94). A personal code is
+    // checked against the cart's account (owner, use, expiry, first order — spec §5.2) before the engine's rules.
+    const customer = await this.promotions.welcomeCustomer(this.prisma, buyer.customerId);
+    const { coupon: found, problem } = await this.promotions.candidate(this.prisma, code, {
+      cartId: cart?.id,
+      customer,
       isMember: buyer.isMember,
     });
+    const message = problem
+      ? couponProblemMessageHe(problem, null)
+      : couponError(found, found ? eligibleSubtotal(found, lines) : 0, new Date(), { isMember: buyer.isMember });
     if (message) throw new CouponRefused(message);
     // A valid coupon has eligible lines, so there is a cart.
     await this.prisma.cart.update({ where: { id: cart!.id }, data: { couponCode: code } });
@@ -262,8 +273,10 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
    * a guest cart (`resolve` does not return it), so it is never merged.
    * Locks: the account's cart lock, then every cart involved by ascending id (locks.ts); the lines, limits and coupons
    * are read under them. A cart deleted meanwhile (a double-submitted sign-in) is skipped.
+   * `couponIfNone` (a new account's welcome code, decision 93) goes on the resulting account cart only when it has no
+   * coupon after the merge: a coupon the customer already entered is kept.
    */
-  async attachToCustomer(guestToken: string | undefined, customerId: string): Promise<void> {
+  async attachToCustomer(guestToken: string | undefined, customerId: string, couponIfNone?: string): Promise<void> {
     const guest = await this.resolve({ token: guestToken, customerId: null });
     const snapshot = await this.catalog.snapshot();
     await this.prisma.$transaction(
@@ -272,13 +285,27 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
         const [target, ...others] = await liveAccountCarts(tx, customerId);
         if (!target) {
           // Only while still a guest cart (never another account's).
-          if (guest) await tx.cart.updateMany({ where: { id: guest.id, customerId: null }, data: { customerId } });
+          if (guest) {
+            await tx.cart.updateMany({ where: { id: guest.id, customerId: null }, data: { customerId } });
+            if (couponIfNone)
+              await tx.cart.updateMany({
+                where: { id: guest.id, customerId, couponCode: null },
+                data: { couponCode: couponIfNone },
+              });
+          }
           return;
         }
+        const welcome = async () => {
+          if (couponIfNone)
+            await tx.cart.updateMany({
+              where: { id: target.id, couponCode: null },
+              data: { couponCode: couponIfNone },
+            });
+        };
         // The guest cart was read before the lock: a concurrent sign-in of this browser may have linked it to the
         // account meanwhile (it is then the target itself, never merged into itself).
         const sources = [...(guest ? [guest.id] : []), ...others.map((c) => c.id)].filter((id) => id !== target.id);
-        if (sources.length === 0) return;
+        if (sources.length === 0) return welcome();
         const locked = new Set<string>();
         for (const id of [target.id, ...sources].sort()) if (await lockCart(tx, id)) locked.add(id);
         if (!locked.has(target.id)) return;
@@ -326,6 +353,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
             await tx.cart.delete({ where: { id: sourceId } });
           }
         }
+        // After the merge, so a coupon carried over from another cart wins.
+        await welcome();
         await tx.cart.update({ where: { id: target.id }, data: { updatedAt: new Date() } });
       },
       { timeout: 15_000 },
@@ -401,7 +430,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
   /**
    * Who the cart is priced for (decision 90, spec §9): a signed-in account's cart, or a store cart with a live
    * confirmed customer, is a member's; a guest cart (or a store cart without a confirmed customer) never is.
-   * `customerId` is the account the welcome benefit and the once-per-account coupons are counted for.
+   * `customerId` is the account personal codes and the once-per-account coupons are checked against.
    */
   private async buyer(cartId: string, owner: CartOwner): Promise<{ customerId: string | null; isMember: boolean }> {
     if (!owner.store) return { customerId: owner.customerId, isMember: owner.customerId !== null };
@@ -409,7 +438,7 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
       where: { id: cartId },
       select: { storeCustomerId: true, storeConfirmedAt: true, updatedAt: true },
     });
-    // A store cart is priced for the customer the seller attached (the welcome benefit, as before) and is a member's
+    // A store cart is priced for the customer the seller attached (their personal codes) and is a member's
     // cart while that customer's confirmation is live (spec §9).
     return {
       customerId: cart.storeCustomerId,

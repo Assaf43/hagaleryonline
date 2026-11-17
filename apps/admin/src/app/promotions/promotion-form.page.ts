@@ -51,13 +51,22 @@ import {
 } from './promotion-form';
 
 type TextField =
-  'name' | 'code' | 'value' | 'minSubtotal' | 'startDate' | 'startTime' | 'endDate' | 'endTime' | 'usageLimit';
+  | 'name'
+  | 'code'
+  | 'value'
+  | 'minSubtotal'
+  | 'startDate'
+  | 'startTime'
+  | 'endDate'
+  | 'endTime'
+  | 'usageLimit'
+  | 'validityDays';
 
 /**
  * Create or edit one promotion (`/promotions/new`, `/promotions/:id`; spec §6, ADM-05): kind, name (the customers
  * see it in the cart and the order), coupon code, percent or fixed amount in shekels, target (whole order,
  * categories with their sub-categories, or products via the related-products search), minimum, dates in Israel
- * time, usage limit (coupons), the welcome benefit (automatic only) and active. Errors show under their field and the first one gets the focus.
+ * time, usage limit (coupons), validity days and the welcome mark (personal-code templates, decision 93) and active. Errors show under their field and the first one gets the focus.
  */
 @Component({
   selector: 'hga-promotion-form-page',
@@ -94,6 +103,7 @@ export class PromotionFormPage {
   protected readonly problem = signal('');
   protected readonly isNew = computed(() => this.id() === 'new');
   protected readonly coupon = computed(() => this.form().kind === 'coupon');
+  protected readonly template = computed(() => this.form().kind === 'personal_template');
   /** The form as loaded or last saved; leaving with other values asks first. */
   private readonly baseline = signal('');
   protected readonly dirty = computed(() => this.loaded() && JSON.stringify(this.form()) !== this.baseline());
@@ -133,6 +143,7 @@ export class PromotionFormPage {
     this.form.update((f) => ({ ...f, kind }));
     this.clear('code');
     this.clear('usageLimit');
+    this.clear('validityDays');
   }
 
   protected setType(discountType: DiscountType) {

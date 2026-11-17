@@ -27,7 +27,7 @@ import { toRule } from './promotions.service.js';
 
 type Meta = { actorId: number; ip?: string };
 
-/** The admin's name for the welcome benefit (spec §6.4), also its audit key. */
+/** The admin's name for the welcome template (spec §6.4, decision 93), also its audit key. */
 const WELCOME_LABEL = 'הטבת הצטרפות';
 type Tx = Prisma.TransactionClient;
 type Db = Tx | PrismaService;
@@ -35,6 +35,7 @@ type Db = Tx | PrismaService;
 const KIND_TO_DB: Record<PromotionKind, DbPromotionKind> = {
   automatic: DbPromotionKind.AUTOMATIC,
   coupon: DbPromotionKind.COUPON,
+  personal_template: DbPromotionKind.PERSONAL_TEMPLATE,
 };
 const TYPE_TO_DB: Record<DiscountType, DbDiscountType> = {
   percent: DbDiscountType.PERCENT,
@@ -131,12 +132,15 @@ export class PromotionsAdminService {
     return this.inTx(input, async (tx) => {
       if (input.isWelcome) await this.takeWelcome(tx, id, meta);
       const existing = await this.locked(tx, id);
+      // A template stays a template and nothing else becomes one: its issued codes read their terms from it.
+      const template = existing.kind === DbPromotionKind.PERSONAL_TEMPLATE;
+      if (template !== (input.kind === 'personal_template')) throw invalid('kind');
       await this.check(tx, input, id);
       const before = (await this.views(tx, [existing]))[0];
-      // A missing isWelcome keeps the current mark (an automatic promotion only).
-      const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'automatic');
-      // Losing the mark also turns it off: an active ex-welcome promotion would otherwise become an automatic
-      // discount for every shopper (staff turn it on again in a later save if that is what they want).
+      // A missing isWelcome keeps the current mark (a template only).
+      const isWelcome = input.isWelcome ?? (existing.isWelcome && input.kind === 'personal_template');
+      // Losing the mark also turns it off, which voids its unused welcome codes: kept on, they would become ordinary
+      // personal codes without the first-order rule (staff turn it on again in a later save if that is what they want).
       const data = toData(input, {
         isWelcome,
         membersOnly: input.membersOnly ?? existing.membersOnly,
@@ -177,11 +181,11 @@ export class PromotionsAdminService {
   }
 
   /**
-   * Marking a promotion as the welcome benefit clears the mark on every other promotion first, so the partial unique
-   * index (one active welcome promotion) holds. A promotion that loses the mark is also turned off — kept on, it
-   * would become an automatic discount for every shopper — and each one is audited with both fields. Welcome saves
-   * run one at a time (an advisory lock), and the rows involved are locked in ascending id order, like a checkout's
-   * promotion locks (locks.ts).
+   * Marking a template as the welcome template clears the mark on every other promotion first, so the partial unique
+   * index (one active welcome template) holds. A template that loses the mark is also turned off — kept on, its unused
+   * welcome codes would lose the first-order rule — and each one is audited with both fields. Welcome saves run one at
+   * a time (an advisory lock), and the rows involved are locked in ascending id order, like a checkout's promotion
+   * locks (locks.ts).
    */
   private async takeWelcome(tx: Tx, id: number | null, meta: Meta): Promise<void> {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('promotions:welcome'))`;
@@ -215,11 +219,14 @@ export class PromotionsAdminService {
     return row;
   }
 
-  /** 409 for a code another promotion has; 400 for a target that does not exist. */
+  /** 409 for a code another promotion or a personal code has; 400 for a target that does not exist. */
   private async check(tx: Tx, input: AdminPromotionInput, id: number | null): Promise<void> {
     if (input.code) {
       const taken = await tx.promotion.findUnique({ where: { code: input.code }, select: { id: true } });
       if (taken && taken.id !== id) throw duplicate('code', input.code);
+      // A coupon never shares its code with a personal code (spec §5.2).
+      if (await tx.personalCode.findUnique({ where: { code: input.code }, select: { id: true } }))
+        throw duplicate('code', input.code);
     }
     const ids = input.targetIds;
     if (input.target === 'categories' && (await tx.category.count({ where: { id: { in: ids } } })) !== ids.length)
@@ -292,6 +299,7 @@ export class PromotionsAdminService {
         usedCount: r.usedCount,
         active: r.active,
         isWelcome: r.isWelcome,
+        validityDays: r.validityDays,
         membersOnly: r.membersOnly,
         appliesToMemberPrices: r.appliesToMemberPrices,
         createdAt: r.createdAt.toISOString(),
@@ -321,6 +329,7 @@ function toData(input: AdminPromotionInput, { isWelcome, membersOnly, appliesToM
     endsAt: input.endsAt ? new Date(input.endsAt) : null,
     usageLimit: input.usageLimit,
     active: input.active,
+    validityDays: input.validityDays ?? null,
     isWelcome,
     membersOnly,
     appliesToMemberPrices,
@@ -348,6 +357,7 @@ export function auditView(p: AdminPromotion): AuditView {
     'מגבלת שימוש': p.usageLimit === null ? 'ללא הגבלה' : String(p.usageLimit),
     פעיל: p.active ? 'כן' : 'לא',
     [WELCOME_LABEL]: p.isWelcome ? 'כן' : 'לא',
+    'תוקף קוד אישי': p.validityDays === null ? 'ללא' : `${p.validityDays} ימים`,
     'חברי מועדון בלבד': p.membersOnly ? 'כן' : 'לא',
     'חל גם על מחירי מועדון': p.appliesToMemberPrices ? 'כן' : 'לא',
   };

@@ -7,6 +7,7 @@ import { CartService } from '../cart/cart.service.js';
 import { MarketingService } from '../marketing/marketing.service.js';
 import { maskEmail } from '../notifications/masking.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PersonalCodesService } from '../promotions/personal-codes.service.js';
 import {
   emailTaken,
   invalidCode,
@@ -100,6 +101,7 @@ export class CustomerAuthService {
     private readonly cart: CartService,
     private readonly audit: AuditService,
     private readonly marketing: MarketingService,
+    private readonly codes: PersonalCodesService,
   ) {}
 
   /** `CustomerMe` with the consent of the account's marketing contact. */
@@ -309,13 +311,16 @@ export class CustomerAuthService {
    * matches only a still-unverified holder, so one verified meanwhile makes the create fail on the unique e-mail
    * (then `assertFree` answers `email_taken`). The released e-mail's marketing contact is released too (its consent
    * never moves to the new account, spec §5.3). The new account's e-mail is verified: with the marketing box it is
-   * subscribed at once (source `signup`), otherwise an existing contact of it is only linked to the account.
+   * subscribed at once (source `signup`), otherwise an existing contact of it is only linked to the account. With an
+   * active welcome template the account gets its welcome code here, sent by e-mail through the outbox (decision 93),
+   * and the cart that becomes the account's cart gets it as its coupon unless it already has one (as the store quick
+   * account does), so the first purchase gets it without typing.
    */
   private async create(details: NewCustomer, client: ClientInfo): Promise<SignedIn> {
     const now = new Date();
     const passwordHash = details.password ? await hashPassword(details.password) : null;
     try {
-      const customer = await this.prisma.$transaction(async (tx) => {
+      const { customer, welcomeCode } = await this.prisma.$transaction(async (tx) => {
         let releasedHolder = false;
         const holder = await tx.customer.findFirst({
           where: { email: details.email, emailVerifiedAt: null },
@@ -350,7 +355,8 @@ export class CustomerAuthService {
             emailVerifiedAt: now,
           },
         });
-        // The marketing lock is the last lock (locks.ts): after the customer insert.
+        const welcomeCode = await this.codes.issueWelcome(tx, created.id, 'email', now);
+        // The marketing lock is the last lock (locks.ts): after the customer insert and the welcome code.
         if (releasedHolder) await this.marketing.releaseEmail(tx, details.email, 'released');
         if (details.marketingConsent)
           await this.marketing.subscribeVerified(tx, {
@@ -360,9 +366,9 @@ export class CustomerAuthService {
             actor: { customerId: created.id, ip: client.ip },
           });
         else await this.marketing.linkVerifiedEmail(tx, details.email, created.id);
-        return created;
+        return { customer: created, welcomeCode };
       });
-      return await this.signedIn(customer, client);
+      return await this.signedIn(customer, client, welcomeCode);
     } catch (error) {
       if (isUniqueViolation(error)) {
         await this.assertFree(details.phone, details.email);
@@ -404,10 +410,11 @@ export class CustomerAuthService {
 
   /**
    * Every sign-in ends here (password, code, sign-up, reset): the cart merge (spec §6.4) first, then the previous
-   * session of this browser ends and the new one starts — a merge that fails changes no session.
+   * session of this browser ends and the new one starts — a merge that fails changes no session. A new account's
+   * welcome code goes on the merged cart when it has no coupon.
    */
-  private async signedIn(customer: Customer, client: ClientInfo): Promise<SignedIn> {
-    await this.cart.attachToCustomer(client.cartToken, customer.id);
+  private async signedIn(customer: Customer, client: ClientInfo, welcomeCode?: string | null): Promise<SignedIn> {
+    await this.cart.attachToCustomer(client.cartToken, customer.id, welcomeCode ?? undefined);
     await this.sessions.endByToken(client.previousToken);
     const token = await this.sessions.start(customer.id, { ip: client.ip, userAgent: client.userAgent });
     return { customer: await this.me(customer), token };

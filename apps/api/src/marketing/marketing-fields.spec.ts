@@ -27,11 +27,19 @@ const CATEGORIES = [
   { id: 4, slug: 'recliners', parentId: 2 },
 ];
 
-function fakeDb(orders: { id: string; paidAt: Date | null; categoryIds: (number | null)[] }[], fullName?: string) {
+function fakeDb(
+  orders: { id: string; paidAt: Date | null; categoryIds: (number | null)[] }[],
+  fullName?: string,
+  favoriteCategoryIds: number[] = [],
+) {
   const db = {
     $queryRaw: vi.fn().mockResolvedValue(orders.map((o) => ({ id: o.id, paid_at: o.paidAt }))),
     customer: { findUnique: vi.fn().mockResolvedValue(fullName ? { fullName } : null) },
     category: { findMany: vi.fn().mockResolvedValue(CATEGORIES) },
+    customerFavorite: {
+      findMany: vi.fn().mockResolvedValue(favoriteCategoryIds.map((_, i) => ({ productId: i + 1 }))),
+    },
+    product: { findMany: vi.fn().mockResolvedValue(favoriteCategoryIds.map((categoryId) => ({ categoryId }))) },
     orderItem: {
       findMany: vi
         .fn()
@@ -85,5 +93,15 @@ describe('marketingFields', () => {
     expect(fields.interestCategories).toEqual(['sofas', 'tables']);
     expect(fields.hasPurchased).toBe(true);
     expect(fields.lastPaidOrderAt).toBe(late.toISOString());
+  });
+
+  it('favorites add their top-level slug to the interests, for a linked contact only', async () => {
+    const db = fakeDb([], undefined, [4, 3]);
+    const fields = await marketingFields(db, contact({ customerId: 'cust-1' }));
+    expect(fields.interestCategories).toEqual(['sofas', 'tables']);
+    expect(fields.hasPurchased).toBe(false);
+    const guest = fakeDb([], undefined, [4, 3]);
+    expect((await marketingFields(guest, contact())).interestCategories).toEqual([]);
+    expect(guest.customerFavorite.findMany).not.toHaveBeenCalled();
   });
 });

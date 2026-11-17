@@ -262,6 +262,23 @@ describe('CheckoutPage', () => {
     await render();
   });
 
+  it('a guest checkout keeps the contact on the device for the order page; a signed-in one does not', async () => {
+    sessionStorage.clear();
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush({ redirectUrl: 'http://localhost:4200/pay/sandbox/abc' }, { status: 201, statusText: 'Created' });
+    await render();
+    expect(JSON.parse(sessionStorage.getItem('hg.join-contact') ?? 'null')).toEqual({
+      fullName: 'דנה כהן',
+      phone: '050-1234567',
+      email: 'dana@example.com',
+    });
+    sessionStorage.clear();
+  });
+
   it('says when shipping is not available', async () => {
     await setup();
     await pickLocality();
@@ -514,11 +531,12 @@ describe('CheckoutPage', () => {
   describe('signed out (spec §6.4)', () => {
     const banner = () => el().querySelector<HTMLElement>('.signin-banner');
 
-    it('invites to sign in with the welcome benefit, linking to sign-in and back to checkout', async () => {
+    it('promises joiners a personal code with the welcome benefit, linking to sign-in and back to checkout', async () => {
       await setup(undefined, { welcome: { labelHe: '10% הנחה על ההזמנה הראשונה' } });
-      expect(banner()?.querySelector('p')?.textContent?.trim()).toBe(
-        'התחברו או הירשמו וקבלו 10% הנחה על ההזמנה הראשונה',
+      expect(banner()?.querySelector('p')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'הצטרפו למועדון וקבלו קוד הנחה אישי לרכישה הראשונה: 10% הנחה על ההזמנה הראשונה',
       );
+      expect(banner()!.querySelector('p bdi')?.textContent).toBe('10% הנחה על ההזמנה הראשונה');
       const link = banner()!.querySelector<HTMLAnchorElement>('a')!;
       expect(link.textContent?.trim()).toBe('התחברות');
       expect(link.getAttribute('href')).toBe('/account?next=%2Fcheckout');

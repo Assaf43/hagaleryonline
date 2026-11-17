@@ -15,6 +15,7 @@ import {
   PromotionTarget,
 } from './../src/generated/prisma/client.js';
 import { lockStoreCart } from './../src/orders/locks.js';
+import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteOrders } from './test-orders.js';
@@ -37,6 +38,7 @@ describe('Store cart (e2e, ADM-18)', () => {
   const cleanData = async () => {
     await deleteOrders(prisma, { contact: { path: ['fullName'], string_starts_with: 'ZZ' } });
     await prisma.cart.deleteMany();
+    await prisma.personalCode.deleteMany({ where: { promotion: { name: { startsWith: 'ZZ' } } } });
     await prisma.promotion.deleteMany({ where: { name: { startsWith: 'ZZ' } } });
   };
   const coupon = () =>
@@ -207,23 +209,39 @@ describe('Store cart (e2e, ADM-18)', () => {
     expect(guest.body.lines).toEqual([]);
   });
 
-  it('offers the welcome benefit to the attached customer, as on the website', async () => {
-    await prisma.promotion.create({
+  it("prices the attached customer's welcome code, as on the website — only once the customer confirmed", async () => {
+    // Task 13 issues the code with the quick account and puts it on the store cart; here it is issued by hand.
+    const welcome = await prisma.promotion.create({
       data: {
         name: 'ZZ הטבת הצטרפות',
-        kind: PromotionKind.AUTOMATIC,
+        kind: PromotionKind.PERSONAL_TEMPLATE,
         discountType: DiscountType.PERCENT,
         value: 10,
         target: PromotionTarget.ORDER,
+        validityDays: 30,
         isWelcome: true,
       },
+    });
+    const { code } = await issuePersonalCode(prisma, {
+      templateId: welcome.id,
+      customerId,
+      issuedById: null,
+      now: new Date(),
     });
     await sellerA.post('/store-cart').expect(201);
     const before = view(await sellerA.post('/store-cart/items', { variantId: variantA, quantity: 1 }).expect(201));
     expect(before.discount).toBeNull();
-    await prisma.cart.updateMany({ where: { sellerId: sellerAId }, data: { storeCustomerId: customerId } });
+    // Attached but not confirmed: no member's cart, so the personal code does not apply (kept, with the notice).
+    await prisma.cart.updateMany({
+      where: { sellerId: sellerAId },
+      data: { storeCustomerId: customerId, couponCode: code },
+    });
+    const unconfirmed = view(await sellerA.get('/store-cart').expect(200));
+    expect(unconfirmed.discount).toBeNull();
+    expect(unconfirmed.couponCode).toBe(code);
+    await prisma.cart.updateMany({ where: { sellerId: sellerAId }, data: { storeConfirmedAt: new Date() } });
     const withCustomer = view(await sellerA.get('/store-cart').expect(200));
-    expect(withCustomer.discount?.amount).toBe(10_000);
+    expect(withCustomer.discount).toEqual({ labelHe: 'ZZ הטבת הצטרפות', amount: 10_000, source: 'coupon', code });
     expect(withCustomer.customer).toEqual({
       id: customerId,
       fullName: 'ZZ לקוח חנות',

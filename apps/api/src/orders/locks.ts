@@ -3,11 +3,12 @@ import { Prisma } from '../generated/prisma/client.js';
 /**
  * Row locks of the order flow. To stay free of deadlocks every transaction takes them in this order:
  * store-cart → welcome → cart → orders → variants (variants always by ascending id) → promotions (by ascending id).
- *  - welcome (Phase 5c): a transaction-scoped advisory lock per account (`lockWelcome`), taken FIRST, before any
- *    row lock, by a checkout with a customer session and by the retry of an order that holds the welcome benefit.
- *    Nothing else takes it, and whoever waits for it holds no lock yet, so it cannot close a cycle with the row
- *    locks below. It makes one account's checkouts run one after the other, so only one live order holds the
- *    benefit (decision 79);
+ *  - welcome (Phase 5c; the account's checkout lock since Phase 7c): a transaction-scoped advisory lock per account
+ *    (`lockWelcome`), taken FIRST, before any row lock, by every checkout for an account (website or store) and by the
+ *    retry of an order of an account. Nothing else takes it, and whoever waits for it holds no lock yet, so it cannot
+ *    close a cycle with the row locks below. It makes one account's checkouts and retries run one after the other —
+ *    from any of its carts — so only one live order holds a personal code (spec §5.2: the next one sees it held) and a
+ *    members-only coupon is taken once;
  *  - account cart (Phase 5c): a transaction-scoped advisory lock per account (`lockAccountCart`), taken first by the
  *    first add of a signed-in customer (so two first adds make one cart) and by the cart merge on sign-in
  *    (CartService.attachToCustomer), which then locks every cart involved by ascending id. Only these take it, and a
@@ -21,18 +22,22 @@ import { Prisma } from '../generated/prisma/client.js';
  *    (StoreCartService.changeOpen: held while the website cart code changes the cart on other connections — that code
  *    takes no store-cart lock). A waiter holds no row lock yet;
  *  - checkout: its cart, then its cart's earlier pending orders (superseded), then the cart's variants, then the
- *    limited promotions it may use and, signed in, the active welcome promotion (PromotionsService.lockLimited), so
- *    their usage counts hold until commit and the account's paid orders are read only after it. A store checkout
+ *    limited promotions it may use and the template of an entered personal code (PromotionsService.lockLimited), so
+ *    their usage counts — and the code's use and holders, and the account's paid orders — are read only after it and
+ *    hold until commit. A store checkout
  *    then saves the delivery address under the customer row (FOR NO KEY UPDATE, last; the account's address writes
  *    take only that row);
  *  - retry payment: its cart, the order, its variants, then the order's promotion (PromotionsService.lockOne); the
  *    seller's reopen of a waiting store order also locks the order's payments right before the order (the cancel's
  *    payments → order), so the old page's webhook either lands first or finds its payment cancelled;
  *  - webhook: the payment, then its order, then (on success) the variants' stock, then the order's promotion
- *    (its usage count +1). It never updates the cart row inside its transaction (that would be order → cart);
+ *    (its usage count +1), then the personal code it holds (marked used; a row no other transaction locks
+ *    explicitly). It never updates the cart row inside its transaction (that would be order → cart);
  *    the cart's coupon is cleared after commit;
  *  - customer cancel: the order's payments (ascending id), then the order (the webhook's payment → order);
  *  - admin status move: the order alone;
+ *  - favorites (Phase 7c): a transaction-scoped advisory lock per account (`lockFavorites`), taken first by the
+ *    favorites writes, before the marketing lock (nothing else is held then);
  *  - marketing (Phase 7): a transaction-scoped advisory lock per e-mail (MarketingService), always the LAST lock of
  *    its transaction — checkout and store checkout take it after the order insert, sign-up after the customer insert,
  *    the e-mail change after the customer update. While holding it only marketing rows and outbox jobs are written.
@@ -44,7 +49,7 @@ export async function lockCart(tx: Prisma.TransactionClient, cartId: string): Pr
   return rows.length > 0;
 }
 
-/** One account's welcome-benefit lock (see above); released at commit or rollback. */
+/** One account's checkout lock (see "welcome" above); released at commit or rollback. */
 export async function lockWelcome(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'welcome:' + customerId}::text))`;
 }
@@ -52,6 +57,11 @@ export async function lockWelcome(tx: Prisma.TransactionClient, customerId: stri
 /** One account's cart lock (see above); released at commit or rollback. */
 export async function lockAccountCart(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'cart:' + customerId}::text))`;
+}
+
+/** One account's favorites lock (see above); released at commit or rollback. */
+export async function lockFavorites(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'favorites:' + customerId}::text))`;
 }
 
 /** One seller's open-store-cart lock (see above); released at commit or rollback. */

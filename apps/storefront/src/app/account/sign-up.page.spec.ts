@@ -230,4 +230,23 @@ describe('SignUpPage', () => {
       flushCarts(http);
     });
   });
+
+  it('a draft without a ticket (the end-of-purchase join) fills name, phone and e-mail, locks nothing, and clears', async () => {
+    await setup({
+      draft: {
+        fullName: 'דנה כהן',
+        phone: '0501234567',
+        email: 'dana@example.com',
+        signUpToken: null,
+        verified: { phone: null, email: null },
+      },
+    });
+    expect(q<HTMLInputElement>('#su-name').value).toBe('דנה כהן');
+    expect(q<HTMLInputElement>('#su-phone').value).toBe('0501234567');
+    expect(q<HTMLInputElement>('#su-email').value).toBe('dana@example.com');
+    expect(q<HTMLInputElement>('#su-phone').readOnly).toBe(false);
+    expect(q<HTMLInputElement>('#su-email').readOnly).toBe(false);
+    expect(TestBed.inject(SignUpDraft).current()).toBeNull();
+    flushCarts(http);
+  });
 });

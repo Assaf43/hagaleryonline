@@ -1,0 +1,44 @@
+<section class="container page">
+  <h1>החשבון שלי</h1>
+  <hg-account-nav />
+  <h2 id="benefits-title">ההטבות שלי</h2>
+
+  @if (!store.me()) {
+    <p class="state">טוען…</p>
+  } @else if (benefits(); as list) {
+    @if (list.length === 0) {
+      <p class="state">אין הטבות בחשבון כרגע</p>
+    } @else {
+      <ul class="list" aria-labelledby="benefits-title">
+        @for (b of list; track b.code) {
+          <li class="card benefit" [attr.data-status]="b.status">
+            <div class="card-head">
+              <strong>{{ b.labelHe }}</strong>
+              <span class="badge">{{ statusLabel[b.status] }}</span>
+            </div>
+            <p>
+              <bdi class="code num" dir="ltr">{{ b.code }}</bdi>
+            </p>
+            <p>
+              <bdi>{{ value(b) }}</bdi>
+              @if (b.minSubtotal !== null) {
+                · בקנייה מעל <bdi class="num">{{ price(b.minSubtotal) }}</bdi>
+              }
+            </p>
+            <p class="hint">
+              בתוקף עד <bdi class="num">{{ date(b.expiresAt) }}</bdi>
+            </p>
+          </li>
+        }
+      </ul>
+      <p class="hint">את הקוד מזינים בסל הקניות, כשמחוברים לחשבון.</p>
+    }
+  } @else if (error()) {
+    <div class="state" role="alert">
+      <p>{{ error() }}</p>
+      <button type="button" class="btn btn-secondary retry" (click)="read()">נסו שוב</button>
+    </div>
+  } @else {
+    <p class="state">טוען…</p>
+  }
+</section>

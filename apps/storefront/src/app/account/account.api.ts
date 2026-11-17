@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import type {
+  AccountBenefit,
   AccountConsent,
   AccountErrorCode,
   AccountOrdersPage,
@@ -53,6 +54,20 @@ export class AccountApi {
 
   signIn(body: SignInBody) {
     return firstValueFrom(this.http.post<SignedInResponse>('/api/account/sign-in', body));
+  }
+
+  /** The account's favorite product ids, newest first. */
+  favorites() {
+    return firstValueFrom(this.http.get<number[]>('/api/account/favorites'));
+  }
+
+  /** Merges ids into the account's favorites (the new ones lead); answers the whole list. */
+  mergeFavorites(productIds: readonly number[]) {
+    return firstValueFrom(this.http.put<number[]>('/api/account/favorites', { productIds }));
+  }
+
+  removeFavorite(productId: number) {
+    return firstValueFrom(this.http.delete<void>(`/api/account/favorites/${productId}`));
   }
 
   signOut() {
@@ -110,6 +125,11 @@ export class AccountApi {
 
   cancelOrder(number: string) {
     return firstValueFrom(this.http.post<OrderView>(`/api/account/orders/${encodeURIComponent(number)}/cancel`, null));
+  }
+
+  /** The account's personal codes (welcome code and codes from staff), newest first. */
+  benefits() {
+    return firstValueFrom(this.http.get<AccountBenefit[]>('/api/account/benefits'));
   }
 
   /** The marketing contact of the account's e-mail (status null: it never had one). */

@@ -19,7 +19,13 @@
         </label>
       }
       <p class="muted">
-        {{ coupon() ? 'חל רק כשהלקוח מזין את הקוד בסל.' : 'חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.' }}
+        @if (coupon()) {
+          חל רק כשהלקוח מזין את הקוד בסל.
+        } @else if (template()) {
+          אין קוד קבוע. מהתבנית נוצרים קודים אישיים, לכל לקוח קוד משלו לשימוש חד־פעמי: בכרטיס הלקוח או כקוד הצטרפות.
+        } @else {
+          חל אוטומטית בסל, בלי קוד, על כל הזמנה שעומדת בתנאים.
+        }
       </p>
     </fieldset>
 
@@ -254,13 +260,32 @@
         </mat-form-field>
       </div>
     }
+    @if (template()) {
+      <div class="fields">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>ימי תוקף</mat-label>
+          <input
+            matInput
+            inputmode="numeric"
+            autocomplete="off"
+            [id]="ids.validityDays"
+            [ngModel]="form().validityDays"
+            (ngModelChange)="set('validityDays', $event)"
+            [ngModelOptions]="{ standalone: true }"
+            [errorStateMatcher]="matcher('validityDays')"
+          />
+          <mat-hint>כמה ימים קוד תקף מרגע שהונפק. אף קוד לא יחיה אחרי תאריך הסיום של התבנית.</mat-hint>
+          <mat-error>{{ errors().validityDays }}</mat-error>
+        </mat-form-field>
+      </div>
+    }
     @if (saved(); as s) {
       <p class="muted">
         שימושים עד עכשיו: <span class="num">{{ s.usedCount }}</span>
       </p>
     }
 
-    @if (!coupon()) {
+    @if (template()) {
       <div class="switch-row">
         <span class="option">
           <input
@@ -270,10 +295,10 @@
             [checked]="form().isWelcome"
             (change)="setWelcome($any($event.target).checked)"
           />
-          <label for="promo-welcome">הטבת הצטרפות (חלה אוטומטית על ההזמנה הראשונה של לקוח רשום)</label>
+          <label for="promo-welcome">הטבת הצטרפות (כל חשבון חדש מקבל ממנה קוד אישי)</label>
         </span>
         <p class="muted" id="promo-welcome-hint">
-          רק מבצע אחד יכול להיות הטבת הצטרפות. סימון כאן מבטל את הסימון במבצע אחר. מבצע שהסימון הוסר ממנו מושבת.
+          רק תבנית אחת יכולה להיות הטבת הצטרפות. סימון כאן מבטל את הסימון בתבנית אחרת. תבנית שהסימון הוסר ממנה מושבתת.
         </p>
       </div>
     }

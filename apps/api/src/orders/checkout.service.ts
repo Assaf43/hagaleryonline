@@ -37,7 +37,6 @@ import {
   fieldError,
   invalidInput,
   priceChanged,
-  promotionEndedError,
   shippingUnavailable,
   shortage,
 } from './order-errors.js';
@@ -53,8 +52,9 @@ export const ORDER_METHOD: Record<ShippingMethod, OrderShippingMethod> = {
 export interface PlaceOrderOptions {
   /**
    * The account the order is for: the session's on the website, the cart's confirmed `storeCustomerId` at the store.
-   * It takes the welcome lock, counts for the welcome benefit and is stored on the order. With an account the cart is
-   * a member's (decision 90, spec §9): it is priced by `priceCart` with member prices (best of two, decision 92).
+   * It takes the account's lock (`lockWelcome`), its personal codes are checked against it, and it is stored on the
+   * order. With an account the cart is a member's (decision 90, spec §9): it is priced by `priceCart` with member
+   * prices (best of two, decision 92).
    */
   customerId: string | null;
   channel: 'web' | 'store';
@@ -99,11 +99,12 @@ export interface PlaceOrderOptions {
  *     writes invalidate at once in this process (a multi-process deploy would see it up to 60 s late — Phase 9).
  *  4. After commit: ask the payment provider for a payment page and record the payment (PaymentsService).
  *
- * With a customer session (spec §6.4) the order stores `customerId`; a guest order never does (decision 77). The
- * welcome benefit (decision 79) is a candidate for an account without a paid order. Its transaction first takes the
- * account's advisory lock (`lockWelcome`, before the cart lock), so two checkouts of one account run one after the
- * other: the second sees the first's pending order holding the benefit and, when the customer saw it, gets 409
- * `promotion_ended` instead of a second welcome discount.
+ * With a customer session (spec §6.4) the order stores `customerId`; a guest order never does (decision 77). A
+ * personal code (decisions 93–94, spec §5.2) is the cart's coupon like any other, checked against the account. Its
+ * transaction first takes the account's advisory lock (`lockWelcome`, before the cart lock), so two checkouts of one
+ * account — from any two of its carts (the website cart, a store cart) — run one after the other: the second sees the
+ * first's live pending order holding the code (`orders.personal_code_id`) and gets 409 `coupon_invalid` instead of a
+ * second use of it.
  */
 @Injectable()
 export class CheckoutService {
@@ -203,15 +204,15 @@ export class CheckoutService {
         // The one discount of the order (decision 70), on the locked lines at their current prices. The limited
         // promotions are locked last (cart → orders → variants → promotions), so their uses — paid plus live
         // pending orders of other carts (this cart's were just expired) — hold until commit (spec §6).
-        // A signed-in checkout also locks the active welcome promotion, and only THEN reads whether the account has
-        // a paid order. The webhook paying a welcome order holds that row (its use +1) until it commits, so either
-        // this read waits for it and sees the order paid, or the webhook waits for this commit and every read here
-        // still sees the order pending (welcomeHeld). Read before the lock, a payment committed while this waits
-        // would be missed by both reads: a second welcome discount.
+        // A personal code's template row is locked there too, and only THEN is it read whether the code was used,
+        // which orders hold it and whether the account has a paid order (a welcome code). The webhook paying an order
+        // that holds a code of this template holds that row (its use +1) before it marks the code used, so either
+        // these reads wait for it and see the order paid, or the webhook waits for this commit and every read here
+        // still sees the order pending (the code held → 409 `coupon_invalid`).
         // A members-only coupon's row is locked there too, so its once-per-account count (paid plus live pending
         // orders of the account) holds until commit; two checkouts of one account already wait for each other on the
-        // welcome lock taken first.
-        await this.promotions.lockLimited(tx, couponCode, customerId !== null);
+        // account's lock taken first.
+        await this.promotions.lockLimited(tx, couponCode);
         const customer = await this.promotions.welcomeCustomer(tx, customerId);
         // The one pricing function (decision 92): an account's cart is priced at member prices and at regular prices,
         // the lower total wins; a guest's at regular prices. Same as the cart view, so `expectedTotal` matches.
@@ -223,14 +224,13 @@ export class CheckoutService {
             this.promotions.evaluate(tx, discountLines, couponCode, { cartId: cart.id, customer, isMember }),
         });
         const evaluated = priced.discount;
+        // Used up — or, a personal code, used or held by another live order of the account — since the customer saw it.
         if (evaluated.couponProblem === 'exhausted')
           throw couponInvalid(couponProblemMessageHe('exhausted', evaluated.coupon));
         const { subtotal } = priced;
         const discount = evaluated.applied?.amount ?? 0;
         const info = discountInfo(evaluated);
         const total = priced.total + option.total;
-        // Another order of the account took the welcome benefit meanwhile (one at a time, decision 79).
-        if (input.expectedTotal !== total && evaluated.welcomeHeld) throw promotionEndedError();
         if (input.expectedTotal !== total) throw priceChanged(total);
         const order = await tx.order.create({
           data: {
@@ -249,6 +249,8 @@ export class CheckoutService {
             discountInfo: info ? { ...info } : undefined,
             pricing: priced.pricing,
             promotionId: evaluated.promotion?.id ?? null,
+            // A personal code: this live pending order holds it until paid (then it is marked used) or released.
+            personalCodeId: evaluated.promotion?.personalCodeId ?? null,
             total,
             deliveryEstimate: estimate,
             paymentProvider: this.payments.providerCode,

@@ -335,6 +335,11 @@ export interface OrderView {
   canRetryPayment: boolean;
   /** Paid although an in-stock line no longer had enough stock (late payment): staff must contact the customer. */
   stockShortage: boolean;
+  /**
+   * The order belongs to no account (a guest order): only then may the confirmation page invite the buyer to join
+   * the club. Nothing else about any account is revealed (decision 77).
+   */
+  guestOrder: boolean;
 }
 
 // ---------- Sandbox payment page (development only, CHK-10) ----------

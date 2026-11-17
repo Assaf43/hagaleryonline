@@ -4,6 +4,7 @@ import { CartModule } from '../cart/cart.module.js';
 import { CustomersModule } from '../customers/customers.module.js';
 import { MarketingModule } from '../marketing/marketing.module.js';
 import { OrdersModule } from '../orders/orders.module.js';
+import { PromotionsModule } from '../promotions/promotions.module.js';
 import { WriteThrottleModule } from '../orders/write-throttle.module.js';
 import { ShippingModule } from '../shipping/shipping.module.js';
 import { StoreAdminController } from './store-admin.controller.js';
@@ -25,6 +26,7 @@ import { StoreService } from './store.service.js';
     CustomersModule,
     MarketingModule,
     OrdersModule,
+    PromotionsModule,
     ShippingModule,
     WriteThrottleModule,
   ],

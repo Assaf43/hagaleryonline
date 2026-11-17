@@ -174,6 +174,8 @@ const ORDER_CODES: Record<string, string> = {
   vat_rate_exists: 'כבר יש שיעור מע"מ שמתחיל בתאריך הזה.',
   // "משימות שנכשלו": the job was already retried (another tab or user).
   not_failed: 'המשימה כבר לא במצב "נכשלה". רעננו את הדף.',
+  // "הנפקת קופון אישי" (Phase 7c): the customer has no verified e-mail to send the code to.
+  email_not_verified: 'אין ללקוח מייל מאומת, אי אפשר לשלוח את הקוד במייל.',
 };
 
 const ORDER_FIELDS: Record<string, string> = {
@@ -215,7 +217,9 @@ export function storeSettingsErrorMessage(error: unknown): string {
 
 /** 400 `invalid` of the promotions API on a field the form has no input of its own for. */
 const PROMOTION_FIELDS: Record<string, string> = {
-  isWelcome: 'הטבת הצטרפות אפשרית רק במבצע אוטומטי.',
+  isWelcome: 'הטבת הצטרפות אפשרית רק בתבנית לקוד אישי.',
+  validityDays: 'ימי התוקף צריכים להיות מספר שלם בין 1 ל-365.',
+  templateId: 'התבנית כבר לא פעילה. סגרו את החלון ובחרו תבנית אחרת.',
 };
 
 function promotionMessage(body: { code?: string; field?: string }): string | null {

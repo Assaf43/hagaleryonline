@@ -1,0 +1,122 @@
+.search {
+  display: grid;
+  gap: var(--space-2);
+  max-inline-size: 36rem;
+  margin-block-end: var(--space-4);
+}
+
+.search label {
+  font-weight: 700;
+}
+
+.search-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.search input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  min-block-size: var(--control-height);
+  padding-inline: var(--space-3);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.customers {
+  container-type: inline-size;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.customer {
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+// Narrow lists: a small card per customer. A wide list lines the same cells up in one row (see the container query).
+.customer-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  color: inherit;
+  text-decoration: none;
+  align-items: center;
+}
+
+.customer-link:hover {
+  background: var(--color-surface-alt);
+}
+
+.name {
+  font-weight: 700;
+}
+
+.date,
+.contact,
+.muted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.origin,
+.orders-count {
+  padding: var(--badge-padding-block) var(--badge-padding-inline);
+  font-size: var(--font-small);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-alt);
+}
+
+.form-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.form-error p {
+  margin: 0;
+}
+
+.empty {
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+@container (width >= 48rem) {
+  .customer-link {
+    grid-template-columns: 12rem 9rem minmax(0, 1fr) auto;
+    gap: var(--space-3);
+  }
+}

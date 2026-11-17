@@ -2,6 +2,8 @@ import {
   COUPON_CODE_PATTERN,
   MAX_COUPON_CODE_LENGTH,
   normalizeCouponCode,
+  VALIDITY_DAYS_MAX,
+  VALIDITY_DAYS_MIN,
   type AdminPromotion,
   type AdminPromotionInput,
   type DiscountType,
@@ -33,8 +35,10 @@ export interface PromotionForm {
   endDate: string;
   endTime: string;
   usageLimit: string;
+  /** "ימי תוקף" of a personal-code template (spec §5.2): days a code is valid from its issue. */
+  validityDays: string;
   active: boolean;
-  /** "הטבת הצטרפות" (decision 79): only for an automatic promotion. */
+  /** "תבנית הצטרפות" (decision 93): only for a personal-code template. */
   isWelcome: boolean;
   /** "חברי מועדון בלבד" and "חל גם על מחירי מועדון" (decision 92): either kind. */
   membersOnly: boolean;
@@ -53,6 +57,7 @@ export const FIELD_ORDER = [
   'endDate',
   'endTime',
   'usageLimit',
+  'validityDays',
 ] as const;
 export type PromotionField = (typeof FIELD_ORDER)[number];
 export type PromotionErrors = Partial<Record<PromotionField, string>>;
@@ -69,6 +74,7 @@ export const FIELD_IDS: Record<PromotionField, string> = {
   endDate: 'promo-end-date',
   endTime: 'promo-end-time',
   usageLimit: 'promo-limit',
+  validityDays: 'promo-validity',
 };
 
 export const MESSAGES = {
@@ -87,6 +93,7 @@ export const MESSAGES = {
   time: 'שעה בפורמט 09:30',
   order: 'הסיום צריך להיות אחרי ההתחלה',
   usageLimit: 'מספר שלם, 1 ומעלה (ריק = ללא הגבלה)',
+  validityDays: `מספר שלם בין ${VALIDITY_DAYS_MIN} ל-${VALIDITY_DAYS_MAX}`,
 } as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -119,6 +126,7 @@ export function emptyForm(): PromotionForm {
     endDate: '',
     endTime: '',
     usageLimit: '',
+    validityDays: '30',
     active: true,
     isWelcome: false,
     membersOnly: false,
@@ -153,6 +161,7 @@ export function toForm(p: AdminPromotion): PromotionForm {
     endDate: end.date,
     endTime: end.time,
     usageLimit: p.usageLimit === null ? '' : String(p.usageLimit),
+    validityDays: p.validityDays === null ? '30' : String(p.validityDays),
     active: p.active,
     isWelcome: p.isWelcome,
     membersOnly: p.membersOnly,
@@ -171,6 +180,7 @@ function whole(text: string, min: number, max: number): number | undefined {
 export function promotionInput(f: PromotionForm): { input: AdminPromotionInput | null; errors: PromotionErrors } {
   const errors: PromotionErrors = {};
   const coupon = f.kind === 'coupon';
+  const template = f.kind === 'personal_template';
 
   const name = f.name.trim();
   if (!name) errors.name = MESSAGES.name;
@@ -209,6 +219,13 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
     else usageLimit = n;
   }
 
+  let validityDays: number | null = null;
+  if (template) {
+    const n = whole(f.validityDays, VALIDITY_DAYS_MIN, VALIDITY_DAYS_MAX);
+    if (n === undefined) errors.validityDays = MESSAGES.validityDays;
+    else validityDays = n;
+  }
+
   const ordered = Object.fromEntries(
     FIELD_ORDER.filter((k) => errors[k]).map((k) => [k, errors[k]]),
   ) as PromotionErrors;
@@ -227,8 +244,9 @@ export function promotionInput(f: PromotionForm): { input: AdminPromotionInput |
       endsAt,
       usageLimit,
       active: f.active,
-      // Always sent: a coupon is never one (the API refuses it), and saving it clears it on any other promotion.
-      isWelcome: f.kind === 'automatic' && f.isWelcome,
+      validityDays,
+      // Always sent: only a template can be the welcome one (the API refuses it elsewhere), and saving any other kind clears it.
+      isWelcome: template && f.isWelcome,
       membersOnly: f.membersOnly,
       appliesToMemberPrices: f.appliesToMemberPrices,
     },
@@ -276,6 +294,7 @@ export function serverFieldOf(apiField: string | undefined): PromotionField | nu
     case 'targetIds':
     case 'minSubtotal':
     case 'usageLimit':
+    case 'validityDays':
       return apiField;
     default:
       return null;

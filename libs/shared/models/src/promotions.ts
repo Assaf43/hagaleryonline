@@ -3,7 +3,11 @@
  * automatic promotion or the entered coupon, whichever is larger (ties go to the automatic one). Money in agorot.
  */
 
-export type PromotionKind = 'automatic' | 'coupon';
+/**
+ * `personal_template` (decisions 93–94): no code of its own; personal codes issued from it (one account each, single
+ * use) are evaluated as coupons with its current terms.
+ */
+export type PromotionKind = 'automatic' | 'coupon' | 'personal_template';
 export type DiscountType = 'percent' | 'fixed';
 export type PromotionTarget = 'order' | 'categories' | 'products';
 
@@ -34,12 +38,15 @@ export type CouponProblem =
   | 'lost'
   /** Member prices (decision 92) beat the entered coupon: no promotion is involved. */
   | 'lost_to_member_prices'
-  /** A members-only coupon (decision 94) entered without an account. */
-  | 'members_only';
+  /** A members-only coupon (decision 94), or a personal code (decision 90), entered without an account. */
+  | 'members_only'
+  /** A welcome code (decision 93) entered by an account that already has a paid order. */
+  | 'first_order_only';
 
 /**
- * `GET /api/promotions/welcome` (public, spec §6.4): the Hebrew name of the active welcome promotion (active and
- * inside its dates), or `null` when there is none. The checkout's sign-in banner shows it.
+ * `GET /api/promotions/welcome` (public, spec §6.4): the Hebrew name of the active welcome template (active and inside
+ * its dates; every new account gets a personal code from it, decision 93), or `null` when there is none. The
+ * checkout's sign-in banner shows it.
  */
 export interface WelcomeBenefit {
   labelHe: string;
@@ -70,6 +77,7 @@ export const COUPON_MESSAGES_HE: Record<Exclude<CouponProblem, 'below_minimum'>,
   lost: 'המבצע הנוכחי משתלם יותר מהקופון',
   lost_to_member_prices: 'מחירי המועדון משתלמים יותר מהקופון, ולכן הקופון לא הופעל',
   members_only: 'הקופון מיועד לחברי מועדון בלבד. התחברו כדי להשתמש בו',
+  first_order_only: 'הקוד תקף לרכישה הראשונה בלבד',
 };
 
 /** "הקופון תקף מסכום של {price}"; `price` is the formatted minimum, e.g. "1,000 ₪". */
@@ -92,7 +100,12 @@ export const COUPON_CODE_PATTERN = /^[A-Z0-9א-ת_-]+$/;
 export const PROMOTION_KIND_LABELS_HE: Record<PromotionKind, string> = {
   automatic: 'מבצע אוטומטי',
   coupon: 'קופון',
+  personal_template: 'תבנית לקוד אישי',
 };
+
+/** Days a personal code is valid from its issue (a template's `validityDays`). */
+export const VALIDITY_DAYS_MIN = 1;
+export const VALIDITY_DAYS_MAX = 365;
 export const DISCOUNT_TYPE_LABELS_HE: Record<DiscountType, string> = {
   percent: 'אחוז הנחה',
   fixed: 'סכום קבוע',
@@ -137,8 +150,10 @@ export interface AdminPromotion {
   /** Paid orders that used it. */
   usedCount: number;
   active: boolean;
-  /** "הטבת הצטרפות" (decision 79): automatic only; the first paid order of each account. */
+  /** "הטבת הצטרפות" (decision 93): templates only; every new account gets a code from it, for its first order. */
   isWelcome: boolean;
+  /** Templates only: days a personal code is valid from its issue (1–365); null otherwise. */
+  validityDays: number | null;
   /** "חברי מועדון בלבד" (decision 92): only signed-in members; a coupon works once per account. */
   membersOnly: boolean;
   /** "חל גם על מחירי מועדון": off = lines sold at a member price are not discounted by this promotion. */
@@ -162,10 +177,13 @@ export interface AdminPromotionInput {
   usageLimit: number | null;
   active: boolean;
   /**
-   * The welcome benefit (decision 79): automatic promotions only (400 `isWelcome` otherwise). Saving it `true` clears
-   * it on every other promotion (each change audited). Missing: false on create, unchanged on edit.
+   * The welcome template (decision 93): personal-code templates only (400 `isWelcome` otherwise). Saving it `true`
+   * clears it on every other promotion and turns them off (each change audited). Missing: false on create, unchanged
+   * on edit.
    */
   isWelcome?: boolean;
+  /** Templates: required, 1–365 (400 `validityDays` otherwise); any other kind: missing or null. */
+  validityDays?: number | null;
   /** Missing: false on create, unchanged on edit. 400 when not a boolean. */
   membersOnly?: boolean;
   appliesToMemberPrices?: boolean;
@@ -177,4 +195,25 @@ export interface PromotionCategoryOption {
   nameHe: string;
   /** 0 for a top-level category. */
   depth: number;
+}
+
+// ---------- Personal codes issued by staff (Phase 7c, spec §4.5, decision 94) ----------
+
+/** How the issued code reaches the customer: not sent (staff hand it over), or by e-mail or SMS. */
+export type PersonalCodeSend = 'none' | 'email' | 'sms';
+
+/**
+ * `POST /api/admin/customers/:id/codes` (`club.manage`): a personal code from an active template. 404 `not_found` for
+ * an unknown customer; 400 `invalid` (`field: 'templateId'`) when the promotion is no active personal-code template or
+ * its end has passed; 409 `email_not_verified` (`field: 'send'`) for `send: 'email'` without a verified e-mail.
+ */
+export interface IssuePersonalCodeRequest {
+  templateId: number;
+  send: PersonalCodeSend;
+}
+
+/** The answer: the code (shown to staff once more on the customer's profile) and its ISO expiry. */
+export interface IssuedPersonalCode {
+  code: string;
+  expiresAt: string;
 }

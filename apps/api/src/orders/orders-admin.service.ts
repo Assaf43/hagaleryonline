@@ -40,7 +40,7 @@ import { effectiveStatus, publicDiscountInfo } from './orders.service.js';
 
 export const ADMIN_ORDERS_PAGE_SIZE = 30;
 
-const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
+export const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
   PENDING_PAYMENT: 'pending_payment',
   PAID: 'paid',
   PROCESSING: 'processing',
@@ -60,7 +60,7 @@ const ACTOR_VIEW: Record<OrderActorType, OrderActorView> = {
   CUSTOMER: 'customer',
   SYSTEM: 'system',
 };
-const CHANNEL_VIEW: Record<OrderChannel, OrderChannelView> = { WEB: 'web', STORE: 'store' };
+export const CHANNEL_VIEW: Record<OrderChannel, OrderChannelView> = { WEB: 'web', STORE: 'store' };
 const SELLER = { seller: { select: { id: true, name: true } } } as const;
 const sellerView = (seller: { id: number; name: string } | null): OrderSeller | null =>
   seller ? { id: seller.id, name: seller.name } : null;

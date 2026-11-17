@@ -24,6 +24,7 @@ const base: AdminPromotion = {
   usageLimit: null,
   usedCount: 12,
   isWelcome: false,
+  validityDays: null,
   membersOnly: false,
   appliesToMemberPrices: false,
   active: true,
@@ -243,6 +244,7 @@ describe('admin promotions screens', () => {
         startsAt: '2026-03-26T22:00:00.000Z',
         endsAt: '2026-03-27T20:59:59.999Z',
         usageLimit: 20,
+        validityDays: null,
         active: true,
         isWelcome: false,
         membersOnly: false,
@@ -358,26 +360,86 @@ describe('admin promotions screens', () => {
       });
     });
 
-    describe('welcome benefit toggle (decision 79)', () => {
-      const welcomeBox = () => el().querySelector<HTMLInputElement>('#promo-welcome');
-      const LABEL = 'הטבת הצטרפות (חלה אוטומטית על ההזמנה הראשונה של לקוח רשום)';
+    describe('personal-code template (decisions 93-94, spec 4.5)', () => {
+      const kindRadio = () => el().querySelector<HTMLInputElement>('input[name="kind"][value="personal_template"]')!;
 
-      it('is offered only for an automatic promotion, unchecked, with its label', async () => {
+      it('is a third kind, "תבנית לקוד אישי", with validity days and no code or usage limit', async () => {
+        await open('new');
+        expect(kindRadio().closest('label')?.textContent?.trim()).toBe('תבנית לקוד אישי');
+        expect(el().querySelector('#promo-validity')).toBeNull();
+        kindRadio().click();
+        fixture.detectChanges();
+        await settle(fixture);
+        expect(input('promo-validity').value).toBe('30');
+        expect(el().textContent).toContain('ימי תוקף');
+        expect(el().querySelector('#promo-code')).toBeNull();
+        expect(el().querySelector('#promo-limit')).toBeNull();
+      });
+
+      it('saves a template with its validity days', async () => {
+        await open('new');
+        kindRadio().click();
+        fixture.detectChanges();
+        type('promo-name', 'קוד חג');
+        type('promo-value', '15');
+        type('promo-validity', '45');
+        await save();
+        const req = http.expectOne({ method: 'POST', url: '/api/admin/promotions' });
+        expect(req.request.body).toMatchObject({
+          kind: 'personal_template',
+          code: null,
+          usageLimit: null,
+          validityDays: 45,
+          isWelcome: false,
+        });
+        req.flush({ ...base, id: 9, kind: 'personal_template', validityDays: 45 });
+        await settle(fixture);
+      });
+
+      it('refuses missing or out-of-range validity days under the field, before sending', async () => {
+        await open('new');
+        kindRadio().click();
+        fixture.detectChanges();
+        type('promo-name', 'קוד חג');
+        type('promo-value', '15');
+        for (const bad of ['', '0', '366', 'x']) {
+          type('promo-validity', bad);
+          await save();
+          expect(el().textContent).toContain('מספר שלם בין 1 ל-365');
+          expect(document.activeElement).toBe(input('promo-validity'));
+        }
+        http.expectNone('/api/admin/promotions');
+      });
+
+      it('shows a saved template with its days', async () => {
+        await open('1', { ...base, kind: 'personal_template', validityDays: 21 });
+        expect(input('promo-validity').value).toBe('21');
+      });
+    });
+
+    describe('welcome mark (decision 93)', () => {
+      const welcomeBox = () => el().querySelector<HTMLInputElement>('#promo-welcome');
+      const LABEL = 'הטבת הצטרפות (כל חשבון חדש מקבל ממנה קוד אישי)';
+
+      it('is offered only for a personal-code template, unchecked, with its label', async () => {
         await open('new');
         expect(welcomeBox()).toBeNull();
         el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
+        fixture.detectChanges();
+        expect(welcomeBox()).toBeNull();
+        el().querySelector<HTMLInputElement>('input[name="kind"][value="personal_template"]')!.click();
         fixture.detectChanges();
         expect(welcomeBox()?.type).toBe('checkbox');
         expect(welcomeBox()?.checked).toBe(false);
         expect(el().querySelector("label[for='promo-welcome']")?.textContent?.trim()).toBe(LABEL);
         // Its hint is read with it.
         const hint = document.getElementById(welcomeBox()!.getAttribute('aria-describedby') ?? '');
-        expect(hint?.textContent).toContain('אחד');
+        expect(hint?.textContent).toContain('אחת');
       });
 
-      it('saves the welcome benefit of an automatic promotion', async () => {
+      it('saves the welcome mark of a template', async () => {
         await open('new');
-        el().querySelector<HTMLInputElement>('input[name="kind"][value="automatic"]')!.click();
+        el().querySelector<HTMLInputElement>('input[name="kind"][value="personal_template"]')!.click();
         fixture.detectChanges();
         type('promo-name', 'הטבת הצטרפות 10%');
         type('promo-value', '10');
@@ -385,13 +447,13 @@ describe('admin promotions screens', () => {
         fixture.detectChanges();
         await save();
         const req = http.expectOne({ method: 'POST', url: '/api/admin/promotions' });
-        expect(req.request.body).toMatchObject({ kind: 'automatic', isWelcome: true });
-        req.flush({ ...base, id: 9, isWelcome: true });
+        expect(req.request.body).toMatchObject({ kind: 'personal_template', isWelcome: true, validityDays: 30 });
+        req.flush({ ...base, id: 9, kind: 'personal_template', validityDays: 30, isWelcome: true });
         await settle(fixture);
       });
 
-      it('shows a saved welcome benefit checked, and the API refusal in Hebrew', async () => {
-        await open('1', { ...base, isWelcome: true });
+      it('shows a saved welcome template checked, and the API refusal in Hebrew', async () => {
+        await open('1', { ...base, kind: 'personal_template', validityDays: 30, isWelcome: true });
         expect(welcomeBox()?.checked).toBe(true);
         await save();
         const req = http.expectOne({ method: 'PUT', url: '/api/admin/promotions/1' });
@@ -399,7 +461,7 @@ describe('admin promotions screens', () => {
         req.flush({ statusCode: 400, code: 'invalid', field: 'isWelcome' }, { status: 400, statusText: 'Bad Request' });
         await settle(fixture);
         expect(el().querySelector('.form-error[role=alert]')?.textContent?.trim()).toBe(
-          'הטבת הצטרפות אפשרית רק במבצע אוטומטי.',
+          'הטבת הצטרפות אפשרית רק בתבנית לקוד אישי.',
         );
       });
     });

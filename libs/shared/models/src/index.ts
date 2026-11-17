@@ -15,3 +15,4 @@ export * from './account.js';
 export * from './support.js';
 export * from './store-orders.js';
 export * from './marketing.js';
+export * from './customers-admin.js';

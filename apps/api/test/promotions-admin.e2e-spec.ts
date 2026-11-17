@@ -23,6 +23,8 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
   let productId: number;
 
   const cleanup = async () => {
+    await prisma.personalCode.deleteMany({ where: { promotion: { name: { startsWith: 'ZZ' } } } });
+    await prisma.customer.deleteMany({ where: { phone: '0509990001' } });
     await prisma.promotion.deleteMany({ where: { name: { startsWith: 'ZZ' } } });
     await prisma.product.deleteMany({ where: { modelName: { startsWith: 'ZZPADMIN' } } });
     await prisma.category.deleteMany({ where: { slug: 'zz-padmin-sub' } });
@@ -46,6 +48,8 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
   });
   const automatic = (over: Partial<AdminPromotionInput> = {}): AdminPromotionInput =>
     coupon({ name: 'ZZ מבצע ספות', kind: 'automatic', code: null, usageLimit: null, ...over });
+  const template = (over: Partial<AdminPromotionInput> = {}): AdminPromotionInput =>
+    automatic({ name: 'ZZ תבנית', kind: 'personal_template', validityDays: 30, ...over });
   const create = async (input: AdminPromotionInput) =>
     (await owner.post('/promotions', input).expect(201)).body as AdminPromotion;
   const audit = async () => ((await owner.get('/audit?entityType=promotion').expect(200)).body as AuditPage).items;
@@ -284,8 +288,8 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
     expect(bad.body).toMatchObject({ code: 'invalid', field: 'membersOnly' });
     await owner.post('/promotions', { ...coupon({ code: 'ZZCLUB3' }), appliesToMemberPrices: 1 }).expect(400);
 
-    // A welcome benefit may also be members-only (harmless: it is for signed-in customers anyway).
-    const welcome = await create(automatic({ name: 'ZZ הטבה מועדון', isWelcome: true, membersOnly: true }));
+    // A welcome template may also be members-only (harmless: its codes are for signed-in customers anyway).
+    const welcome = await create(template({ name: 'ZZ הטבה מועדון', isWelcome: true, membersOnly: true }));
     expect(welcome).toMatchObject({ isWelcome: true, membersOnly: true });
   });
 
@@ -306,31 +310,78 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
       .expect(400);
     expect(res.body).toMatchObject({ code: 'invalid_coupon', messageHe: 'תוקף הקופון פג' });
   });
-  it('the welcome benefit: automatic only; marking one clears it on the others and turns them off, audited', async () => {
+  it('personal-code templates: validity days 1–365 required, no code or usage limit, audited (decisions 93–94)', async () => {
+    const created = await create(template({ name: 'ZZ תבנית צוות', validityDays: 45 }));
+    expect(created).toMatchObject({ kind: 'personal_template', code: null, validityDays: 45, usageLimit: null });
+    const entry = (await audit()).find((e) => e.action === 'promotion.create' && e.entityId === String(created.id));
+    expect(entry?.after).toMatchObject({ סוג: 'תבנית לקוד אישי', 'תוקף קוד אישי': '45 ימים' });
+
+    for (const validityDays of [undefined, null, 0, 366, 1.5, '30']) {
+      const res = await owner.post('/promotions', { ...template(), validityDays }).expect(400);
+      expect(res.body, String(validityDays)).toMatchObject({ code: 'invalid', field: 'validityDays' });
+    }
+    expect((await owner.post('/promotions', { ...automatic(), validityDays: 30 }).expect(400)).body).toMatchObject({
+      field: 'validityDays',
+    });
+    expect((await owner.post('/promotions', template({ code: 'ZZTPL' })).expect(400)).body).toMatchObject({
+      field: 'code',
+    });
+    expect((await owner.post('/promotions', template({ usageLimit: 5 })).expect(400)).body).toMatchObject({
+      field: 'usageLimit',
+    });
+    // Edits keep the kind: a template stays a template, and nothing else becomes one.
+    const edited = (
+      await owner.put(`/promotions/${created.id}`, template({ name: 'ZZ תבנית צוות', validityDays: 60 })).expect(200)
+    ).body as AdminPromotion;
+    expect(edited.validityDays).toBe(60);
+    expect((await owner.put(`/promotions/${created.id}`, automatic()).expect(400)).body).toMatchObject({
+      field: 'kind',
+    });
+    const plain = await create(automatic({ name: 'ZZ רגיל' }));
+    expect((await owner.put(`/promotions/${plain.id}`, template()).expect(400)).body).toMatchObject({ field: 'kind' });
+    // A template is never an automatic discount.
+    expect((await app.get(PromotionsService).automatic(prisma)).map((r) => r.id)).not.toContain(created.id);
+  });
+
+  it('a coupon code never equals a personal code (409)', async () => {
+    const tpl = await create(template({ name: 'ZZ תבנית קוד' }));
+    const customer = await prisma.customer.create({ data: { fullName: 'ZZ לקוח', phone: '0509990001' } });
+    await prisma.personalCode.create({
+      data: { code: 'NST-ZZTAKEN2', promotionId: tpl.id, customerId: customer.id, expiresAt: new Date() },
+    });
+    const res = await owner.post('/promotions', coupon({ name: 'ZZ קופון', code: 'nst-zztaken2' })).expect(409);
+    expect(res.body).toMatchObject({ field: 'code' });
+  });
+
+  it('the welcome template: templates only; marking one clears it on the others and turns them off, audited', async () => {
     const bad = await owner.post('/promotions', { ...coupon({ code: 'ZZWELCOME' }), isWelcome: true }).expect(400);
     expect(bad.body).toMatchObject({ code: 'invalid', field: 'isWelcome' });
-    await owner.post('/promotions', { ...automatic(), isWelcome: 'yes' }).expect(400);
+    // No automatic welcome benefit any more (decision 93).
+    expect((await owner.post('/promotions', automatic({ isWelcome: true })).expect(400)).body).toMatchObject({
+      field: 'isWelcome',
+    });
+    await owner.post('/promotions', { ...template(), isWelcome: 'yes' }).expect(400);
 
-    const first = await create(automatic({ name: 'ZZ הטבה א', isWelcome: true }));
+    const first = await create(template({ name: 'ZZ הטבה א', isWelcome: true }));
     expect(first.isWelcome).toBe(true);
-    const plain = await create(automatic({ name: 'ZZ רגיל' }));
+    const plain = await create(template({ name: 'ZZ רגיל' }));
     expect(plain.isWelcome).toBe(false);
-    const second = await create(automatic({ name: 'ZZ הטבה ב', isWelcome: true }));
+    const second = await create(template({ name: 'ZZ הטבה ב', isWelcome: true }));
     expect(second.isWelcome).toBe(true);
-    // The old welcome promotion is turned off too: it must not become an automatic discount for every shopper.
+    // The old welcome template is turned off too: its unused codes must not lose the first-order rule.
     expect((await owner.get(`/promotions/${first.id}`).expect(200)).body).toMatchObject({
       isWelcome: false,
       active: false,
     });
-    expect((await app.get(PromotionsService).automatic(prisma)).map((r) => r.id)).not.toContain(first.id);
     const cleared = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(first.id));
     expect(cleared).toMatchObject({
       before: { 'הטבת הצטרפות': 'כן', פעיל: 'כן' },
       after: { 'הטבת הצטרפות': 'לא', פעיל: 'לא' },
     });
+    expect((await app.get(PromotionsService).welcomeBenefit())?.labelHe).toBe('ZZ הטבה ב');
 
     // Editing marks it back (and on again) and clears and turns off the second.
-    await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: true })).expect(200);
+    await owner.put(`/promotions/${first.id}`, template({ name: 'ZZ הטבה א', isWelcome: true })).expect(200);
     const rows = await prisma.promotion.findMany({ where: { isWelcome: true } });
     expect(rows.map((r) => r.id)).toEqual([first.id]);
     expect(rows[0].active).toBe(true);
@@ -339,43 +390,24 @@ describe('Promotions admin (e2e, ADM-05, spec §6)', () => {
       active: false,
     });
 
-    // An edit without isWelcome (an older form) keeps the mark; an explicit false removes it.
-    const { isWelcome: _omit, ...withoutFlag } = automatic({ name: 'ZZ הטבה א', value: 15 });
+    // An edit without isWelcome (an older form) keeps the mark; an explicit false removes it and turns it off.
+    const { isWelcome: _omit, ...withoutFlag } = template({ name: 'ZZ הטבה א', value: 15 });
     expect(_omit).toBeUndefined();
     const kept = (await owner.put(`/promotions/${first.id}`, withoutFlag).expect(200)).body as AdminPromotion;
     expect(kept).toMatchObject({ value: 15, isWelcome: true });
     const off = (
-      await owner.put(`/promotions/${first.id}`, automatic({ name: 'ZZ הטבה א', isWelcome: false })).expect(200)
+      await owner.put(`/promotions/${first.id}`, template({ name: 'ZZ הטבה א', isWelcome: false })).expect(200)
     ).body as AdminPromotion;
     expect(off).toMatchObject({ isWelcome: false, active: false });
-  });
-
-  it('unticking an active welcome promotion turns it off as well, audited (not an automatic discount for all)', async () => {
-    const welcome = await create(automatic({ name: 'ZZ הטבה ג', isWelcome: true }));
-    expect(welcome).toMatchObject({ isWelcome: true, active: true });
-
-    const off = (
-      await owner
-        .put(`/promotions/${welcome.id}`, automatic({ name: 'ZZ הטבה ג', isWelcome: false, active: true }))
-        .expect(200)
-    ).body as AdminPromotion;
-    expect(off).toMatchObject({ isWelcome: false, active: false });
-    expect(await prisma.promotion.findUniqueOrThrow({ where: { id: welcome.id } })).toMatchObject({
-      isWelcome: false,
-      active: false,
-    });
-    expect((await app.get(PromotionsService).automatic(prisma)).map((r) => r.id)).not.toContain(welcome.id);
-    const entry = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(welcome.id));
+    const entry = (await audit()).find((e) => e.action === 'promotion.update' && e.entityId === String(first.id));
     expect(entry).toMatchObject({
       before: { 'הטבת הצטרפות': 'כן', פעיל: 'כן' },
       after: { 'הטבת הצטרפות': 'לא', פעיל: 'לא' },
     });
 
-    // Turning it on again afterwards is a separate, deliberate save: it then stays on as a plain automatic promotion.
+    // Turning it on again afterwards is a separate, deliberate save: it then stays on as a plain template.
     const on = (
-      await owner
-        .put(`/promotions/${welcome.id}`, automatic({ name: 'ZZ הטבה ג', isWelcome: false, active: true }))
-        .expect(200)
+      await owner.put(`/promotions/${first.id}`, template({ name: 'ZZ הטבה א', isWelcome: false })).expect(200)
     ).body as AdminPromotion;
     expect(on).toMatchObject({ isWelcome: false, active: true });
   });

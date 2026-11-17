@@ -4,6 +4,7 @@
  */
 import type { MarketingStatus } from './marketing.js';
 import type { CheckoutAddress, OrderStatus } from './orders.js';
+import type { DiscountType } from './promotions.js';
 
 /** The signed-in customer (`GET /api/account/me`; `null` when signed out). */
 export interface CustomerMe {
@@ -233,3 +234,37 @@ export interface AccountConsent {
   consentAt: string | null;
   emailVerified: boolean;
 }
+
+// ---------- Club benefits (Phase 7c, spec §4.3, decisions 93–94) ----------
+
+/**
+ * A personal code's state in "ההטבות שלי": `used` by a paid order; `expired` past its expiry, its template turned off
+ * (that voids unused codes), or — a welcome code — once the account has a paid order; `active` otherwise.
+ */
+export type AccountBenefitStatus = 'active' | 'used' | 'expired';
+
+/**
+ * One row of `GET /api/account/benefits` (no-store): the account's own personal codes (the welcome code and codes from
+ * staff), newest first. `labelHe` is the template's name (the same label the cart's discount line shows); the value
+ * is the template's as it is now (terms are read when the code is used); `expiresAt` an ISO time (never after the
+ * template's end).
+ */
+export interface AccountBenefit {
+  code: string;
+  labelHe: string;
+  /** The template's discount type: a percent, or a fixed amount. */
+  discountKind: DiscountType;
+  /** Percent 1–100, or agorot for a fixed discount. */
+  discountValue: number;
+  /** The template's minimum cart subtotal in agorot; null when there is none. */
+  minSubtotal: number | null;
+  expiresAt: string;
+  status: AccountBenefitStatus;
+}
+
+// ---------- Favorites on the account (Phase 7c, spec §5.5, CLB-09) ----------
+
+/** The most favorites one account (or device) keeps; past it the oldest are dropped. */
+export const FAVORITES_MAX = 100;
+/** The most ids one `PUT /api/account/favorites` accepts. */
+export const FAVORITES_PUT_MAX = 200;

@@ -19,6 +19,7 @@ import { maskEmail } from '../notifications/masking.js';
 import { customerNotConfirmed } from '../orders/order-errors.js';
 import { THROTTLE_RETRY_AFTER_SECONDS, WriteThrottle } from '../orders/write-throttle.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PersonalCodesService } from '../promotions/personal-codes.service.js';
 import { StoreCartService } from './store-cart.service.js';
 import { isConfirmationLive } from './store-confirmation.js';
 
@@ -129,6 +130,7 @@ export class StoreCustomerService {
     private readonly throttle: WriteThrottle,
     private readonly storeCarts: StoreCartService,
     private readonly audit: AuditService,
+    private readonly codes: PersonalCodesService,
   ) {}
 
   /** Whether the phone has an account, and the masked e-mail the seller may offer (per-seller limit `store_lookup`). */
@@ -162,8 +164,11 @@ export class StoreCustomerService {
 
   /**
    * Checks the code and attaches the customer to the seller's open cart (created when there is none); a new phone
-   * gets its quick account in the same transaction. Every refusal that needs no code comes before the check, so it
-   * spends no attempt. Returns the cart id.
+   * gets its quick account in the same transaction, with its welcome code (an active welcome template, decisions 93,
+   * 96): sent by SMS to the verified phone through the outbox and put on the open cart (`couponCode`) unless the
+   * seller already entered a coupon there, so the sale that created the account gets it without typing. An existing
+   * account gets no code (a phone taken meanwhile rolls the whole transaction back, the code with it). Every refusal
+   * that needs no code comes before the check, so it spends no attempt. Returns the cart id.
    */
   async verify(actor: SellerActor, input: StoreVerifyInput): Promise<string> {
     // Counted first, on every call: the refusals below (400 / 409 / 401) would otherwise tell, without a limit,
@@ -186,6 +191,11 @@ export class StoreCustomerService {
           where: { id: cart.id },
           data: { storeCustomerId: customerId, storeConfirmedAt: new Date() },
         });
+        if (plan.kind === 'new') {
+          const welcome = await this.codes.issueWelcome(tx, customerId, 'sms');
+          if (welcome)
+            await tx.cart.updateMany({ where: { id: cart.id, couponCode: null }, data: { couponCode: welcome } });
+        }
         await this.audit.record(
           {
             actorId: actor.sellerId,
@@ -210,17 +220,28 @@ export class StoreCustomerService {
     }
   }
 
-  /** Drops the attached customer from the seller's open cart; 404 when there is no open cart. Returns the cart id. */
+  /**
+   * Drops the attached customer from the seller's open cart; 404 when there is no open cart. A coupon on the cart that
+   * is one of that customer's personal codes (their welcome code put there with the quick account) goes too, so the
+   * next customer's cart neither shows another account's code nor misses its own welcome code; any other coupon
+   * stays. Returns the cart id.
+   */
   async clear(actor: SellerActor): Promise<string> {
     return this.prisma.$transaction(async (tx) => {
       const open = await this.storeCarts.openIfAnyInTx(tx, actor.sellerId);
       if (!open) throw notFound();
       const cart = await tx.cart.findUniqueOrThrow({
         where: { id: open.id },
-        select: { id: true, storeCustomerId: true },
+        select: { id: true, storeCustomerId: true, couponCode: true },
       });
       if (cart.storeCustomerId === null) return cart.id;
-      await tx.cart.update({ where: { id: cart.id }, data: { storeCustomerId: null, storeConfirmedAt: null } });
+      const ownCode =
+        cart.couponCode !== null &&
+        (await tx.personalCode.count({ where: { code: cart.couponCode, customerId: cart.storeCustomerId } })) > 0;
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { storeCustomerId: null, storeConfirmedAt: null, ...(ownCode ? { couponCode: null } : {}) },
+      });
       await this.audit.record(
         {
           actorId: actor.sellerId,
