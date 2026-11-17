@@ -8,7 +8,7 @@ describe('buildSitemapXml', () => {
       products: [{ slug: 'alba-corner-sofa', updatedAt: '2026-10-05T21:30:00.000Z' }],
       categories: [{ slug: 'sofas' }, { slug: 'a&b' }],
       rooms: [{ slug: 'living-room' }],
-      infoPages: [],
+      infoPages: [{ slug: 'shipping', updatedAt: '2026-11-01T10:00:00.000Z' }],
     },
     origin,
   );
@@ -24,6 +24,8 @@ describe('buildSitemapXml', () => {
       `${origin}/category/a&amp;b`,
       `${origin}/product/alba-corner-sofa`,
       `${origin}/sizing-guide`,
+      `${origin}/faq`,
+      `${origin}/info/shipping`,
     ]);
     expect(locs.every((l) => l.startsWith(`${origin}/`))).toBe(true);
   });
@@ -35,7 +37,8 @@ describe('buildSitemapXml', () => {
 
   it('gives products a lastmod date (YYYY-MM-DD) from updatedAt', () => {
     expect(xml).toContain(`<url><loc>${origin}/product/alba-corner-sofa</loc><lastmod>2026-10-05</lastmod></url>`);
-    expect(xml.match(/<lastmod>/g)).toHaveLength(1);
+    expect(xml).toContain(`<url><loc>${origin}/info/shipping</loc><lastmod>2026-11-01</lastmod></url>`);
+    expect(xml.match(/<lastmod>/g)).toHaveLength(2);
   });
 
   it('escapes & in URLs', () => {
@@ -108,6 +111,12 @@ describe('registerSeoRoutes /sitemap.xml', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('redirects /terms to /info/terms with a 301', () => {
+    const redirect = vi.fn();
+    handlers['/terms']({}, { redirect } as unknown as FakeRes);
+    expect(redirect).toHaveBeenCalledWith(301, '/info/terms');
   });
 
   it('answers 503 text/plain when the fetch rejects', async () => {

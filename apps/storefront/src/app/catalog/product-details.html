@@ -53,8 +53,6 @@
     <svg lucideChevronDown aria-hidden="true"></svg>
   </summary>
   <div class="content">
-    @for (t of shipping; track t) {
-      <p>{{ t }}</p>
-    }
+    <hg-rich-text [html]="shipping()" />
   </div>
 </details>

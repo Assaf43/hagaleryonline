@@ -3,8 +3,17 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { BRAND } from '@hg/models';
-import type { CategoryNode, RoomMenuItem } from '@hg/models';
+import type { CategoryNode, RoomMenuItem, SiteContentView } from '@hg/models';
 import { App } from './app';
+
+const site: SiteContentView = {
+  supportPhone: '',
+  supportEmail: '',
+  whatsapp: '',
+  shippingHtml: '',
+  announcement: null,
+  footerPages: [],
+};
 
 describe('App', () => {
   beforeEach(async () => {
@@ -23,6 +32,7 @@ describe('App', () => {
     const categories: CategoryNode[] = [{ slug: 'sofas', nameHe: 'ספות', children: [] }];
     http.expectOne('/api/rooms').flush(rooms);
     http.expectOne('/api/categories').flush(categories);
+    http.expectOne('/api/content/site').flush(site);
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -45,6 +55,7 @@ describe('App', () => {
     const http = TestBed.inject(HttpTestingController);
     http.expectOne('/api/rooms').flush([]);
     http.expectOne('/api/categories').flush([]);
+    http.expectOne('/api/content/site').flush(site);
     await fixture.whenStable();
     fixture.detectChanges();
 

@@ -36,11 +36,11 @@
             <p class="hint">
               לביטול ההזמנה פנו לשירות הלקוחות:
               <bdi dir="ltr"
-                ><a [href]="'tel:' + support.phone">{{ support.phone }}</a></bdi
+                ><a [href]="'tel:' + support().phone">{{ support().phone }}</a></bdi
               >
               ·
               <bdi dir="ltr"
-                ><a [href]="'mailto:' + support.email">{{ support.email }}</a></bdi
+                ><a [href]="'mailto:' + support().email">{{ support().email }}</a></bdi
               >
             </p>
           }

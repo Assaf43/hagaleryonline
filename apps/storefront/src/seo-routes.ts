@@ -8,7 +8,7 @@ const escapeXml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
 /**
- * sitemap.xml (NFR-06): home, rooms, categories, products and the sizing guide, as absolute URLs.
+ * sitemap.xml (NFR-06): home, rooms, categories, products, the sizing guide, the FAQ and the info pages, as absolute URLs.
  * Search, favorites, filtered and variant URLs are never listed.
  */
 export function buildSitemapXml(data: SitemapData, origin: string): string {
@@ -20,6 +20,8 @@ export function buildSitemapXml(data: SitemapData, origin: string): string {
     ...data.categories.map((c) => url(`/category/${c.slug}`)),
     ...data.products.map((p) => url(`/product/${p.slug}`, p.updatedAt.slice(0, 10))),
     url('/sizing-guide'),
+    url('/faq'),
+    ...data.infoPages.map((p) => url(`/info/${p.slug}`, p.updatedAt.slice(0, 10))),
   ];
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -39,6 +41,11 @@ export function buildRobotsTxt(indexing: boolean, origin: string): string {
 /** `GET /sitemap.xml` and `GET /robots.txt`; register before the static and Angular handlers. */
 export function registerSeoRoutes(app: Express, env: { apiUrl: string; siteUrl: string; indexing: boolean }): void {
   let cached: { xml: string; expires: number } | null = null;
+
+  // The terms page moved into the CMS (decision 97): keep the old address working.
+  app.get('/terms', (_req, res) => {
+    res.redirect(301, '/info/terms');
+  });
 
   app.get('/sitemap.xml', async (_req, res) => {
     if (!cached || cached.expires <= Date.now()) {

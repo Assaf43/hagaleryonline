@@ -1,7 +1,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { PageMeta } from '../core/page-meta';
-import { SUPPORT_CONTACT } from '../core/support-contact';
+import { SiteContentStore } from '../content/site-content.store';
 import { ContactPage } from './contact.page';
 import { failWith, setupSupport, tick } from './support.testing';
 
@@ -49,14 +49,22 @@ describe('ContactPage (/contact, SRV-05)', () => {
 
   it('is a noindex page with the phone and a WhatsApp button to wa.me', async () => {
     http = setupSupport();
+    TestBed.inject(SiteContentStore).site.set({
+      supportPhone: '03-1112222',
+      supportEmail: 'a@b.test',
+      whatsapp: '972501112222',
+      shippingHtml: '',
+      announcement: null,
+      footerPages: [],
+    });
     const set = vi.spyOn(TestBed.inject(PageMeta), 'set');
     fixture = TestBed.createComponent(ContactPage);
     fixture.detectChanges();
     expect(set).toHaveBeenCalledWith(expect.objectContaining({ path: '/contact', noindex: true }));
     expect(q('h1').textContent?.trim()).toBe('צור קשר');
-    expect(q<HTMLAnchorElement>('a[href^="tel:"]').getAttribute('href')).toBe(`tel:${SUPPORT_CONTACT.phone}`);
+    expect(q<HTMLAnchorElement>('a[href^="tel:"]').getAttribute('href')).toBe('tel:03-1112222');
     const wa = q<HTMLAnchorElement>('a[href^="https://wa.me/"]');
-    expect(wa.getAttribute('href')).toBe(`https://wa.me/${SUPPORT_CONTACT.whatsapp}`);
+    expect(wa.getAttribute('href')).toBe('https://wa.me/972501112222');
     expect(wa.textContent?.trim()).toBe('שליחת הודעה בוואטסאפ');
   });
 

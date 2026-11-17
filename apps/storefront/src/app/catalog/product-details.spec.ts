@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 import type { ProductDetail, VariantDetail } from '@hg/models';
 import { ProductDetails, warrantyText } from './product-details';
-import { SHIPPING_INFO } from './shipping-info';
+import { SiteContentStore } from '../content/site-content.store';
 
 const variant = (widthCm: number): VariantDetail =>
   ({
@@ -35,8 +35,16 @@ describe('ProductDetails', () => {
   let fixture: ComponentFixture<ProductDetails>;
   const el = () => fixture.nativeElement as HTMLElement;
 
-  async function setup(p: ProductDetail, v: VariantDetail) {
+  async function setup(p: ProductDetail, v: VariantDetail, shippingHtml = '') {
     TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    TestBed.inject(SiteContentStore).site.set({
+      supportPhone: '',
+      supportEmail: '',
+      whatsapp: '',
+      shippingHtml,
+      announcement: null,
+      footerPages: [],
+    });
     fixture = TestBed.createComponent(ProductDetails);
     fixture.componentRef.setInput('product', p);
     fixture.componentRef.setInput('variant', v);
@@ -113,10 +121,10 @@ describe('ProductDetails', () => {
     expect(rows(2)).toContainEqual(['אחריות', 'שנה']);
   });
 
-  it('shipping section shows the interim paragraphs', async () => {
-    await setup(product(), variant(280));
+  it('shipping section shows the shipping HTML from the site details', async () => {
+    await setup(product(), variant(280), '<p>משלוח חינם</p><p>עד הבית</p>');
     const ps = Array.from(sections()[3].querySelectorAll('p')).map((p) => p.textContent);
-    expect(ps).toEqual([...SHIPPING_INFO.paragraphsHe]);
+    expect(ps).toEqual(['משלוח חינם', 'עד הבית']);
   });
 });
 

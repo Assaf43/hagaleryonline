@@ -17,7 +17,7 @@ import type { OrderView } from '@hg/models';
 import { ORDER_STATUS_TITLES, OrderDetail } from '../order/order-detail';
 import { PageMeta } from '../core/page-meta';
 import { formatPrice } from '../core/format';
-import { SUPPORT_CONTACT } from '../core/support-contact';
+import { SiteContentStore } from '../content/site-content.store';
 import { AccountNav } from './account-nav';
 import { AccountApi, accountErrorMessage, accountFailure } from './account.api';
 import { CustomerStore } from './customer.store';
@@ -51,7 +51,7 @@ export class OrderDetailPage {
   protected readonly state = signal<'loading' | 'ready' | 'not_found' | 'error'>('loading');
   protected readonly cancelling = signal(false);
   protected readonly actionError = signal('');
-  protected readonly support = SUPPORT_CONTACT;
+  protected readonly support = inject(SiteContentStore).contact;
   protected readonly price = formatPrice;
   /** Bumped on every load, so an answer for an older number is dropped. */
   private generation = 0;
