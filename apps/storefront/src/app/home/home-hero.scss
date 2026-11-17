@@ -41,6 +41,17 @@
 
 .banner-art {
   display: block;
+  position: relative;
+
+  &.has-mobile {
+    aspect-ratio: 4 / 5;
+  }
+}
+
+@media (width >= 768px) {
+  .banner-art.has-mobile {
+    aspect-ratio: 4 / 3;
+  }
 }
 
 @media (width >= 1024px) {

@@ -26,7 +26,7 @@ import { BannerLink } from './banner-link';
             </div>
           }
         </div>
-        <div class="hero-art banner-art">
+        <div class="hero-art banner-art" [class.has-mobile]="!!b.mobileImage">
           @if (b.ctaLabelHe) {
             <hg-banner-image [banner]="b" sizes="(width >= 1024px) 55vw, 100vw" [priority]="true" />
           } @else {

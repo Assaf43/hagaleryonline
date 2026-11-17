@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import type { BannerView } from '@hg/models';
 
-/** A banner photo: the mobile picture below 768 px when there is one, AVIF then WebP, the alt text of the banner. */
+/** A banner photo (fills its positioned parent box): the mobile picture below 768 px when there is one, AVIF then WebP, the alt text of the banner. */
 @Component({
   selector: 'hg-banner-image',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -39,13 +39,19 @@ import type { BannerView } from '@hg/models';
     </picture>
   `,
   styles: `
-    :host,
-    picture {
+    :host {
+      position: absolute;
+      inset: 0;
       display: block;
-      block-size: 100%;
+    }
+
+    picture {
+      display: contents;
     }
 
     img {
+      position: absolute;
+      inset: 0;
       inline-size: 100%;
       block-size: 100%;
       object-fit: cover;

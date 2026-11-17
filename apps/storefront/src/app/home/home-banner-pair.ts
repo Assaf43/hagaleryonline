@@ -54,6 +54,7 @@ import { BannerLink } from './banner-link';
     }
 
     .media {
+      position: relative;
       display: block;
       aspect-ratio: 4 / 3;
       background: var(--color-surface-alt);

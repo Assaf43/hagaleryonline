@@ -117,6 +117,7 @@ describe('HomePage', () => {
     expect(cta?.getAttribute('href')).toBe('/category/sofas');
     const mobile = el.querySelector('picture source[media="(width < 768px)"]');
     expect(mobile?.getAttribute('srcset')).toContain('mob');
+    expect(el.querySelector('.banner-art')?.classList.contains('has-mobile')).toBe(true);
     const image = el.querySelector('picture img');
     expect(image?.getAttribute('alt')).toBe('באנר קיץ');
     expect(image?.getAttribute('loading')).toBe('eager');
@@ -144,6 +145,7 @@ describe('HomePage', () => {
     expect(cta?.getAttribute('rel')).toBe('noopener');
     expect(cta?.getAttribute('target')).toBeNull();
     expect(el.querySelector('picture source[media]')).toBeNull();
+    expect(el.querySelector('.banner-art')?.classList.contains('has-mobile')).toBe(false);
   });
 
   it('renders category tiles, a product row with its link, and a banner pair (one banner: full width)', async () => {
