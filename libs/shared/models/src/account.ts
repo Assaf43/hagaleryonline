@@ -261,3 +261,10 @@ export interface AccountBenefit {
   expiresAt: string;
   status: AccountBenefitStatus;
 }
+
+// ---------- Favorites on the account (Phase 7c, spec §5.5, CLB-09) ----------
+
+/** The most favorites one account (or device) keeps; past it the oldest are dropped. */
+export const FAVORITES_MAX = 100;
+/** The most ids one `PUT /api/account/favorites` accepts. */
+export const FAVORITES_PUT_MAX = 200;

@@ -18,6 +18,8 @@ import { CustomerAuthService } from './customer-auth.service.js';
 import { CustomerCleanupService } from './customer-cleanup.service.js';
 import { CustomerSessionModule } from './customer-session.module.js';
 import { PrismaOtpStore } from './otp-store.prisma.js';
+import { FavoritesController } from './favorites.controller.js';
+import { FavoritesService } from './favorites.service.js';
 import { OtpService, resolveOtpPepper } from './otp.service.js';
 
 /**
@@ -36,10 +38,11 @@ import { OtpService, resolveOtpPepper } from './otp.service.js';
     PromotionsModule,
     WriteThrottleModule,
   ],
-  controllers: [CustomerAuthController, AccountController, BenefitsController],
+  controllers: [CustomerAuthController, AccountController, BenefitsController, FavoritesController],
   providers: [
     CustomerAuthService,
     AccountService,
+    FavoritesService,
     CustomerCleanupService,
     {
       provide: OtpService,

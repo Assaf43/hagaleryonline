@@ -55,6 +55,20 @@ export class AccountApi {
     return firstValueFrom(this.http.post<SignedInResponse>('/api/account/sign-in', body));
   }
 
+  /** The account's favorite product ids, newest first. */
+  favorites() {
+    return firstValueFrom(this.http.get<number[]>('/api/account/favorites'));
+  }
+
+  /** Merges ids into the account's favorites (the new ones lead); answers the whole list. */
+  mergeFavorites(productIds: readonly number[]) {
+    return firstValueFrom(this.http.put<number[]>('/api/account/favorites', { productIds }));
+  }
+
+  removeFavorite(productId: number) {
+    return firstValueFrom(this.http.delete<void>(`/api/account/favorites/${productId}`));
+  }
+
   signOut() {
     return firstValueFrom(this.http.post<void>('/api/account/sign-out', null));
   }

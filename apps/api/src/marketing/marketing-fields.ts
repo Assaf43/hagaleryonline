@@ -3,7 +3,10 @@ import { PAID_OR_LATER } from '../orders/order-transitions.js';
 import type { SyncedContact } from './marketing-provider.js';
 
 /** The Prisma calls `marketingFields` makes (a client or a transaction). */
-export type FieldsDb = Pick<Prisma.TransactionClient, '$queryRaw' | 'customer' | 'category' | 'orderItem'>;
+export type FieldsDb = Pick<
+  Prisma.TransactionClient,
+  '$queryRaw' | 'customer' | 'category' | 'orderItem' | 'customerFavorite' | 'product'
+>;
 
 /** The DB values of `PAID_OR_LATER` (each enum value maps to its lower-case name in schema.prisma). */
 const PAID_DB_VALUES = [...PAID_OR_LATER].map((s: OrderStatus) => s.toLowerCase());
@@ -15,7 +18,7 @@ const MAX_DEPTH = 10;
  * account (its first name too), else `newsletter`; whether it has a paid order (paid or any later step,
  * `PAID_OR_LATER`) and when the latest was paid; the top-level category slugs of those orders' products. Only orders
  * the linked account placed count: a guest order is never linked to anyone (decision 77), even when its e-mail is the
- * contact's, so a contact without an account has no purchase fields. Favorites join the interests in Phase 7c.
+ * contact's, so a contact without an account has no purchase fields. The linked account's favorites join the interests (CLB-09): the top-level category of each favorite product.
  */
 export async function marketingFields(db: FieldsDb, contact: MarketingContact): Promise<SyncedContact> {
   const customerId = contact.customerId;
@@ -30,12 +33,24 @@ export async function marketingFields(db: FieldsDb, contact: MarketingContact): 
         WHERE o.status::text IN (${Prisma.join(PAID_DB_VALUES)}) AND o.customer_id = ${customerId}::uuid`
     : [];
 
+  const productIds = customerId
+    ? (await db.customerFavorite.findMany({ where: { customerId }, select: { productId: true } })).map(
+        (f) => f.productId,
+      )
+    : [];
   let interestCategories: string[] = [];
-  if (orders.length > 0) {
-    const items = await db.orderItem.findMany({
-      where: { orderId: { in: orders.map((o) => o.id) } },
-      select: { variant: { select: { product: { select: { categoryId: true } } } } },
-    });
+  if (orders.length > 0 || productIds.length > 0) {
+    const items =
+      orders.length > 0
+        ? await db.orderItem.findMany({
+            where: { orderId: { in: orders.map((o) => o.id) } },
+            select: { variant: { select: { product: { select: { categoryId: true } } } } },
+          })
+        : [];
+    const favorites =
+      productIds.length > 0
+        ? await db.product.findMany({ where: { id: { in: productIds } }, select: { categoryId: true } })
+        : [];
     const categories = await db.category.findMany({ select: { id: true, slug: true, parentId: true } });
     const byId = new Map(categories.map((c) => [c.id, c]));
     const top = (id: number): string | null => {
@@ -43,8 +58,8 @@ export async function marketingFields(db: FieldsDb, contact: MarketingContact): 
       for (let depth = 0; node?.parentId != null && depth < MAX_DEPTH; depth++) node = byId.get(node.parentId);
       return node && node.parentId === null ? node.slug : null;
     };
-    const slugs = items.flatMap((i) => {
-      const id = i.variant?.product.categoryId;
+    const categoryIds = [...items.map((i) => i.variant?.product.categoryId), ...favorites.map((p) => p.categoryId)];
+    const slugs = categoryIds.flatMap((id) => {
       const slug = id === undefined ? null : top(id);
       return slug ? [slug] : [];
     });

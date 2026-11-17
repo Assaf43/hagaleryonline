@@ -78,6 +78,7 @@ model Room {
 
 model Product {
   id               Int      @id @default(autoincrement())
+  favoritedBy      CustomerFavorite[]
   slug             String   @unique
   /// English model name, required and unique (decision 46), e.g. ALBA.
   modelName        String   @unique @map("model_name")
@@ -1156,6 +1157,7 @@ model Customer {
   tickets          SupportTicket[]
   marketingContact MarketingContact?
   personalCodes    PersonalCode[]
+  favorites        CustomerFavorite[]
   createdBySeller  AdminUser?        @relation(fields: [createdBySellerId], references: [id], onDelete: Restrict)
 
   @@map("customers")
@@ -1353,4 +1355,18 @@ model Store {
   orders Order[]
 
   @@map("stores")
+}
+
+/// A product an account saved as a favorite (CLB-09); newest `createdAt` first.
+model CustomerFavorite {
+  customerId String   @map("customer_id") @db.Uuid
+  productId  Int      @map("product_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, productId])
+  @@index([customerId, createdAt])
+  @@map("customer_favorites")
 }

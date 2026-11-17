@@ -36,6 +36,8 @@ import { Prisma } from '../generated/prisma/client.js';
  *    the cart's coupon is cleared after commit;
  *  - customer cancel: the order's payments (ascending id), then the order (the webhook's payment → order);
  *  - admin status move: the order alone;
+ *  - favorites (Phase 7c): a transaction-scoped advisory lock per account (`lockFavorites`), taken first by the
+ *    favorites writes, before the marketing lock (nothing else is held then);
  *  - marketing (Phase 7): a transaction-scoped advisory lock per e-mail (MarketingService), always the LAST lock of
  *    its transaction — checkout and store checkout take it after the order insert, sign-up after the customer insert,
  *    the e-mail change after the customer update. While holding it only marketing rows and outbox jobs are written.
@@ -55,6 +57,11 @@ export async function lockWelcome(tx: Prisma.TransactionClient, customerId: stri
 /** One account's cart lock (see above); released at commit or rollback. */
 export async function lockAccountCart(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'cart:' + customerId}::text))`;
+}
+
+/** One account's favorites lock (see above); released at commit or rollback. */
+export async function lockFavorites(tx: Prisma.TransactionClient, customerId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'favorites:' + customerId}::text))`;
 }
 
 /** One seller's open-store-cart lock (see above); released at commit or rollback. */

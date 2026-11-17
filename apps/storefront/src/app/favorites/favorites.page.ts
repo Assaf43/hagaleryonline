@@ -3,6 +3,7 @@ import {
   Component,
   PendingTasks,
   afterNextRender,
+  effect,
   inject,
   signal,
   untracked,
@@ -16,7 +17,7 @@ import { PageMeta } from '../core/page-meta';
 import { ProductCard } from '../catalog/product-card';
 
 /**
- * "המועדפים שלי" (CMP-01, NAV-03): the products saved on this device, newest first. The list lives in the
+ * "המועדפים שלי" (CMP-01, NAV-03): the products saved on this device or, signed in, on the account, newest first. The list lives in the
  * browser only, so the server renders just the heading and the cards load after hydration. Products the API
  * no longer returns (hidden or removed) are dropped from the saved list. A heart pressed here keeps its card
  * on the page until the next visit, so a mistaken click can be undone.
@@ -36,14 +37,22 @@ export class FavoritesPage {
   /** null until loaded in the browser (also the whole server render). */
   protected readonly cards = signal<Card[] | null>(null);
   protected readonly loadFailed = signal(false);
+  /** The list source (`FavoritesStore.source`) the cards were loaded for; null before the first load. */
+  private loadedFor: string | null = null;
 
   constructor() {
     inject(PageMeta).set({ title: 'המועדפים שלי', description: 'המוצרים ששמרתם', path: '/favorites', noindex: true });
     afterNextRender(() => this.load());
+    // Signing in or out swaps the whole list (device <-> account): load the cards again.
+    effect(() => {
+      const source = this.favorites.source();
+      if (this.loadedFor !== null && source !== this.loadedFor) untracked(() => this.load());
+    });
   }
 
   protected load(): void {
     this.loadFailed.set(false);
+    this.loadedFor = untracked(this.favorites.source);
     void this.tasks.run(async () => {
       const ids = untracked(this.favorites.ids);
       if (!ids.length) return this.cards.set([]);

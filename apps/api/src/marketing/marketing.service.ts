@@ -318,9 +318,21 @@ export class MarketingService {
    * the tool: nothing to do.
    */
   async orderPaid(tx: Db, order: { customerId: string | null }): Promise<void> {
-    if (!order.customerId) return;
+    if (order.customerId) await this.fieldsChanged(tx, order.customerId);
+  }
+
+  /**
+   * The favorites of an account changed (CLB-09; in the favorites transaction, as its last step): the interests of its
+   * contact changed, so it is synced like after a payment. Nothing to do for an account without a subscribed contact.
+   */
+  async favoritesChanged(tx: Db, customerId: string): Promise<void> {
+    await this.fieldsChanged(tx, customerId);
+  }
+
+  /** The synced fields of an account's contact changed: see `orderPaid`. */
+  private async fieldsChanged(tx: Db, customerId: string): Promise<void> {
     const seen = await tx.marketingContact.findUnique({
-      where: { customerId: order.customerId },
+      where: { customerId },
       select: { email: true },
     });
     if (!seen) return;
@@ -329,7 +341,7 @@ export class MarketingService {
     // account now links another e-mail's contact, that contact is not ours to change without its own lock: skip. The
     // change that re-linked it synced it already (a link of a subscribed contact enqueues a sync).
     const contact = await tx.marketingContact.findUnique({ where: { email: seen.email } });
-    if (contact?.customerId !== order.customerId || contact.status !== MarketingStatus.SUBSCRIBED) return;
+    if (contact?.customerId !== customerId || contact.status !== MarketingStatus.SUBSCRIBED) return;
     const updated = await tx.marketingContact.update({
       where: { id: contact.id },
       data: { syncVersion: { increment: 1 } },
