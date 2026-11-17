@@ -9,6 +9,7 @@ import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
 import { CustomerPage } from './customer.page';
 import { IssueCodeDialog } from './issue-code.dialog';
+import { formatPrice } from '../catalog/catalog-format';
 
 const ID = '6f9a1c2e-0000-4000-8000-000000000001';
 
@@ -122,6 +123,7 @@ describe('admin customer profile', () => {
     expect(rows[0].textContent).toContain('שולמה');
     expect(rows[0].textContent).toContain('אתר');
     expect(rows[1].textContent).toContain('חנות');
+    expect(rows[0].querySelector('.amount bdi')?.textContent).toBe(formatPrice(115_000));
     expect(el.querySelector('.orders-note')).toBeNull();
   });
 
@@ -151,6 +153,13 @@ describe('admin customer profile', () => {
     expect(codes[0].querySelector('bdi')?.textContent).toBe('NST-ABCD2345');
     expect(codes[0].textContent).toContain('קוד חג');
     expect(codes[0].textContent).toContain('15%');
+    // Amounts and percentages are isolated from the Hebrew around them.
+    const isolated = (li: Element) => [...li.querySelectorAll('bdi')].map((b) => b.textContent?.trim());
+    expect(isolated(codes[0])).toContain('15%');
+    expect(isolated(codes[1])).toEqual(expect.arrayContaining([formatPrice(20_000), formatPrice(100_000)]));
+    expect(codes[1].textContent?.replace(/\s+/g, ' ')).toContain(
+      `${formatPrice(20_000)} · קנייה מעל ${formatPrice(100_000)}`.replace(/\s+/g, ' '),
+    );
     expect(codes[0].querySelector('.code-status')?.textContent?.trim()).toBe('פעיל');
     expect(codes[1].querySelector('.code-status')?.textContent?.trim()).toBe('פג תוקף');
     // The profile never shows any token or hash.
@@ -186,7 +195,9 @@ describe('admin customer profile', () => {
     const button = el.querySelector<HTMLButtonElement>('button.issue-code')!;
     expect(button.textContent?.trim()).toBe('הנפקת קופון אישי');
     const dialog = TestBed.inject(MatDialog);
-    const openDialog = vi.spyOn(dialog, 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
+    const openDialog = vi
+      .spyOn(dialog, 'open')
+      .mockReturnValue({ afterClosed: () => of(true), componentInstance: { hasIssued: () => true } } as never);
     button.click();
     expect(openDialog).toHaveBeenCalledWith(
       IssueCodeDialog,
@@ -198,6 +209,32 @@ describe('admin customer profile', () => {
     http.expectOne(`/api/admin/customers/${ID}`).flush({ ...PROFILE, codes: [] });
     await settle(fixture);
     expect(el.querySelector('.codes')?.textContent).toContain('אין קודים אישיים');
+  });
+
+  it('reloads the profile when the dialog is closed by Escape or the backdrop after a code was issued', async () => {
+    const { fixture, el } = await open(PROFILE, ['customers.view', 'club.manage']);
+    const dialog = TestBed.inject(MatDialog);
+    // Escape and a backdrop click close the dialog with no result.
+    vi.spyOn(dialog, 'open').mockReturnValue({
+      afterClosed: () => of(undefined),
+      componentInstance: { hasIssued: () => true },
+    } as never);
+    el.querySelector<HTMLButtonElement>('button.issue-code')!.click();
+    await settle(fixture);
+    http.expectOne(`/api/admin/customers/${ID}`).flush(PROFILE);
+    await settle(fixture);
+  });
+
+  it('does not reload the profile when the dialog is closed without issuing', async () => {
+    const { fixture, el } = await open(PROFILE, ['customers.view', 'club.manage']);
+    const dialog = TestBed.inject(MatDialog);
+    vi.spyOn(dialog, 'open').mockReturnValue({
+      afterClosed: () => of(undefined),
+      componentInstance: { hasIssued: () => false },
+    } as never);
+    el.querySelector<HTMLButtonElement>('button.issue-code')!.click();
+    await settle(fixture);
+    http.expectNone(`/api/admin/customers/${ID}`);
   });
 
   it('says so when the customer does not exist', async () => {
@@ -245,7 +282,12 @@ describe('issue personal coupon dialog', () => {
     expect(options[0]).toContain('15%');
     expect(options[0]).toContain('30 ימים');
     expect(options[1]).toContain('מתנה');
-    expect(options[1]).toContain('קנייה מעל');
+    expect(options[1]).toContain(`קנייה מעל ${formatPrice(100_000)}`.replace(/\s+/g, ' '));
+    const hints = [...el.querySelectorAll('.templates label')].map((l) =>
+      [...l.querySelectorAll('bdi')].map((b) => b.textContent?.trim()),
+    );
+    expect(hints[0]).toContain('15%');
+    expect(hints[1]).toEqual(expect.arrayContaining([formatPrice(20_000), formatPrice(100_000)]));
     // Nothing is sent before a template is chosen.
     el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     await settle(fixture);
@@ -264,6 +306,8 @@ describe('issue personal coupon dialog', () => {
     expect(el.querySelector('.issued bdi')?.textContent).toBe('NST-ABCD2345');
     expect(el.querySelector('.issued')?.textContent).toContain('10.12.2026');
     expect(el.querySelector('form')).toBeNull();
+    // Sending goes through the outbox: the note says it will be sent, not that it was.
+    expect(el.querySelector('.sent')?.textContent?.trim()).toBe('הקוד יישלח ללקוח ב-SMS.');
     el.querySelector<HTMLButtonElement>('button.done')!.click();
     expect(close).toHaveBeenCalledWith(true);
   });

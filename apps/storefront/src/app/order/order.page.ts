@@ -19,7 +19,7 @@ import { ORDER_STATUS_TITLES, OrderDetail } from './order-detail';
 import type { OrderView } from '@hg/models';
 import { CartStore } from '../core/cart.store';
 import { CustomerStore } from '../account/customer.store';
-import { JoinContact } from '../account/join-contact';
+import { JoinContact, type JoinContactData } from '../account/join-contact';
 import { SignUpDraft } from '../account/sign-up-draft';
 import { formatPrice } from '../core/format';
 import { PageMeta } from '../core/page-meta';
@@ -101,12 +101,17 @@ export class OrderPage {
   });
   protected readonly price = formatPrice;
 
-  /** The active welcome offer's label, read only for a guest after a paid order; null hides the join box. */
+  /** The active welcome offer's label, read only for a guest viewer of a paid guest order; null hides the join box. */
   private readonly welcomeLabel = signal<string | null>(null);
   private joinChecked = false;
-  /** The invitation: a guest (the session was read and nobody is signed in) and an active welcome offer. */
+  /** The checkout contact, taken out of the tab's storage when the box is shown and kept in memory for the click. */
+  private joinContactData: JoinContactData | null = null;
+  /**
+   * The invitation: a guest order (no account, `guestOrder`), a guest viewer (the session was read and nobody is
+   * signed in) and an active welcome offer.
+   */
   protected readonly joinOffer = computed(() =>
-    this.customer.ready() && !this.customer.me() ? this.welcomeLabel() : null,
+    this.order()?.guestOrder && this.customer.ready() && !this.customer.me() ? this.welcomeLabel() : null,
   );
 
   /** The document opens through the API with the order token, like the page itself (spec §5.4). */
@@ -166,7 +171,7 @@ export class OrderPage {
     if (generation !== this.generation) return;
     this.order.set(view);
     this.state.set('ready');
-    if (PURCHASED.has(view.status)) void this.checkJoin();
+    if (PURCHASED.has(view.status)) void this.checkJoin(view.guestOrder);
     if (view.status === 'pending_payment') this.schedule(number, token, generation);
     if (view.status === 'paid' && !this.cartRefreshed) {
       this.cartRefreshed = true;
@@ -174,23 +179,37 @@ export class OrderPage {
     }
   }
 
-  /** Once per page: the session, then (for a guest) the welcome offer. Nothing is linked to this order (decision 77). */
-  private async checkJoin(): Promise<void> {
+  /**
+   * Once per page, for a guest order only: the session, then (for a guest viewer) the welcome offer. Nothing is linked
+   * to this order (decision 77). The stored checkout contact leaves the tab's storage whatever the outcome: kept in
+   * memory when the box is shown (for the click), dropped otherwise, so a later order page never prefills it.
+   */
+  private async checkJoin(guestOrder: boolean): Promise<void> {
     if (this.joinChecked) return;
     this.joinChecked = true;
-    await this.customer.load();
-    if (this.customer.me()) return;
-    try {
-      this.welcomeLabel.set((await this.api.welcome())?.labelHe ?? null);
-    } catch {
-      // No offer: no box.
+    if (!guestOrder) {
+      this.joinContact.clear();
+      return;
     }
+    await this.customer.load();
+    let label: string | null = null;
+    if (!this.customer.me()) {
+      try {
+        label = (await this.api.welcome())?.labelHe ?? null;
+      } catch {
+        // No offer: no box.
+      }
+    }
+    this.joinContactData = label ? this.joinContact.read() : null;
+    this.joinContact.clear();
+    this.welcomeLabel.set(label);
   }
 
   /** "הצטרפות": hands the checkout contact to the sign-up page in memory (never in the URL) and goes there. */
   protected join(event: Event): void {
     event.preventDefault();
-    const c = this.joinContact.read();
+    const c = this.joinContactData;
+    this.joinContactData = null;
     this.draft.set({
       fullName: c?.fullName,
       phone: c?.phone ?? null,
@@ -198,7 +217,6 @@ export class OrderPage {
       signUpToken: null,
       verified: { phone: null, email: null },
     });
-    this.joinContact.clear();
     void this.router.navigateByUrl('/account/sign-up');
   }
 

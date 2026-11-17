@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { israelDate } from '../invoicing/vat.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { hasPaidOrder } from '../promotions/promotions.service.js';
 import { NotificationsService } from './notifications.service.js';
 import type { PersonalCodeMessageData } from './templates/index.js';
 
@@ -20,7 +21,9 @@ function displayDate(at: Date): string {
  * verified e-mail), `sms.welcome_code` (store quick account, to the verified phone), and `email.personal_code` /
  * `sms.personal_code` (issued by staff). A job carries the code's id only; the code is read here, when it is sent, so
  * it is never in a job payload. A code that is gone, already used, expired (also by its template's end, e.g. a job
- * retried late) or whose template was turned off meanwhile sends nothing; an e-mail job for an account whose e-mail is no longer verified (or gone) is skipped.
+ * retried late) or whose template was turned off meanwhile sends nothing, nor does a welcome code once its account has
+ * a paid order (it would only answer `first_order_only`); an e-mail job for an account whose e-mail is no longer
+ * verified (or gone) is skipped.
  */
 @Injectable()
 export class PersonalCodeMessagesJob implements OnModuleInit {
@@ -47,7 +50,7 @@ export class PersonalCodeMessagesJob implements OnModuleInit {
     const row = await this.prisma.personalCode.findUnique({
       where: { id: personalCodeId },
       include: {
-        promotion: { select: { name: true, active: true, endsAt: true } },
+        promotion: { select: { name: true, active: true, endsAt: true, isWelcome: true } },
         customer: { select: { fullName: true, phone: true, email: true, emailVerifiedAt: true } },
       },
     });
@@ -59,6 +62,10 @@ export class PersonalCodeMessagesJob implements OnModuleInit {
     const expiresAt = promotion.endsAt && promotion.endsAt < row.expiresAt ? promotion.endsAt : row.expiresAt;
     if (expiresAt <= new Date()) {
       this.logger.log(`Personal code ${personalCodeId} has expired: no message`);
+      return;
+    }
+    if (promotion.isWelcome && (await hasPaidOrder(this.prisma, row.customerId))) {
+      this.logger.log(`Welcome code ${personalCodeId}: the account already has a paid order, no message`);
       return;
     }
     const data: PersonalCodeMessageData = {

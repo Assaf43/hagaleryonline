@@ -20,7 +20,7 @@
               <bdi class="code num" dir="ltr">{{ b.code }}</bdi>
             </p>
             <p>
-              {{ value(b) }}
+              <bdi>{{ value(b) }}</bdi>
               @if (b.minSubtotal !== null) {
                 · בקנייה מעל <bdi class="num">{{ price(b.minSubtotal) }}</bdi>
               }

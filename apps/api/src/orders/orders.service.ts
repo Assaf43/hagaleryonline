@@ -157,6 +157,7 @@ export class OrdersService {
       deliveryEstimate: (order.deliveryEstimate as OrderView['deliveryEstimate']) ?? null,
       canRetryPayment,
       stockShortage: order.stockShortage,
+      guestOrder: order.customerId === null,
     };
   }
 

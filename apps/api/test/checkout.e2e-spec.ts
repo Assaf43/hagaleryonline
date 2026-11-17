@@ -318,6 +318,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       method: 'curbside',
       canRetryPayment: false,
       address: { localityNameHe: localityName, street: 'הרצל', floor: 4 },
+      guestOrder: true,
     });
     expect(view.lines).toEqual([
       {

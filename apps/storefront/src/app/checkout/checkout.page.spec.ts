@@ -531,11 +531,12 @@ describe('CheckoutPage', () => {
   describe('signed out (spec §6.4)', () => {
     const banner = () => el().querySelector<HTMLElement>('.signin-banner');
 
-    it('invites to sign in with the welcome benefit, linking to sign-in and back to checkout', async () => {
+    it('promises joiners a personal code with the welcome benefit, linking to sign-in and back to checkout', async () => {
       await setup(undefined, { welcome: { labelHe: '10% הנחה על ההזמנה הראשונה' } });
-      expect(banner()?.querySelector('p')?.textContent?.trim()).toBe(
-        'התחברו או הירשמו וקבלו 10% הנחה על ההזמנה הראשונה',
+      expect(banner()?.querySelector('p')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'הצטרפו למועדון וקבלו קוד הנחה אישי לרכישה הראשונה: 10% הנחה על ההזמנה הראשונה',
       );
+      expect(banner()!.querySelector('p bdi')?.textContent).toBe('10% הנחה על ההזמנה הראשונה');
       const link = banner()!.querySelector<HTMLAnchorElement>('a')!;
       expect(link.textContent?.trim()).toBe('התחברות');
       expect(link.getAttribute('href')).toBe('/account?next=%2Fcheckout');

@@ -6,6 +6,7 @@ import {
   codeExpiry,
   generateCode,
   issuePersonalCode,
+  looksLikePersonalCode,
   personalCodeProblem,
   personalCodeRule,
   type PersonalCodeBuyer,
@@ -70,6 +71,15 @@ describe('generateCode', () => {
     const seen = new Set<string>();
     for (let i = 0; i < 400; i++) for (const ch of generateCode().slice(4)) seen.add(ch);
     expect(seen.size).toBe(CODE_ALPHABET.length);
+  });
+});
+
+describe('looksLikePersonalCode', () => {
+  it('is "NST-" + 8 characters of the code alphabet, nothing else', () => {
+    expect(looksLikePersonalCode(generateCode())).toBe(true);
+    expect(looksLikePersonalCode('NST-ZZZZZZZZ')).toBe(true);
+    for (const other of ['NST-ZZZZZZZ', 'NST-ZZZZZZZZZ', 'NST-ZZZZZZZ0', 'NST-ZZZZZZZI', 'SALE10', 'nst-zzzzzzzz'])
+      expect(looksLikePersonalCode(other)).toBe(false);
   });
 });
 

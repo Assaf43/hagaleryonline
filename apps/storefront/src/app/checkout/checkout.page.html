@@ -2,9 +2,15 @@
   <h1 tabindex="-1">מעבר לתשלום</h1>
 
   <!-- Browser only: the shopper is known after the session read (spec §6.4). -->
-  @if (shopper() === 'guest' && bannerText() && !bannerClosed()) {
+  @if (shopper() === 'guest' && banner() && !bannerClosed()) {
     <aside class="signin-banner" aria-labelledby="chk-signin-text">
-      <p id="chk-signin-text" class="banner-text">{{ bannerText() }}</p>
+      <p id="chk-signin-text" class="banner-text">
+        @if (banner()?.welcome; as welcome) {
+          הצטרפו למועדון וקבלו קוד הנחה אישי לרכישה הראשונה: <bdi>{{ welcome }}</bdi>
+        } @else {
+          התחברו או הירשמו לחשבון
+        }
+      </p>
       <div class="banner-actions">
         <a class="btn btn-primary" routerLink="/account" [queryParams]="{ next: '/checkout' }">התחברות</a>
         <button type="button" class="btn btn-secondary" (click)="continueAsGuest()">המשך כאורח</button>

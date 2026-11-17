@@ -18,7 +18,7 @@ import { AuthService } from '../core/auth.service';
 import { CustomersApi } from '../core/customers.api';
 import { errorMessage } from '../core/errors';
 import { israelDateTime, israelDay } from '../promotions/israel-time';
-import { discountText, minimumText } from './discount-text';
+import { discountText } from './discount-text';
 import { IssueCodeDialog, type IssueCodeDialogData } from './issue-code.dialog';
 
 /**
@@ -55,7 +55,6 @@ export class CustomerPage {
   protected readonly day = israelDay;
   protected readonly formatPrice = formatPrice;
   protected readonly discountText = discountText;
-  protected readonly minimumText = minimumText;
   protected readonly profile = signal<CustomerProfile | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal('');
@@ -75,12 +74,11 @@ export class CustomerPage {
       email: p.email,
       emailVerified: p.emailVerified,
     };
-    this.dialog
-      .open(IssueCodeDialog, { data, autoFocus: 'dialog', width: '32rem', maxWidth: '95vw' })
-      .afterClosed()
-      .subscribe((issued) => {
-        if (issued) void this.load(p.id);
-      });
+    const ref = this.dialog.open(IssueCodeDialog, { data, autoFocus: 'dialog', width: '32rem', maxWidth: '95vw' });
+    // Escape and the backdrop close it with no result: a code issued before that must still show (no second issue).
+    ref.afterClosed().subscribe((issued) => {
+      if (issued || ref.componentInstance.hasIssued()) void this.load(p.id);
+    });
   }
 
   protected retry() {

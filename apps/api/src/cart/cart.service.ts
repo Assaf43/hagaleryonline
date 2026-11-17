@@ -273,8 +273,10 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
    * a guest cart (`resolve` does not return it), so it is never merged.
    * Locks: the account's cart lock, then every cart involved by ascending id (locks.ts); the lines, limits and coupons
    * are read under them. A cart deleted meanwhile (a double-submitted sign-in) is skipped.
+   * `couponIfNone` (a new account's welcome code, decision 93) goes on the resulting account cart only when it has no
+   * coupon after the merge: a coupon the customer already entered is kept.
    */
-  async attachToCustomer(guestToken: string | undefined, customerId: string): Promise<void> {
+  async attachToCustomer(guestToken: string | undefined, customerId: string, couponIfNone?: string): Promise<void> {
     const guest = await this.resolve({ token: guestToken, customerId: null });
     const snapshot = await this.catalog.snapshot();
     await this.prisma.$transaction(
@@ -283,13 +285,27 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
         const [target, ...others] = await liveAccountCarts(tx, customerId);
         if (!target) {
           // Only while still a guest cart (never another account's).
-          if (guest) await tx.cart.updateMany({ where: { id: guest.id, customerId: null }, data: { customerId } });
+          if (guest) {
+            await tx.cart.updateMany({ where: { id: guest.id, customerId: null }, data: { customerId } });
+            if (couponIfNone)
+              await tx.cart.updateMany({
+                where: { id: guest.id, customerId, couponCode: null },
+                data: { couponCode: couponIfNone },
+              });
+          }
           return;
         }
+        const welcome = async () => {
+          if (couponIfNone)
+            await tx.cart.updateMany({
+              where: { id: target.id, couponCode: null },
+              data: { couponCode: couponIfNone },
+            });
+        };
         // The guest cart was read before the lock: a concurrent sign-in of this browser may have linked it to the
         // account meanwhile (it is then the target itself, never merged into itself).
         const sources = [...(guest ? [guest.id] : []), ...others.map((c) => c.id)].filter((id) => id !== target.id);
-        if (sources.length === 0) return;
+        if (sources.length === 0) return welcome();
         const locked = new Set<string>();
         for (const id of [target.id, ...sources].sort()) if (await lockCart(tx, id)) locked.add(id);
         if (!locked.has(target.id)) return;
@@ -337,6 +353,8 @@ export class CartService implements OnModuleInit, OnModuleDestroy {
             await tx.cart.delete({ where: { id: sourceId } });
           }
         }
+        // After the merge, so a coupon carried over from another cart wins.
+        await welcome();
         await tx.cart.update({ where: { id: target.id }, data: { updatedAt: new Date() } });
       },
       { timeout: 15_000 },

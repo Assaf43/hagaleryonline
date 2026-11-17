@@ -5,7 +5,8 @@ import type { CodeTemplateOption, IssuedPersonalCode, PersonalCodeSend } from '@
 import { CustomersApi } from '../core/customers.api';
 import { errorMessage } from '../core/errors';
 import { israelDay } from '../promotions/israel-time';
-import { discountText, minimumText } from './discount-text';
+import { formatPrice } from '../catalog/catalog-format';
+import { discountText } from './discount-text';
 
 export interface IssueCodeDialogData {
   customerId: string;
@@ -16,14 +17,15 @@ export interface IssueCodeDialogData {
 
 const SENT_NOTE: Record<PersonalCodeSend, string> = {
   none: 'הקוד לא נשלח. אפשר להעביר אותו ללקוח בעצמכם.',
-  email: 'הקוד נשלח ללקוח במייל.',
-  sms: 'הקוד נשלח ללקוח ב-SMS.',
+  email: 'הקוד יישלח ללקוח במייל.',
+  sms: 'הקוד יישלח ללקוח ב-SMS.',
 };
 
 /**
  * "הנפקת קופון אישי" (spec §4.5, decision 94, permission club.manage): pick an active personal-code template and how
  * the code reaches the customer (not sent, e-mail, or SMS). The code is shown when it is issued (and stays on the
- * customer's page); the dialog closes with `true` once a code was issued, so the profile reloads.
+ * customer's page); the dialog closes with `true` once a code was issued, so the profile reloads. Closed by Escape or
+ * the backdrop after issuing, `hasIssued()` tells the page to reload all the same.
  */
 @Component({
   selector: 'hga-issue-code-dialog',
@@ -115,9 +117,9 @@ const SENT_NOTE: Record<PersonalCodeSend, string> = {
                   <span class="option-text">
                     <strong>{{ t.name }}</strong>
                     <span class="hint"
-                      >{{ discountText(t.discountType, t.value) }}
-                      @if (minimumText(t.minSubtotal); as min) {
-                        · {{ min }}
+                      ><bdi>{{ discountText(t.discountType, t.value) }}</bdi>
+                      @if (t.minSubtotal) {
+                        · קנייה מעל <bdi>{{ price(t.minSubtotal) }}</bdi>
                       }
                       · תוקף <bdi>{{ t.validityDays }}</bdi> ימים</span
                     >
@@ -180,7 +182,7 @@ export class IssueCodeDialog {
 
   protected readonly day = israelDay;
   protected readonly discountText = discountText;
-  protected readonly minimumText = minimumText;
+  protected readonly price = formatPrice;
   protected readonly templates = signal<CodeTemplateOption[]>([]);
   protected readonly loading = signal(true);
   protected readonly templateId = signal<number | null>(null);
@@ -191,6 +193,11 @@ export class IssueCodeDialog {
 
   constructor() {
     void this.loadTemplates();
+  }
+
+  /** A code was issued in this dialog (however it is closed afterwards). */
+  hasIssued(): boolean {
+    return this.issued() !== null;
   }
 
   protected sentNote(): string {

@@ -12,8 +12,8 @@ const KEY = 'hg.join-contact';
 /**
  * Keeps a guest's checkout contact in this tab's `sessionStorage` while the payment page is open, so the order page
  * can offer to join the club with those details filled in (CLB-01). Never in a URL, never sent to the server, never
- * linked to the order (decision 77); cleared when the join link is used. Storage can be unavailable: then the join
- * form simply starts empty.
+ * linked to the order (decision 77); the order page clears it as soon as it decides on the join box (keeping it in
+ * memory for the click). Storage can be unavailable: then the join form simply starts empty.
  */
 @Injectable({ providedIn: 'root' })
 export class JoinContact {

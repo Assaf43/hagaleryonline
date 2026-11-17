@@ -18,6 +18,13 @@ const CODE_LENGTH = 8;
 const MAX_ATTEMPTS = 10;
 const DAY_MS = 24 * 60 * 60_000;
 
+const CODE_SHAPE = new RegExp(`^${CODE_PREFIX}[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
+
+/** The (normalized) entry has the shape of a personal code, whether or not one exists. */
+export function looksLikePersonalCode(code: string): boolean {
+  return CODE_SHAPE.test(code);
+}
+
 /** "NST-" + 8 characters of `CODE_ALPHABET` (uniform: `randomInt` has no modulo bias). Already normalized. */
 export function generateCode(): string {
   let code = CODE_PREFIX;

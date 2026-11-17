@@ -65,6 +65,7 @@ function order(status: OrderStatus, extra: Partial<OrderView> = {}): OrderView {
     refundedTotal: 0,
     deliverySlot: null,
     invoices: [],
+    guestOrder: true,
     ...extra,
   };
 }
@@ -578,7 +579,12 @@ describe('OrderPage', () => {
       TestBed.inject(JoinContact).save({ fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' });
       const go = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
       await answer(null);
-      expect(box()?.textContent).toContain('הנחה של 10%');
+      expect(box()?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'פתחו חשבון וקבלו קוד הנחה אישי לרכישה הראשונה: הנחה של 10%.',
+      );
+      expect(box()!.querySelector('bdi')?.textContent).toBe('הנחה של 10%');
+      // Shown: the contact leaves the tab's storage and lives in memory only until the click.
+      expect(sessionStorage.getItem('hg.join-contact')).toBeNull();
       const link = box()!.querySelector<HTMLAnchorElement>('a.join-link')!;
       expect(link.getAttribute('href')).toBe('/account/sign-up');
       expect(link.getAttribute('href')).not.toContain('100001');
@@ -594,17 +600,36 @@ describe('OrderPage', () => {
       expect(TestBed.inject(JoinContact).read()).toBeNull();
     });
 
-    it('shows nothing when no welcome offer is active', async () => {
+    it('shows nothing when no welcome offer is active, and drops the stored contact', async () => {
+      sessionStorage.clear();
       await setup(order('paid'));
+      TestBed.inject(JoinContact).save({ fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' });
       await answer(null, null);
       expect(box()).toBeNull();
+      expect(sessionStorage.getItem('hg.join-contact')).toBeNull();
     });
 
-    it('shows nothing to a signed-in customer (and asks for no offer)', async () => {
+    it('shows nothing to a signed-in customer (and asks for no offer), and drops the stored contact', async () => {
+      sessionStorage.clear();
       await setup(order('paid'));
+      TestBed.inject(JoinContact).save({ fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' });
       await answer(customerMe());
       expect(box()).toBeNull();
       http.expectNone('/api/promotions/welcome');
+      expect(sessionStorage.getItem('hg.join-contact')).toBeNull();
+    });
+
+    it('shows nothing on an order of an account, even to a guest viewer, and drops the stored contact', async () => {
+      sessionStorage.setItem(
+        'hg.join-contact',
+        JSON.stringify({ fullName: 'דנה כהן', phone: '0501234567', email: 'dana@example.com' }),
+      );
+      await setup(order('paid', { guestOrder: false }));
+      http.expectNone('/api/account/me');
+      http.expectNone('/api/promotions/welcome');
+      expect(box()).toBeNull();
+      expect(sessionStorage.getItem('hg.join-contact')).toBeNull();
+      http.match('/api/cart');
     });
 
     it('shows nothing until the session is known', async () => {

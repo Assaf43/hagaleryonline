@@ -88,9 +88,6 @@ const EMPTY_ADDRESS = {
 /** The radio value of "another address" (saved addresses use their id). */
 export const OTHER_ADDRESS = 'other';
 
-/** The banner without a welcome benefit. */
-const SIGN_IN_PLAIN = 'התחברו או הירשמו לחשבון';
-
 /** Who checks out: known only in the browser, after the session read (`unknown` on the server). */
 type Shopper = 'unknown' | 'guest' | 'customer';
 
@@ -133,8 +130,11 @@ export class CheckoutPage {
   protected readonly formError = signal<{ message: string; cartLink: boolean } | null>(null);
 
   protected readonly shopper = signal<Shopper>('unknown');
-  /** The banner's text, once the welcome benefit was read (empty until then). */
-  protected readonly bannerText = signal('');
+  /**
+   * The banner, once the welcome benefit was read (null until then): with the welcome template's name, joining
+   * promises a personal code for the first purchase (decision 93); without one, the plain invitation.
+   */
+  protected readonly banner = signal<{ welcome: string | null } | null>(null);
   protected readonly bannerClosed = signal(false);
   protected readonly savedAddresses = signal<CustomerAddressView[]>([]);
   /** The saved address in the form (its id), or `OTHER_ADDRESS`. */
@@ -266,7 +266,7 @@ export class CheckoutPage {
     } catch {
       // The plain invitation.
     }
-    this.bannerText.set(label ? `התחברו או הירשמו וקבלו ${label}` : SIGN_IN_PLAIN);
+    this.banner.set({ welcome: label });
   }
 
   /** The account's contact (fields the customer already typed stay) and its default address. */

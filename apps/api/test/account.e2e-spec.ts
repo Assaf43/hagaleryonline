@@ -325,7 +325,16 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       });
 
       const view = (await b.agent.get(`/api/account/orders/${order.number}`).expect(200)).body as OrderView;
-      expect(view).toMatchObject({ number: order.number, total: order.total, canCancel: true });
+      expect(view).toMatchObject({ number: order.number, total: order.total, canCancel: true, guestOrder: false });
+      // The tokened page of an account order says it is not a guest order, and nothing more (decision 77).
+      const tokened = (
+        await browser().agent.get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200)
+      ).body as OrderView;
+      expect(tokened.guestOrder).toBe(false);
+      const guestView = (
+        await browser().agent.get(`/api/orders/${guestOrder.number}`).query({ t: guestOrder.publicToken }).expect(200)
+      ).body as OrderView;
+      expect(guestView.guestOrder).toBe(true);
       await b.agent.get(`/api/account/orders/${guestOrder.number}`).expect(404);
       await b.agent.get(`/api/account/orders/${otherOrder.number}`).expect(404);
       await b.agent.get('/api/account/orders/abc').expect(404);

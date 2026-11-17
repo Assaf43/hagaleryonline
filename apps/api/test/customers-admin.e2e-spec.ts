@@ -46,13 +46,18 @@ describe('Admin customers (e2e, CLB-09)', () => {
     await deleteMarketingContacts(prisma, { email: { endsWith: DOMAIN } });
   };
 
-  const makeOrder = (key: string, customerId: string | null, status: OrderStatus = OrderStatus.PAID) =>
+  const makeOrder = (
+    key: string,
+    customerId: string | null,
+    status: OrderStatus = OrderStatus.PAID,
+    contact: { phone: string; email: string } = { phone: '0501234567', email: 'zz@example.test' },
+  ) =>
     prisma.order.create({
       data: {
         publicToken: `zz-ca-${key}`,
         status,
         customerId,
-        contact: { fullName: `ZZ ${key}`, phone: '0501234567', email: 'zz@example.test' },
+        contact: { fullName: `ZZ ${key}`, phone: contact.phone, email: contact.email },
         address: { localityId: 5000, localityNameHe: 'תל אביב - יפו', street: 'הרצל', houseNumber: '1' },
         method: OrderShippingMethod.CURBSIDE,
         shippingTotal: 15_000,
@@ -122,7 +127,7 @@ describe('Admin customers (e2e, CLB-09)', () => {
     dana = { id: created.id, phone: created.phone, email };
     danaOrder = (await makeOrder('own', created.id)).number;
     // A guest order with the very same contact details: never shown on the account (decision 77).
-    guestOrder = (await makeOrder('guest', null)).number;
+    guestOrder = (await makeOrder('guest', null, OrderStatus.PAID, { phone: dana.phone, email })).number;
     await prisma.customerFavorite.create({ data: { customerId: created.id, productId } });
 
     const quick = await prisma.customer.create({

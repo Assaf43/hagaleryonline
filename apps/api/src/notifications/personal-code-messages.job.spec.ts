@@ -8,10 +8,13 @@ const NOW = new Date('2026-11-17T10:00:00Z');
 const DAY = 24 * 60 * 60_000;
 
 describe('PersonalCodeMessagesJob (decisions 93–94)', () => {
-  const setup = (row: Record<string, unknown> | null) => {
-    const sms = vi.fn(() => Promise.resolve());
-    const email = vi.fn(() => Promise.resolve());
-    const prisma = { personalCode: { findUnique: () => Promise.resolve(row) } } as unknown as PrismaService;
+  const setup = (row: Record<string, unknown> | null, paidOrder: { id: string } | null = null) => {
+    const sms = vi.fn((..._args: unknown[]) => Promise.resolve());
+    const email = vi.fn((..._args: unknown[]) => Promise.resolve());
+    const prisma = {
+      personalCode: { findUnique: () => Promise.resolve(row) },
+      order: { findFirst: () => Promise.resolve(paidOrder) },
+    } as unknown as PrismaService;
     const notifications = { sms, email, siteUrl: () => 'https://shop.test' } as unknown as NotificationsService;
     const job = new PersonalCodeMessagesJob({} as OutboxService, prisma, notifications);
     return { job, sms, email };
@@ -19,6 +22,7 @@ describe('PersonalCodeMessagesJob (decisions 93–94)', () => {
   const code = (patch: Record<string, unknown> = {}) => ({
     id: 1,
     code: 'NST-AB23CD45',
+    customerId: 'c-1',
     orderId: null,
     expiresAt: new Date(NOW.getTime() + DAY),
     promotion: { name: '10% הנחה', active: true, endsAt: null },
@@ -39,6 +43,20 @@ describe('PersonalCodeMessagesJob (decisions 93–94)', () => {
     const { job, sms } = setup(code());
     await job.send({ personalCodeId: 1 }, 'sms', 'welcome_code');
     expect(sms.mock.calls[0][2]).toMatchObject({ link: 'https://shop.test/account/benefits' });
+  });
+
+  it('skips a welcome code once the account has a paid order (it would only answer first_order_only)', async () => {
+    const welcome = code({ promotion: { name: 'הצטרפות', active: true, endsAt: null, isWelcome: true } });
+    const paid = setup(welcome, { id: 'order-1' });
+    await paid.job.send({ personalCodeId: 1 }, 'sms', 'welcome_code');
+    expect(paid.sms).not.toHaveBeenCalled();
+    const unpaid = setup(welcome, null);
+    await unpaid.job.send({ personalCodeId: 1 }, 'sms', 'welcome_code');
+    expect(unpaid.sms).toHaveBeenCalledTimes(1);
+    // Any other code is sent whatever the account bought.
+    const other = setup(code(), { id: 'order-1' });
+    await other.job.send({ personalCodeId: 1 }, 'sms', 'personal_code');
+    expect(other.sms).toHaveBeenCalledTimes(1);
   });
 
   it('skips a code that is gone, used, void or expired (also by its template end)', async () => {

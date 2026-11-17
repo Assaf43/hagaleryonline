@@ -12,7 +12,8 @@ const benefit = (over: Partial<AccountBenefit> = {}): AccountBenefit => ({
   discountKind: 'percent',
   discountValue: 10,
   minSubtotal: null,
-  expiresAt: '2026-12-17T10:00:00.000Z',
+  // 00:30 on 18.12 in Israel (UTC+2): the date shown is the Israel one, not the UTC one.
+  expiresAt: '2026-12-17T22:30:00.000Z',
   status: 'active',
   ...over,
 });
@@ -46,13 +47,15 @@ describe('BenefitsPage', () => {
     expect(text()).toContain('הטבת הצטרפות');
     expect(text()).toContain('NST-AB23CD45');
     expect(text()).toContain('10% הנחה');
-    expect(text()).toContain('בתוקף עד 17.12.2026');
-    expect(rows()[0].querySelector('bdi')).not.toBeNull();
+    expect(text()).toContain('בתוקף עד 18.12.2026');
+    const isolated = Array.from(rows()[0].querySelectorAll('bdi')).map((b) => b.textContent?.trim());
+    expect(isolated).toEqual(['NST-AB23CD45', '10% הנחה', '18.12.2026']);
   });
 
   it('shows a fixed amount in shekels with the minimum purchase', async () => {
     await setup([benefit({ discountKind: 'fixed', discountValue: 15000, minSubtotal: 200000 })]);
     expect(text()).toContain('150 ₪ הנחה');
+    expect(Array.from(el().querySelectorAll('bdi')).map((b) => b.textContent?.trim())).toContain('150 ₪ הנחה');
     expect(text()).toContain('בקנייה מעל 2,000 ₪');
   });
 

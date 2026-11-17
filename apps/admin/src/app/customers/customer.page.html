@@ -75,7 +75,9 @@
               >
               <span class="chip" [attr.data-status]="o.status">{{ orderStatusLabels[o.status] }}</span>
               <span class="muted">{{ channelLabels[o.channel] }}</span>
-              <span class="amount">{{ formatPrice(o.total) }}</span>
+              <span class="amount"
+                ><bdi>{{ formatPrice(o.total) }}</bdi></span
+              >
             </li>
           }
         </ul>
@@ -176,9 +178,9 @@
               <bdi dir="ltr" class="code">{{ c.code }}</bdi>
               <span>{{ c.labelHe }}</span>
               <span class="muted"
-                >{{ discountText(c.discountKind, c.discountValue) }}
-                @if (minimumText(c.minSubtotal); as min) {
-                  · {{ min }}
+                ><bdi>{{ discountText(c.discountKind, c.discountValue) }}</bdi>
+                @if (c.minSubtotal) {
+                  · קנייה מעל <bdi>{{ formatPrice(c.minSubtotal) }}</bdi>
                 }
               </span>
               <span class="muted"

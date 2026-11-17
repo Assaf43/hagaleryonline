@@ -131,6 +131,7 @@ export function orderView(status: OrderStatus = 'paid', extra: Partial<OrderView
     refundedTotal: 0,
     deliverySlot: null,
     invoices: [],
+    guestOrder: false,
     ...extra,
   };
 }

@@ -178,12 +178,16 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     return { customer, b };
   };
 
-  /** Website sign-up (decision 80): both codes, read from the mock providers' calls, then the account. */
-  const signUp = async () => {
+  /**
+   * Website sign-up (decision 80): both codes, read from the mock providers' calls, then the account. `asGuest` runs
+   * first in the same browser (e.g. fills a guest cart).
+   */
+  const signUp = async (asGuest?: (b: ReturnType<typeof browser>) => Promise<unknown>) => {
     const id = uniqueId();
     const phone = `05${id}`;
     const email = `new${id}${CUSTOMER_DOMAIN}`;
     const b = browser();
+    if (asGuest) await asGuest(b);
     const post = (path: string, body: object) => b.agent.post(`/api/account/${path}`).set('Origin', ORIGIN).send(body);
     const details = { fullName: 'ZZ נועה חדשה', phone, email, marketingConsent: false };
     await post('sign-up', details).expect(200, { verify: true });
@@ -371,6 +375,8 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     const guest = browser();
     await guest.add(lamp, 1);
     expect((await guest.apply(code).expect(400)).body).toEqual(refusal(COUPON_MESSAGES_HE.members_only));
+    // A code of the same shape that does not exist answers a guest the same: existence cannot be probed.
+    expect((await guest.apply('NST-ZZZZZZZZ').expect(400)).body).toEqual(refusal(COUPON_MESSAGES_HE.members_only));
     expect((await guest.cart()).discount).toBeNull();
   });
 
@@ -642,6 +648,36 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
       // The code works for its owner at once.
       await b.add(lamp, 1);
       expect(((await b.apply(issued.code).expect(200)).body as CartView).discount?.amount).toBe(5_000);
+    });
+
+    it('sign-up with a guest cart: the welcome code is already on the account cart, no typing needed', async () => {
+      await template({ name: 'ZZ הטבת הצטרפות', isWelcome: true, value: 10 });
+      const { b, customer } = await signUp((guest) => guest.add(lamp, 1));
+      const [issued] = await prisma.personalCode.findMany({ where: { customerId: customer.id } });
+      const view = await b.cart();
+      expect(view.couponCode).toBe(issued.code);
+      expect(view.discount).toMatchObject({ source: 'coupon', code: issued.code, labelHe: 'ZZ הטבת הצטרפות' });
+      expect(view.discount!.amount).toBeGreaterThan(0);
+    });
+
+    it('sign-up with a guest cart that already has a coupon: the coupon stays, the welcome code is not put on it', async () => {
+      await template({ name: 'ZZ הטבת הצטרפות', isWelcome: true });
+      await prisma.promotion.create({
+        data: {
+          name: 'ZZ קופון אורח',
+          kind: PromotionKind.COUPON,
+          code: 'ZZGUESTCOUPON',
+          discountType: DiscountType.PERCENT,
+          value: 5,
+          target: PromotionTarget.ORDER,
+        },
+      });
+      const { b, customer } = await signUp(async (guest) => {
+        await guest.add(lamp, 1);
+        await guest.apply('ZZGUESTCOUPON').expect(200);
+      });
+      expect(await prisma.personalCode.count({ where: { customerId: customer.id } })).toBe(1);
+      expect((await b.cart()).couponCode).toBe('ZZGUESTCOUPON');
     });
 
     it('no active welcome template: sign-up still succeeds, with no code and no message', async () => {

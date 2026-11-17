@@ -24,7 +24,12 @@ import {
   type DiscountResult,
   type PromotionRule,
 } from './discount-engine.js';
-import { personalCodeProblem, personalCodeRule, type PersonalCodeState } from './personal-codes.js';
+import {
+  looksLikePersonalCode,
+  personalCodeProblem,
+  personalCodeRule,
+  type PersonalCodeState,
+} from './personal-codes.js';
 
 const KIND: Record<DbPromotionKind, PromotionKind> = {
   [DbPromotionKind.AUTOMATIC]: 'automatic',
@@ -284,7 +289,8 @@ export class PromotionsService {
 
   /**
    * The entered code (normalized; null: none) as a coupon candidate for this cart: a coupon with its uses, or a usable
-   * personal code as a coupon with its template's terms; otherwise why not (`unknown` for a code that names neither).
+   * personal code as a coupon with its template's terms; otherwise why not (`unknown` for a code that names neither,
+   * `members_only` to a non-member for any entry shaped like a personal code).
    * Coupon entry and `evaluate` both use it, with the same exclusions as checkout.
    */
   async candidate(
@@ -299,7 +305,8 @@ export class PromotionsService {
     const coupon = await this.coupon(db, code, context, isMember ? (customer?.customerId ?? null) : null);
     if (coupon?.kind === 'coupon') return { coupon, problem: null };
     const state = await this.personalCodeState(db, { code }, context);
-    if (!state) return { coupon: null, problem: 'unknown' };
+    // A guest gets `members_only` for any entry shaped like a personal code, existing or not (no probing).
+    if (!state) return { coupon: null, problem: !isMember && looksLikePersonalCode(code) ? 'members_only' : 'unknown' };
     const buyer = { customerId: customer?.customerId ?? null, isMember, hasPaidOrder: customer?.hasPaidOrder ?? false };
     const problem = personalCodeProblem(state, buyer, now);
     return problem ? { coupon: null, problem } : { coupon: personalCodeRule(state), problem: null };

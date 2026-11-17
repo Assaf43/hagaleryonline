@@ -5,8 +5,3 @@ import { formatPrice } from '../catalog/catalog-format';
 export function discountText(type: DiscountType, value: number): string {
   return type === 'percent' ? `${value}%` : formatPrice(value);
 }
-
-/** "קנייה מעל 1,000 ₪"; empty when the template has no minimum. */
-export function minimumText(minSubtotal: number | null): string {
-  return minSubtotal ? `קנייה מעל ${formatPrice(minSubtotal)}` : '';
-}
