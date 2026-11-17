@@ -596,7 +596,15 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
 
   describe('issuing (CLB-04, CLB-05, decisions 93–94)', () => {
     it('website sign-up with an active welcome template: one welcome code, one welcome_code e-mail with it', async () => {
-      const welcome = await template({ name: 'ZZ הטבת הצטרפות', isWelcome: true, validityDays: 30 });
+      // 50 ₪ off from a 200 ₪ cart.
+      const welcome = await template({
+        name: 'ZZ הטבת הצטרפות',
+        isWelcome: true,
+        validityDays: 30,
+        discountType: DiscountType.FIXED,
+        value: 5_000,
+        minSubtotal: 20_000,
+      });
       const before = new Date();
       const { b, customer } = await signUp();
       const codes = await prisma.personalCode.findMany({ where: { customerId: customer.id } });
@@ -624,6 +632,9 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
         {
           code: issued.code,
           labelHe: 'ZZ הטבת הצטרפות',
+          discountKind: 'fixed',
+          discountValue: 5_000,
+          minSubtotal: 20_000,
           expiresAt: issued.expiresAt.toISOString(),
           status: 'active',
         },
@@ -686,6 +697,9 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
       expect(list[0]).toEqual({
         code: active.code,
         labelHe: 'ZZ עשרה אחוז',
+        discountKind: 'percent',
+        discountValue: 10,
+        minSubtotal: null,
         expiresAt: active.expiresAt.toISOString(),
         status: 'active',
       });

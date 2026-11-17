@@ -2,7 +2,11 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import type { AccountBenefit, AccountBenefitStatus, IssuedPersonalCode, PersonalCodeSend } from '@hg/models';
 import { AuditService } from '../audit/audit.service.js';
 import { invalid, notFound } from '../catalog-admin/catalog-errors.js';
-import { PromotionKind as DbPromotionKind, type Prisma } from '../generated/prisma/client.js';
+import {
+  DiscountType as DbDiscountType,
+  PromotionKind as DbPromotionKind,
+  type Prisma,
+} from '../generated/prisma/client.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { issuePersonalCode } from './personal-codes.js';
@@ -133,7 +137,8 @@ export class PersonalCodesService {
   }
 
   /**
-   * "ההטבות שלי" (`GET /api/account/benefits`): the account's codes, newest first. The expiry shown is the code's,
+   * "ההטבות שלי" (`GET /api/account/benefits`): the account's codes, newest first, each with its template's name and
+   * current value (discount type, value, minimum; a 0 minimum is none). The expiry shown is the code's,
    * or the template's end when that is earlier now. Status: `used` once a paid order used it; `expired` past the
    * expiry, when the template is off (that voids unused codes) or — a welcome code — once the account has a paid
    * order; otherwise `active` (also while a live pending order holds it).
@@ -142,7 +147,20 @@ export class PersonalCodesService {
     const rows = await this.prisma.personalCode.findMany({
       where: { customerId },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      include: { promotion: { select: { name: true, kind: true, active: true, isWelcome: true, endsAt: true } } },
+      include: {
+        promotion: {
+          select: {
+            name: true,
+            kind: true,
+            active: true,
+            isWelcome: true,
+            endsAt: true,
+            discountType: true,
+            value: true,
+            minSubtotal: true,
+          },
+        },
+      },
     });
     const paid = rows.some((r) => r.promotion.isWelcome && r.orderId === null)
       ? await hasPaidOrder(this.prisma, customerId)
@@ -154,7 +172,15 @@ export class PersonalCodesService {
       if (r.orderId !== null) status = 'used';
       else if (now > expiresAt || !t.active || t.kind !== DbPromotionKind.PERSONAL_TEMPLATE || (t.isWelcome && paid))
         status = 'expired';
-      return { code: r.code, labelHe: t.name, expiresAt: expiresAt.toISOString(), status };
+      return {
+        code: r.code,
+        labelHe: t.name,
+        discountKind: t.discountType === DbDiscountType.FIXED ? 'fixed' : 'percent',
+        discountValue: t.value,
+        minSubtotal: t.minSubtotal > 0 ? t.minSubtotal : null,
+        expiresAt: expiresAt.toISOString(),
+        status,
+      };
     });
   }
 }

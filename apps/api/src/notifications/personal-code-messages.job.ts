@@ -19,8 +19,8 @@ function displayDate(at: Date): string {
  * The outbox jobs that deliver a personal code (decisions 93–94, 96): `email.welcome_code` (website sign-up, to the
  * verified e-mail), `sms.welcome_code` (store quick account, to the verified phone), and `email.personal_code` /
  * `sms.personal_code` (issued by staff). A job carries the code's id only; the code is read here, when it is sent, so
- * it is never in a job payload. A code that is gone, already used or whose template was turned off meanwhile sends
- * nothing; an e-mail job for an account whose e-mail is no longer verified (or gone) is skipped.
+ * it is never in a job payload. A code that is gone, already used, expired (also by its template's end, e.g. a job
+ * retried late) or whose template was turned off meanwhile sends nothing; an e-mail job for an account whose e-mail is no longer verified (or gone) is skipped.
  */
 @Injectable()
 export class PersonalCodeMessagesJob implements OnModuleInit {
@@ -57,6 +57,10 @@ export class PersonalCodeMessagesJob implements OnModuleInit {
     }
     const { promotion, customer } = row;
     const expiresAt = promotion.endsAt && promotion.endsAt < row.expiresAt ? promotion.endsAt : row.expiresAt;
+    if (expiresAt <= new Date()) {
+      this.logger.log(`Personal code ${personalCodeId} has expired: no message`);
+      return;
+    }
     const data: PersonalCodeMessageData = {
       customerName: customer.fullName,
       code: row.code,

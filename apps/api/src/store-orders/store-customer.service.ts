@@ -220,17 +220,28 @@ export class StoreCustomerService {
     }
   }
 
-  /** Drops the attached customer from the seller's open cart; 404 when there is no open cart. Returns the cart id. */
+  /**
+   * Drops the attached customer from the seller's open cart; 404 when there is no open cart. A coupon on the cart that
+   * is one of that customer's personal codes (their welcome code put there with the quick account) goes too, so the
+   * next customer's cart neither shows another account's code nor misses its own welcome code; any other coupon
+   * stays. Returns the cart id.
+   */
   async clear(actor: SellerActor): Promise<string> {
     return this.prisma.$transaction(async (tx) => {
       const open = await this.storeCarts.openIfAnyInTx(tx, actor.sellerId);
       if (!open) throw notFound();
       const cart = await tx.cart.findUniqueOrThrow({
         where: { id: open.id },
-        select: { id: true, storeCustomerId: true },
+        select: { id: true, storeCustomerId: true, couponCode: true },
       });
       if (cart.storeCustomerId === null) return cart.id;
-      await tx.cart.update({ where: { id: cart.id }, data: { storeCustomerId: null, storeConfirmedAt: null } });
+      const ownCode =
+        cart.couponCode !== null &&
+        (await tx.personalCode.count({ where: { code: cart.couponCode, customerId: cart.storeCustomerId } })) > 0;
+      await tx.cart.update({
+        where: { id: cart.id },
+        data: { storeCustomerId: null, storeConfirmedAt: null, ...(ownCode ? { couponCode: null } : {}) },
+      });
       await this.audit.record(
         {
           actorId: actor.sellerId,

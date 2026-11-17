@@ -696,6 +696,37 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     const customer = await quickAccount(sellerA);
     expect(await prisma.personalCode.count({ where: { customerId: customer.id } })).toBe(1);
     expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe('ZZSTORE5');
+    // Clearing that customer keeps the seller's coupon.
+    await sellerA.delete('/store-cart/customer').expect(200);
+    expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe('ZZSTORE5');
+  });
+
+  it('clearing a quick account from the store cart drops its welcome code; the next new customer gets theirs', async () => {
+    await prisma.promotion.create({
+      data: {
+        name: 'ZZ הטבת הצטרפות',
+        kind: PromotionKind.PERSONAL_TEMPLATE,
+        discountType: DiscountType.PERCENT,
+        value: 10,
+        target: PromotionTarget.ORDER,
+        validityDays: 30,
+        isWelcome: true,
+      },
+    });
+    await newSale(sellerA, [[plenty, 1]]);
+    const first = await quickAccount(sellerA);
+    const firstCode = (await prisma.personalCode.findFirstOrThrow({ where: { customerId: first.id } })).code;
+    expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe(firstCode);
+
+    const cleared = (await sellerA.delete('/store-cart/customer').expect(200)).body as StoreCartView;
+    expect(cleared.customer).toBeNull();
+    expect(cleared.couponCode).toBeNull();
+    // The code stays the account's own.
+    expect(await prisma.personalCode.count({ where: { customerId: first.id } })).toBe(1);
+
+    const second = await quickAccount(sellerA);
+    const secondCode = (await prisma.personalCode.findFirstOrThrow({ where: { customerId: second.id } })).code;
+    expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe(secondCode);
   });
 
   it('a website order still has channel web and the tokened confirmation path', async () => {
