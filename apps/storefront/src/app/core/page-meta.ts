@@ -56,6 +56,12 @@ export class PageMeta {
     this.set({ title: 'הדף לא נמצא', description: 'הדף שחיפשתם לא קיים.', path: '/', noindex: true });
   }
 
+  /** Server render of a page that has ended answers 410 (gone), so search engines drop it (MKT-02). */
+  gone(title: string): void {
+    if (this.response) this.response.status = 410;
+    this.set({ title, description: title, path: '/', noindex: true });
+  }
+
   /** Server render of a page whose data failed to load answers 503, so search engines retry later. */
   serverError(): void {
     if (this.response) this.response.status = 503;

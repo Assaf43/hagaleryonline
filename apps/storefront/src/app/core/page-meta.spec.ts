@@ -23,6 +23,13 @@ describe('PageMeta', () => {
     expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
   });
 
+  it('gone answers 410 and is not indexed', () => {
+    const { meta, response, tags } = setup();
+    meta.gone('מבצע');
+    expect(response.status).toBe(410);
+    expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
+  });
+
   it('replaces and clears the json-ld script', () => {
     const { meta } = setup();
     const ld = () => document.head.querySelectorAll('script#ld[type="application/ld+json"]');

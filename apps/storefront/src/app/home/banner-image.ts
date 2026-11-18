@@ -59,7 +59,7 @@ import type { BannerView } from '@hg/models';
   `,
 })
 export class BannerImage {
-  readonly banner = input.required<BannerView>();
+  readonly banner = input.required<Pick<BannerView, 'image' | 'mobileImage' | 'altHe'>>();
   readonly sizes = input('100vw');
   readonly mobileSizes = input('100vw');
   readonly priority = input(false);

@@ -80,6 +80,7 @@ export const routes: Routes = [
     loadComponent: () => import('./newsletter/unsubscribe.page').then((m) => m.NewsletterUnsubscribePage),
   },
   { path: 'info/:slug', loadComponent: () => import('./content/info.page').then((m) => m.InfoPage) },
+  { path: 'collection/:slug', loadComponent: () => import('./content/landing.page').then((m) => m.LandingPage) },
   { path: 'faq', loadComponent: () => import('./content/faq.page').then((m) => m.FaqPage) },
   { path: 'favorites', loadComponent: () => import('./favorites/favorites.page').then((m) => m.FavoritesPage) },
   { path: 'sizing-guide', loadComponent: () => import('./guide/sizing-guide.page').then((m) => m.SizingGuidePage) },

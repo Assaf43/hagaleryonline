@@ -38,6 +38,8 @@ app.use(
  * Handle all other requests by rendering the Angular application.
  */
 app.use((req, res, next) => {
+  // A staff preview page (MKT-02) must never be cached by a proxy or the browser.
+  if (req.query['preview'] !== undefined) res.setHeader('Cache-Control', 'no-store');
   angularApp
     .handle(req)
     .then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
