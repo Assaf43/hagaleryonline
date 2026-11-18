@@ -3,10 +3,32 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { CONTENT_LIMITS, type ProductSource, type RelatedPick } from '@hg/models';
 import { ProductRelations } from '../catalog/product-relations';
+import type { CatalogApi } from '../core/catalog.api';
 import { SOURCE_KIND_LABELS } from './home-sections';
 import type { IdOption } from './id-list-field';
 
 type SourceKind = ProductSource['kind'];
+
+const DEFAULT_UNAVAILABLE_NOTE =
+  'המקור הזה לא מוצג באתר כרגע (הקטגוריה, החדר או המבצע הוסתרו, הסתיימו או נמחקו), והשורה לא תופיע בדף הבית.';
+
+/** The names of saved manual picks: one read each, a missing product keeps its id and says so. */
+export async function loadSourcePicks(catalog: Pick<CatalogApi, 'product'>, ids: number[]): Promise<RelatedPick[]> {
+  const found = await Promise.allSettled(ids.map((id) => catalog.product(id)));
+  return found.map((r, i): RelatedPick => {
+    if (r.status === 'fulfilled') {
+      const p = r.value;
+      return {
+        id: ids[i],
+        modelName: p.modelName,
+        nameHe: p.nameHe,
+        active: p.active,
+        thumbnailUrl: p.images[0]?.thumbUrl ?? null,
+      };
+    }
+    return { id: ids[i], modelName: `#${ids[i]}`, nameHe: 'המוצר לא נמצא', active: false, thumbnailUrl: null };
+  });
+}
 const KINDS = Object.keys(SOURCE_KIND_LABELS) as SourceKind[];
 
 /**
@@ -84,9 +106,7 @@ const KINDS = Object.keys(SOURCE_KIND_LABELS) as SourceKind[];
       }
 
       @if (unavailable() && source().kind !== 'manual') {
-        <p class="mark-note">
-          המקור הזה לא מוצג באתר כרגע (הקטגוריה, החדר או המבצע הוסתרו, הסתיימו או נמחקו), והשורה לא תופיע בדף הבית.
-        </p>
+        <p class="mark-note">{{ unavailableNote() }}</p>
       }
       @if (error()) {
         <p class="error" role="alert">{{ error() }}</p>
@@ -100,6 +120,8 @@ export class ProductSourceField {
   readonly promotions = input<IdOption[]>([]);
   /** The API says the site cannot show this source now. */
   readonly unavailable = input(false);
+  /** What the marked source means for this screen (a home row is not shown; a landing page shows an empty grid). */
+  readonly unavailableNote = input(DEFAULT_UNAVAILABLE_NOTE);
   readonly unavailableProductIds = input<number[]>([]);
   readonly error = input('');
   /** The names of a saved manual source are still loading: the picker waits, so the saved ids are never dropped. */

@@ -152,6 +152,7 @@ const CONTENT_FIELDS: Record<string, string> = {
   shippingHtml: 'טקסט המשלוח',
   items: 'שאלות ותשובות',
   expectedUpdatedAt: 'גרסת העמוד',
+  endedLinkUrl: 'קישור אחרי הסיום',
 };
 
 /** Banner and home page fields (Phase 8b); only read on content screens, where `nameHe` etc. mean something else. */
@@ -163,6 +164,12 @@ const BANNER_FIELDS: Record<string, string> = {
   imageId: 'תמונה',
   mobileImageId: 'תמונה לנייד',
   altHe: 'טקסט חלופי לתמונה',
+  introHtml: 'טקסט פתיחה',
+  outroHtml: 'טקסט סיום',
+  source: 'מקור המוצרים',
+  'source.id': 'מקור המוצרים',
+  'source.productIds': 'מוצרים שנבחרו',
+  status: 'סטטוס',
 };
 
 /** Why a content photo upload was refused (Phase 8b): at least 1200 px on the long side. */

@@ -20,7 +20,7 @@ import {
 import { CatalogApi } from '../core/catalog.api';
 import { IdListField, type IdOption } from './id-list-field';
 import { HOME_MESSAGES, sectionProblems, type HomeDraft } from './home-sections';
-import { ProductSourceField } from './product-source-field';
+import { ProductSourceField, loadSourcePicks } from './product-source-field';
 
 /** What the pickers of the section dialog choose from (loaded once by the home page). */
 export interface HomeLookups {
@@ -219,21 +219,8 @@ export class HomeSectionDialog {
   /** The names of the products already picked: one read each, a missing one keeps its id. */
   private async loadPicks(ids: number[]) {
     this.loadingPicks.set(true);
-    const found = await Promise.allSettled(ids.map((id) => this.catalog.product(id)));
     // A pick added while this was loading stays; the loaded ones keep the saved order.
-    const loaded = found.map((r, i): RelatedPick => {
-      if (r.status === 'fulfilled') {
-        const p = r.value;
-        return {
-          id: ids[i],
-          modelName: p.modelName,
-          nameHe: p.nameHe,
-          active: p.active,
-          thumbnailUrl: p.images[0]?.thumbUrl ?? null,
-        };
-      }
-      return { id: ids[i], modelName: `#${ids[i]}`, nameHe: 'המוצר לא נמצא', active: false, thumbnailUrl: null };
-    });
+    const loaded = await loadSourcePicks(this.catalog, ids);
     this.picks.set(loaded);
     this.loadingPicks.set(false);
   }

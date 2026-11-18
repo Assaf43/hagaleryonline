@@ -103,6 +103,15 @@
           <svg lucideImage></svg>
           באנרים
         </a>
+        <a
+          class="nav-link"
+          routerLink="/content/landing"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideFileText></svg>
+          עמודי נחיתה
+        </a>
         <a class="nav-link" routerLink="/content/pages" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideBookOpen></svg>
           עמודי מידע

@@ -13,6 +13,9 @@ import type {
   AdminHomeInput,
   AdminInfoPage,
   AdminInfoPageInput,
+  AdminLandingPage,
+  AdminLandingPageInput,
+  AdminLandingPreview,
   AdminPromotionSource,
   AdminSiteContent,
   AdminSiteContentInput,
@@ -112,5 +115,25 @@ export class ContentApi {
   }
   saveHome(input: AdminHomeInput) {
     return firstValueFrom(this.http.put<AdminHome>(`${BASE}/home`, input));
+  }
+
+  landingPages() {
+    return firstValueFrom(this.http.get<AdminLandingPage[]>(`${BASE}/landing`));
+  }
+  landingPage(id: number) {
+    return firstValueFrom(this.http.get<AdminLandingPage>(`${BASE}/landing/${id}`));
+  }
+  createLandingPage(input: AdminLandingPageInput) {
+    return firstValueFrom(this.http.post<AdminLandingPage>(`${BASE}/landing`, input));
+  }
+  updateLandingPage(id: number, input: AdminLandingPageInput) {
+    return firstValueFrom(this.http.put<AdminLandingPage>(`${BASE}/landing/${id}`, input));
+  }
+  deleteLandingPage(id: number) {
+    return firstValueFrom(this.http.delete<void>(`${BASE}/landing/${id}`));
+  }
+  /** A signed storefront address that shows the saved page whatever its status or dates, valid 30 minutes. */
+  landingPreview(id: number) {
+    return firstValueFrom(this.http.post<AdminLandingPreview>(`${BASE}/landing/${id}/preview`, {}));
   }
 }
