@@ -30,6 +30,7 @@ import { conflict, invalid, invalidSource } from '../content-errors.js';
 import { bannerImages, bannerView } from '../content-image-ref.js';
 import { isLive, type Windowed } from '../content-window.js';
 import { CONTENT_CACHE_PREFIX, CONTENT_TTL_MS } from '../content.service.js';
+import { promotionSourceAllowed } from '../product-source-check.js';
 import {
   categoryTile,
   productSourceLink,
@@ -394,13 +395,7 @@ async function checkReferences(tx: Tx, input: AdminHomeSectionInput[], existing:
     if (source.kind === 'room' && !roomSet.has(source.id)) throw invalid(field('source.id'));
     if (source.kind === 'promotion') {
       const promotion = promotionById.get(source.id);
-      if (
-        !promotion ||
-        promotion.kind !== DbPromotionKind.AUTOMATIC ||
-        promotion.target === DbPromotionTarget.ORDER ||
-        promotion.membersOnly
-      )
-        throw invalidSource(field('source'));
+      if (!promotion || !promotionSourceAllowed(promotion)) throw invalidSource(field('source'));
     }
   });
 }

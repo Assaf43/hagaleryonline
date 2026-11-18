@@ -1477,8 +1477,10 @@ model ContentImage {
   originalExt String   @map("original_ext")
   createdAt   DateTime @default(now()) @map("created_at")
 
-  banners       Banner[] @relation("BannerImage")
-  mobileBanners Banner[] @relation("BannerMobileImage")
+  banners            Banner[]      @relation("BannerImage")
+  mobileBanners      Banner[]      @relation("BannerMobileImage")
+  landingPages       LandingPage[] @relation("LandingImage")
+  mobileLandingPages LandingPage[] @relation("LandingMobileImage")
 
   @@map("content_images")
 }
@@ -1540,4 +1542,48 @@ model HomeSection {
 
   @@index([sortOrder])
   @@map("home_sections")
+}
+
+enum LandingStatus {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+
+  @@map("landing_status")
+}
+
+/// A landing page for a collection or a promotion (Phase 8 §4.7, MKT-02, decision 97): one fixed template at
+/// `/collection/:slug`. Public only when published and inside its dates (`endsAt` inclusive, 23:59:59.999 of the
+/// Israel day); after the end it answers 410 with `endedLinkUrl`. Staff see any state with a signed preview token.
+model LandingPage {
+  id                Int           @id @default(autoincrement())
+  slug              String        @unique
+  titleHe           String        @map("title_he")
+  sublineHe         String?       @map("subline_he")
+  /// Sanitized rich text (`page` mode).
+  introHtml         String        @map("intro_html")
+  /// Sanitized rich text (`inline` mode), small print under the grid.
+  outroHtml         String?       @map("outro_html")
+  imageId           Int           @map("image_id")
+  /// Null = the desktop image on every screen.
+  mobileImageId     Int?          @map("mobile_image_id")
+  altHe             String        @map("alt_he")
+  /// `ProductSource` (bestsellers, newest, category, room, promotion, manual).
+  source            Json
+  status            LandingStatus @default(DRAFT)
+  startsAt          DateTime?     @map("starts_at")
+  /// Inclusive: 23:59:59.999 of the Israel day.
+  endsAt            DateTime?     @map("ends_at")
+  /// A site path or an https address; where the "ended" page's button goes.
+  endedLinkUrl      String        @default("/") @map("ended_link_url")
+  metaDescriptionHe String?       @map("meta_description_he")
+  noindex           Boolean       @default(false)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  image       ContentImage  @relation("LandingImage", fields: [imageId], references: [id], onDelete: Restrict)
+  mobileImage ContentImage? @relation("LandingMobileImage", fields: [mobileImageId], references: [id], onDelete: Restrict)
+
+  @@index([imageId])
+  @@index([mobileImageId])
+  @@map("landing_pages")
 }

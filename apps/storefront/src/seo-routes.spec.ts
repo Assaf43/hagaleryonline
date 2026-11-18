@@ -9,6 +9,7 @@ describe('buildSitemapXml', () => {
       categories: [{ slug: 'sofas' }, { slug: 'a&b' }],
       rooms: [{ slug: 'living-room' }],
       infoPages: [{ slug: 'shipping', updatedAt: '2026-11-01T10:00:00.000Z' }],
+      landingPages: [],
     },
     origin,
   );
@@ -88,7 +89,7 @@ describe('registerSeoRoutes /sitemap.xml', () => {
     };
     return res;
   };
-  const data = { products: [], categories: [], rooms: [], infoPages: [] };
+  const data = { products: [], categories: [], rooms: [], infoPages: [], landingPages: [] };
   const okResponse = () => ({ ok: true, status: 200, json: async () => data });
 
   let handlers: Record<string, Handler>;

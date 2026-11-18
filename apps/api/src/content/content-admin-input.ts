@@ -9,9 +9,11 @@ import {
   type AdminFaqItemInput,
   type AdminHomeSectionInput,
   type AdminInfoPageInput,
+  type AdminLandingPageInput,
   type AdminSiteContentInput,
   type HomeProductCount,
   type HomeSectionConfig,
+  type LandingStatus,
   type ProductSource,
 } from '@hg/models';
 import { isSafeContentLink, sanitizeContentHtml, type ContentHtmlMode } from '../catalog/description-html.js';
@@ -220,7 +222,8 @@ function idList(b: Body, key: string, min: number, max: number, field: string): 
   return value as number[];
 }
 
-function productSource(raw: unknown, field: string): ProductSource {
+/** A product source (home product rows, landing pages); fields `<field>.kind`, `<field>.id`, `<field>.productIds`. */
+export function productSource(raw: unknown, field: string): ProductSource {
   const b = asBody(raw);
   switch (b.kind) {
     case 'bestsellers':
@@ -300,4 +303,60 @@ export function parseHomeInput(raw: unknown): AdminHomeSectionInput[] {
       visible: flag(section, 'visible', field('visible')),
     };
   });
+}
+
+/** An optional rich text: missing, null or nothing left after sanitizing → null. */
+function optionalRichText(b: Body, key: string, mode: ContentHtmlMode): string | null {
+  const value = b[key];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length > MAX_RAW_HTML) throw invalid(key);
+  const clean = sanitizeContentHtml(value, mode);
+  if (clean.length > CONTENT_LIMITS.body) throw invalid(key);
+  return clean || null;
+}
+
+const LANDING_STATUSES: readonly LandingStatus[] = ['draft', 'published'];
+
+/**
+ * A landing page (Phase 8 §4.7, §9, MKT-02): the slug like an info page's, the intro in `page` mode and the closing
+ * text in `inline` mode (sanitized here), the photos by id (the service checks they exist), one product source, the
+ * status and Israel-day dates, and the ended link — a site path or an https address only (mailto / tel are
+ * `invalid_link` here; the button leads to a page), empty → "/". Whether the source's references exist is checked by
+ * the service.
+ */
+export function parseLandingInput(raw: unknown): AdminLandingPageInput {
+  const b = asBody(raw);
+  const slug = typeof b.slug === 'string' ? b.slug.trim() : '';
+  if (!slug || slug.length > CONTENT_LIMITS.slug || !CONTENT_SLUG_PATTERN.test(slug)) throw invalid('slug');
+  const titleHe = line(b, 'titleHe', CONTENT_LIMITS.title);
+  const sublineHe = optionalLine(b, 'sublineHe', CONTENT_LIMITS.landingSubline);
+  const introHtml = richText(b, 'introHtml', 'page');
+  const outroHtml = optionalRichText(b, 'outroHtml', 'inline');
+  const image = imageId(b, 'imageId', true)!;
+  const mobileImageId = imageId(b, 'mobileImageId', false);
+  const altHe = line(b, 'altHe', CONTENT_LIMITS.landingAlt);
+  const source = productSource(b.source, 'source');
+  if (!LANDING_STATUSES.includes(b.status as LandingStatus)) throw invalid('status');
+  const startsAt = time(b.startsAt, 'startsAt');
+  const endsAt = time(b.endsAt, 'endsAt');
+  if (startsAt && endsAt && endsAt <= startsAt) throw invalid('endsAt');
+  const endedLinkUrl = link(b, 'endedLinkUrl') ?? '/';
+  if (!endedLinkUrl.startsWith('/') && !/^https:\/\//i.test(endedLinkUrl)) throw invalidLink('endedLinkUrl');
+  return {
+    slug,
+    titleHe,
+    sublineHe,
+    introHtml,
+    outroHtml,
+    imageId: image,
+    mobileImageId,
+    altHe,
+    source,
+    status: b.status as LandingStatus,
+    startsAt: startsAt?.toISOString() ?? null,
+    endsAt: endsAt?.toISOString() ?? null,
+    endedLinkUrl,
+    metaDescriptionHe: optionalLine(b, 'metaDescriptionHe', CONTENT_LIMITS.metaDescription),
+    noindex: flag(b, 'noindex'),
+  };
 }
