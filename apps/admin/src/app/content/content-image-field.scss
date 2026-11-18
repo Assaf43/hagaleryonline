@@ -1,0 +1,65 @@
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+svg {
+  inline-size: var(--icon-size-md);
+  block-size: var(--icon-size-md);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.field.invalid {
+  border-color: var(--color-danger);
+}
+
+.field.over {
+  border-color: var(--color-accent);
+  background: var(--color-surface-alt);
+}
+
+.label {
+  font-weight: 700;
+}
+
+.preview {
+  max-inline-size: 100%;
+  max-block-size: 14rem;
+  justify-self: start;
+  object-fit: contain;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+.drop {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+.drag-note,
+.hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-small);
+}
+
+.pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-small);
+}

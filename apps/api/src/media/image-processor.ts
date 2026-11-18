@@ -53,13 +53,24 @@ const upright = (input: Buffer, width: number) =>
     .resize({ width, withoutEnlargement: true })
     .toColorspace('srgb');
 
+export interface ProcessImageOptions {
+  /** Widths to make (ascending); default `IMAGE_WIDTHS` (catalog). Content photos add 2400 (`CONTENT_IMAGE`). */
+  widths?: readonly number[];
+  /** Minimum long side in px; default the catalog's `IMAGE_UPLOAD.minLongSide`. */
+  minLongSide?: number;
+}
+
 /**
  * Checks an upload by its content, turns it upright (phone photos store rotation in EXIF), converts
  * it to sRGB and makes the resized copies. sharp drops all metadata unless asked to keep it.
+ * Without options it is the catalog's pipeline (480 / 960 / 1600, at least 600 px).
  */
-export async function processImage(input: Buffer): Promise<ProcessedImage> {
-  const { originalExt, width, height } = await inspect(input);
-  const widths = [...new Set(IMAGE_WIDTHS.map((w) => Math.min(w, width)))];
+export async function processImage(
+  input: Buffer,
+  { widths: wanted = IMAGE_WIDTHS, minLongSide }: ProcessImageOptions = {},
+): Promise<ProcessedImage> {
+  const { originalExt, width, height } = await inspect(input, minLongSide === undefined ? {} : { minLongSide });
+  const widths = [...new Set(wanted.map((w) => Math.min(w, width)))];
   try {
     const copies = await Promise.all(
       widths.map(async (w) => {

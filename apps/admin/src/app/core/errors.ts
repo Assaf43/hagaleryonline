@@ -154,6 +154,25 @@ const CONTENT_FIELDS: Record<string, string> = {
   expectedUpdatedAt: 'גרסת העמוד',
 };
 
+/** Banner and home page fields (Phase 8b); only read on content screens, where `nameHe` etc. mean something else. */
+const BANNER_FIELDS: Record<string, string> = {
+  nameHe: 'שם פנימי',
+  headlineHe: 'כותרת',
+  sublineHe: 'שורת משנה',
+  ctaLabelHe: 'טקסט הכפתור',
+  imageId: 'תמונה',
+  mobileImageId: 'תמונה לנייד',
+  altHe: 'טקסט חלופי לתמונה',
+};
+
+/** Why a content photo upload was refused (Phase 8b): at least 1200 px on the long side. */
+export const CONTENT_IMAGE_PROBLEMS: Partial<Record<ImageUploadProblem, string>> = {
+  type: IMAGE_PROBLEMS.type,
+  too_large: IMAGE_PROBLEMS.too_large,
+  too_small: 'התמונה קטנה מדי. צריך לפחות 1200 פיקסלים בצד הארוך.',
+  unreadable: IMAGE_PROBLEMS.unreadable,
+};
+
 function contentFieldLabel(field: string): string {
   const item = /^items\.(\d+)\.(\w+)$/.exec(field);
   if (item) {
@@ -167,9 +186,19 @@ function contentFieldLabel(field: string): string {
  * Content errors (Phase 8a): `invalid_link` here always names a field (the auth code of the same name has none),
  * `invalid` only when the field is a content one, `slug_taken` and `system_page`.
  */
-function contentMessage(body: { code?: string; field?: string }, url?: string | null): string | null {
+function contentMessage(
+  body: { code?: string; field?: string; value?: string; sections?: string[] },
+  url?: string | null,
+): string | null {
   const field = body.field ?? '';
+  const onContent = !!url?.includes('/api/admin/content/');
   switch (body.code) {
+    case 'banner_in_use': {
+      const names = (body.sections ?? []).map((n) => `"${n}"`).join(', ');
+      return `אי אפשר למחוק את הבאנר כי הוא בשימוש בדף הבית${names ? `: ${names}` : ''}. הסירו אותו משם ושמרו, ואז מחקו.`;
+    }
+    case 'invalid_source':
+      return 'המבצע שנבחר לא מתאים. צריך מבצע אוטומטי על קטגוריות או מוצרים, שלא חל על כל ההזמנה ולא לחברי מועדון בלבד.';
     case 'conflict':
       // The catalog wording talks about a product; the same code on a content screen gets its own.
       return url?.includes('/api/admin/content/')
@@ -185,6 +214,14 @@ function contentMessage(body: { code?: string; field?: string }, url?: string | 
       if (field === 'published') return 'עמוד מערכת: תמיד מפורסם.';
       return 'עמוד מערכת: אי אפשר למחוק אותו.';
     case 'invalid':
+      if (onContent && field === 'file') {
+        const reason = body.value ? CONTENT_IMAGE_PROBLEMS[body.value as ImageUploadProblem] : undefined;
+        if (reason) return reason;
+      }
+      if (onContent && Object.hasOwn(BANNER_FIELDS, field)) return `יש לבדוק את השדה: ${BANNER_FIELDS[field]}.`;
+      if (onContent && /^sections\.\d+\./.test(field)) {
+        return `יש לבדוק את מקום ${Number(field.split('.')[1]) + 1} בדף הבית.`;
+      }
       if (field === 'linkLabelHe') return 'יש להוסיף קישור לטקסט הקישור, או למחוק את טקסט הקישור.';
       if (Object.hasOwn(CONTENT_FIELDS, field) || /^items\.\d+\./.test(field)) {
         return `יש לבדוק את השדה: ${contentFieldLabel(field)}.`;

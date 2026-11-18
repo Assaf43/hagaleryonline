@@ -121,6 +121,26 @@ export const routes: Routes = [
         title: 'קבוצת שאלות',
       },
       {
+        path: 'content/banners',
+        canMatch: [hasPermission('content.manage')],
+        loadComponent: () => import('./content/banners.page').then((m) => m.BannersPage),
+        title: 'באנרים',
+      },
+      {
+        path: 'content/banners/:id',
+        canMatch: [hasPermission('content.manage')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
+        loadComponent: () => import('./content/banner-form.page').then((m) => m.BannerFormPage),
+        title: 'באנר',
+      },
+      {
+        path: 'content/home',
+        canMatch: [hasPermission('content.manage')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
+        loadComponent: () => import('./content/home.page').then((m) => m.HomePage),
+        title: 'דף הבית',
+      },
+      {
         path: 'content/site',
         canMatch: [hasPermission('content.manage')],
         canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],

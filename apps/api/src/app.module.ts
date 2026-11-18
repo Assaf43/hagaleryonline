@@ -6,6 +6,7 @@ import { CacheModule } from './cache/cache.module.js';
 import { CartModule } from './cart/cart.module.js';
 import { CatalogAdminModule } from './catalog-admin/catalog-admin.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
+import { ContentHomeModule } from './content/home/content-home.module.js';
 import { ContentModule } from './content/content.module.js';
 import { CustomersModule } from './customers/customers.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -43,6 +44,7 @@ import { StoreOrdersModule } from './store-orders/store-orders.module.js';
     StoreOrdersModule,
     MarketingModule,
     ContentModule,
+    ContentHomeModule,
   ],
 })
 export class AppModule {}

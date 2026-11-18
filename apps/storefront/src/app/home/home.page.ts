@@ -1,68 +1,63 @@
 import { ChangeDetectionStrategy, Component, PendingTasks, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { LucideRuler, LucideSlidersHorizontal, LucideTruck } from '@lucide/angular';
-import type { ImageRef, ProductCard as Card } from '@hg/models';
-import { CatalogApi } from '../core/catalog.api';
+import type { HomeSectionView } from '@hg/models';
+import { ContentApi } from '../content/content.api';
 import { PageMeta, SITE_NAME } from '../core/page-meta';
 import { SITE_ORIGIN } from '../core/server-tokens';
 import { homeJsonLd } from '../core/structured-data';
-import { MenuData } from '../layout/menu-data';
-import { ProductCard } from '../catalog/product-card';
-import { ResponsiveImage } from '../catalog/responsive-image';
+import { HomeBannerPair } from './home-banner-pair';
+import { HomeCategories } from './home-categories';
+import { HomeHero } from './home-hero';
+import { HomeProducts } from './home-products';
+import { HomeRooms } from './home-rooms';
+import { HomeTrust } from './home-trust';
 
-/**
- * Home page (GEN-01): rooms with their furniture types, best sellers and new arrivals. Banners and
- * editable content come with the CMS in Phase 8.
- */
+/** Home page (GEN-01, NAV-05): the managed sections, resolved by the API in one call. */
 @Component({
   selector: 'hg-home-page',
-  imports: [RouterLink, ProductCard, ResponsiveImage, LucideRuler, LucideSlidersHorizontal, LucideTruck],
+  imports: [HomeHero, HomeTrust, HomeRooms, HomeCategories, HomeProducts, HomeBannerPair],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './home.page.html',
   styleUrl: './home.page.scss',
 })
 export class HomePage {
-  private readonly api = inject(CatalogApi);
-  protected readonly menu = inject(MenuData);
+  private readonly api = inject(ContentApi);
+  private readonly meta = inject(PageMeta);
+  private readonly pending = inject(PendingTasks);
 
-  protected readonly bestsellers = signal<Card[]>([]);
-  protected readonly newest = signal<Card[]>([]);
-  /** A photo per furniture type, from its first product. */
-  protected readonly typeImages = signal<Record<string, ImageRef | null>>({});
-  protected readonly heroImage = computed(() => this.bestsellers()[0]?.image ?? null);
-  protected readonly firstRoom = computed(() => this.menu.rooms()[0] ?? null);
+  protected readonly sections = signal<HomeSectionView[]>([]);
+  /** At most one hero: the first one; later hero sections are ignored. */
+  protected readonly visibleSections = computed(() => {
+    let heroSeen = false;
+    return this.sections().filter((s) => {
+      if (s.kind !== 'hero') return true;
+      const keep = !heroSeen;
+      heroSeen = true;
+      return keep;
+    });
+  });
+  protected readonly failed = signal(false);
 
   constructor() {
-    inject(PageMeta).set({
+    this.meta.set({
       title: SITE_NAME,
       description: 'ספות, כורסאות ואביזרים לסלון, עם מידות מלאות לכל דגם, סינון לפי רוחב ועומק ומשלוח עד הבית.',
       path: '/',
       jsonLd: homeJsonLd(inject(SITE_ORIGIN)),
     });
-    void inject(PendingTasks).run(() => this.load());
+    this.reload();
+  }
+
+  protected reload(): void {
+    void this.pending.run(() => this.load());
   }
 
   private async load() {
+    this.failed.set(false);
     try {
-      const [best, fresh] = await Promise.all([
-        this.api.products({ sort: 'bestsellers', pageSize: '4' }),
-        this.api.products({ sort: 'newest', pageSize: '4' }),
-        this.menu.load(),
-      ]);
-      this.bestsellers.set(best.items);
-      this.newest.set(fresh.items);
-      const slugs = [...new Set(this.menu.rooms().flatMap((r) => r.categories.map((c) => c.slug)))];
-      const firsts = await Promise.all(
-        slugs.map((category) =>
-          this.api.products({ category, pageSize: '1' }).then(
-            (r) => [category, r.items[0]?.image ?? null] as const,
-            () => [category, null] as const,
-          ),
-        ),
-      );
-      this.typeImages.set(Object.fromEntries(firsts));
+      this.sections.set((await this.api.home()).sections);
     } catch {
-      // The menus and links still work; product rows stay empty.
+      this.failed.set(true);
+      this.meta.serverError();
     }
   }
 }

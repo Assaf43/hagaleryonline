@@ -1,0 +1,22 @@
+.banner-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.thumb {
+  grid-row: span 2;
+  inline-size: 6rem;
+  block-size: 4rem;
+  object-fit: cover;
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+@media (width >= 768px) {
+  .banner-row {
+    grid-template-columns: auto minmax(0, 2fr) minmax(0, 3fr) 8rem auto;
+  }
+
+  .thumb {
+    grid-row: auto;
+  }
+}

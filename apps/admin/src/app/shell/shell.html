@@ -90,6 +90,19 @@
           <svg lucideMegaphone></svg>
           פס הודעות
         </a>
+        <a class="nav-link" routerLink="/content/home" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideHouse></svg>
+          דף הבית
+        </a>
+        <a
+          class="nav-link"
+          routerLink="/content/banners"
+          routerLinkActive="active"
+          (click)="isPhone() && drawer.close()"
+        >
+          <svg lucideImage></svg>
+          באנרים
+        </a>
         <a class="nav-link" routerLink="/content/pages" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideBookOpen></svg>
           עמודי מידע

@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
+import { BannersController } from './banners.controller.js';
+import { BannersService } from './banners.service.js';
 import { ContentAdminController } from './content-admin.controller.js';
 import { ContentAdminService } from './content-admin.service.js';
+import { ContentImagesController } from './content-images.controller.js';
+import { ContentImagesService } from './content-images.service.js';
 import { ContentController } from './content.controller.js';
 import { ContentService } from './content.service.js';
 
@@ -12,8 +16,8 @@ import { ContentService } from './content.service.js';
  */
 @Module({
   imports: [AuthModule],
-  controllers: [ContentController, ContentAdminController],
-  providers: [ContentService, ContentAdminService],
+  controllers: [ContentController, ContentAdminController, ContentImagesController, BannersController],
+  providers: [ContentService, ContentAdminService, ContentImagesService, BannersService],
   exports: [ContentService],
 })
 export class ContentModule {}
