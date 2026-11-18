@@ -30,6 +30,12 @@ describe('PageMeta', () => {
     expect(tags.getTag('name="robots"')?.content).toBe('noindex, follow');
   });
 
+  it('gone can canonicalize to its own path', () => {
+    const { meta } = setup();
+    meta.gone('מבצע', '/collection/winter');
+    expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toMatch(/\/collection\/winter$/);
+  });
+
   it('replaces and clears the json-ld script', () => {
     const { meta } = setup();
     const ld = () => document.head.querySelectorAll('script#ld[type="application/ld+json"]');

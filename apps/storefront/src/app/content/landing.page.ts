@@ -72,7 +72,7 @@ export function sortLandingItems(items: Card[], newestOrder: number[], sort: Lan
         <p class="muted">המבצע הסתיים</p>
         @if (endedTarget(); as t) {
           @if (t.external) {
-            <a [href]="t.href" class="btn btn-primary">להמשך קנייה</a>
+            <a [href]="t.href" rel="noopener" class="btn btn-primary">להמשך קנייה</a>
           } @else {
             <a [routerLink]="t.path" [queryParams]="t.queryParams" [fragment]="t.fragment" class="btn btn-primary"
               >להמשך קנייה</a
@@ -292,9 +292,11 @@ export class LandingPage {
           this.notFound.set(true);
           this.meta.notFound();
         } else if (status === 410) {
-          const body = (error as HttpErrorResponse).error as LandingEnded;
-          this.ended.set({ state: 'ended', titleHe: body.titleHe, endedLinkUrl: body.endedLinkUrl });
-          this.meta.gone(body.titleHe);
+          const body = ((error as HttpErrorResponse).error ?? {}) as Partial<LandingEnded>;
+          const titleHe = typeof body.titleHe === 'string' && body.titleHe ? body.titleHe : 'הדף הסתיים';
+          const endedLinkUrl = typeof body.endedLinkUrl === 'string' && body.endedLinkUrl ? body.endedLinkUrl : '/';
+          this.ended.set({ state: 'ended', titleHe, endedLinkUrl });
+          this.meta.gone(titleHe, `/collection/${slug}`);
         } else {
           this.failed.set(true);
           this.meta.serverError();

@@ -140,6 +140,39 @@ describe('LandingPage', () => {
     expect(el.querySelector('a.btn')?.getAttribute('href')).toBe('/category/sofas');
   });
 
+  it('an ended page canonicalizes to its own path', async () => {
+    const { fixture, http } = open();
+    http
+      .expectOne('/api/content/landing/winter')
+      .flush({ state: 'ended', titleHe: 'x', endedLinkUrl: '/' }, { status: 410, statusText: 'Gone' });
+    await settle(fixture);
+    expect(document.head.querySelector('link[rel="canonical"]')?.getAttribute('href')).toMatch(/\/collection\/winter$/);
+  });
+
+  it('survives a 410 with no body: generic ended state, still 410', async () => {
+    const { fixture, http, response } = open();
+    http.expectOne('/api/content/landing/winter').flush(null, { status: 410, statusText: 'Gone' });
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(response.status).toBe(410);
+    expect(el.textContent).toContain('המבצע הסתיים');
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('an external ended link opens with rel="noopener"', async () => {
+    const { fixture, http } = open();
+    http
+      .expectOne('/api/content/landing/winter')
+      .flush(
+        { state: 'ended', titleHe: 'x', endedLinkUrl: 'https://example.com/sale' },
+        { status: 410, statusText: 'Gone' },
+      );
+    await settle(fixture);
+    const a = (fixture.nativeElement as HTMLElement).querySelector('a.btn');
+    expect(a?.getAttribute('href')).toBe('https://example.com/sale');
+    expect(a?.getAttribute('rel')).toBe('noopener');
+  });
+
   it('answers 404 for an unknown page', async () => {
     const { fixture, http, response } = open();
     http
@@ -162,6 +195,7 @@ describe('LandingPage', () => {
     const { fixture, http } = open({ preview: 'tok.1.sig' });
     const req = http.expectOne((r) => r.url === '/api/content/landing/winter');
     expect(req.request.params.get('preview')).toBe('tok.1.sig');
+    expect(req.request.transferCache).toBe(false);
     req.flush({ state: 'preview', page: view() });
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
