@@ -55,7 +55,8 @@ export function storedConfig(row: { kind: DbKind; config: unknown }): HomeSectio
   }
 }
 
-function storedSource(value: unknown): ProductSource {
+/** A stored product source (a home section's `config.source`, a landing page's `source`), read leniently. */
+export function storedSource(value: unknown): ProductSource {
   const source = asJson(value);
   switch (source.kind) {
     case 'bestsellers':
@@ -99,7 +100,8 @@ export function homeSectionName(titleHe: string | null, kind: HomeSectionKind): 
   return titleHe ?? HOME_SECTION_LABELS_HE[kind];
 }
 
-function sourceText(source: ProductSource): string {
+/** A product source as one readable audit text (ids only). */
+export function sourceText(source: ProductSource): string {
   switch (source.kind) {
     case 'bestsellers':
       return 'הנמכרים ביותר';

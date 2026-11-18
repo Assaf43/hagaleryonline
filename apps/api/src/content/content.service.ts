@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import type { AnnouncementView, FaqView, InfoPageView, SiteContentView, SitemapData } from '@hg/models';
 import { CacheStore } from '../cache/cache-store.js';
-import type { Announcement, FaqGroup, FaqItem, InfoPage, SiteContent } from '../generated/prisma/client.js';
+import {
+  LandingStatus,
+  type Announcement,
+  type FaqGroup,
+  type FaqItem,
+  type InfoPage,
+  type SiteContent,
+} from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { currentAnnouncement } from './content-window.js';
+import { currentAnnouncement, isLive } from './content-window.js';
 import { notFound } from './content-errors.js';
 
 /** Content rows TTL (Phase 8 §6); every admin save also clears the `content:` prefix right away. */
@@ -20,6 +27,8 @@ interface ContentRows {
   pages: InfoPage[];
   /** Published groups with their published items, in order. */
   faq: (FaqGroup & { items: FaqItem[] })[];
+  /** Published landing pages that are not noindex, for the sitemap only (their dates are checked per request). */
+  landing: { slug: string; startsAt: Date | null; endsAt: Date | null; updatedAt: Date }[];
 }
 
 /**
@@ -36,7 +45,7 @@ export class ContentService {
 
   private rows(): Promise<ContentRows> {
     return this.cache.wrap(ALL_KEY, CONTENT_TTL_MS, async () => {
-      const [site, announcements, pages, faq] = await Promise.all([
+      const [site, announcements, pages, faq, landing] = await Promise.all([
         this.prisma.siteContent.findUnique({ where: { id: 1 } }),
         this.prisma.announcement.findMany({ where: { active: true } }),
         this.prisma.infoPage.findMany({ where: { published: true }, orderBy: [{ footerOrder: 'asc' }, { id: 'asc' }] }),
@@ -45,8 +54,15 @@ export class ContentService {
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           include: { items: { where: { published: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
         }),
+        // Read here through Prisma (not LandingService): CatalogModule imports this module for the sitemap, and the
+        // landing module needs the catalog.
+        this.prisma.landingPage.findMany({
+          where: { status: LandingStatus.PUBLISHED, noindex: false },
+          orderBy: { id: 'asc' },
+          select: { slug: true, startsAt: true, endsAt: true, updatedAt: true },
+        }),
       ]);
-      return { site, announcements, pages, faq };
+      return { site, announcements, pages, faq, landing };
     });
   }
 
@@ -97,6 +113,13 @@ export class ContentService {
   async sitemapPages(): Promise<SitemapData['infoPages']> {
     return (await this.rows()).pages
       .filter((p) => !p.noindex)
+      .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt.toISOString() }));
+  }
+
+  /** Landing pages for sitemap.xml (Phase 8 §4.7, §9): published, live now and not noindex. */
+  async sitemapLandingPages(now = new Date()): Promise<SitemapData['landingPages']> {
+    return (await this.rows()).landing
+      .filter((p) => isLive(p, now))
       .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt.toISOString() }));
   }
 }

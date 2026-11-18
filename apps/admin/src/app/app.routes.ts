@@ -134,6 +134,19 @@ export const routes: Routes = [
         title: 'באנר',
       },
       {
+        path: 'content/landing',
+        canMatch: [hasPermission('content.manage')],
+        loadComponent: () => import('./content/landing-pages.page').then((m) => m.LandingPagesPage),
+        title: 'עמודי נחיתה',
+      },
+      {
+        path: 'content/landing/:id',
+        canMatch: [hasPermission('content.manage')],
+        canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],
+        loadComponent: () => import('./content/landing-form.page').then((m) => m.LandingFormPage),
+        title: 'עמוד נחיתה',
+      },
+      {
         path: 'content/home',
         canMatch: [hasPermission('content.manage')],
         canDeactivate: [(page: { canLeave(): boolean }) => page.canLeave()],

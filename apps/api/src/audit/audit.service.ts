@@ -173,6 +173,12 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
           .findMany({ where: { id: { in: idsOf('content_image') } } })
           .then((l) => l.map((i) => ({ id: i.id, label: `תמונה ${i.width}×${i.height}` }))),
       ],
+      [
+        'landing_page',
+        this.prisma.landingPage
+          .findMany({ where: { id: { in: idsOf('landing_page') } } })
+          .then((l) => l.map((p) => ({ id: p.id, label: p.titleHe }))),
+      ],
     ];
     const labels = new Map<string, string>();
     for (const [type, lookup] of lookups) {

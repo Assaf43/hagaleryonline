@@ -214,4 +214,6 @@ export interface SitemapData {
   rooms: { slug: string }[];
   /** Published info pages that are not noindex (Phase 8 §9), served at /info/:slug. */
   infoPages: { slug: string; updatedAt: string }[];
+  /** Landing pages live now (published, inside their dates) and not noindex (Phase 8 §4.7), at /collection/:slug. */
+  landingPages: { slug: string; updatedAt: string }[];
 }

@@ -105,7 +105,7 @@ export class CatalogService {
   }
 
   /** What sitemap.xml lists (NFR-06): shown products, and categories/rooms that have one (like the menu). */
-  async sitemap(): Promise<Omit<SitemapData, 'infoPages'>> {
+  async sitemap(): Promise<Omit<SitemapData, 'infoPages' | 'landingPages'>> {
     const snapshot = await this.snapshot();
     const withProducts = categoriesWithProducts(snapshot);
     const roomsWithProducts = new Set(snapshot.products.flatMap((p) => [...p.roomSlugs]));

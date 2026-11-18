@@ -3,7 +3,8 @@
  * info pages, FAQ and site details (8a). Rich-text fields hold HTML already sanitized by the API
  * (`sanitizeContentHtml`): `page` mode (h2, h3) for info pages, `inline` mode (no headings) for the shipping text and
  * FAQ answers. Dates are ISO strings; an `endsAt` is inclusive (23:59:59.999 of the Israel day).
- * 8b adds content images, banners and the managed home page (NAV-05, decision 98).
+ * 8b adds content images, banners and the managed home page (NAV-05, decision 98); 8c adds landing pages (MKT-02,
+ * decision 97).
  */
 import type { ImageRef, ProductCard } from './catalog.js';
 
@@ -40,6 +41,11 @@ export const CONTENT_LIMITS = {
   categoryTilesMax: 8,
   /** Products picked by hand (a manual product source). */
   manualProducts: 48,
+  /** A landing page's subtitle and image alt text. */
+  landingSubline: 160,
+  landingAlt: 160,
+  /** Cards on a landing page grid. */
+  landingProducts: 48,
 } as const;
 
 /**
@@ -63,6 +69,7 @@ export const CONTENT_SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
  * path), `slug_taken`, `system_page` (a system page cannot be deleted, renamed or unpublished), `banner_in_use` (a
  * banner a home section uses cannot be deleted; `sections` names them), `invalid_source` (a product source naming a
  * promotion that is not automatic, gives its discount on the whole order or is for members only), `not_found`.
+ * A landing page's ended link that is not a site path or an https address is `invalid_link` too.
  */
 export type ContentErrorCode =
   | 'conflict'
@@ -442,4 +449,125 @@ export type AdminHomeSectionInput = HomeSectionConfig & {
 export interface AdminHomeInput {
   sections: AdminHomeSectionInput[];
   expectedUpdatedAt?: string;
+}
+
+// ---- Landing pages (8c, MKT-02, decision 97) ----
+
+/** Stored status of a landing page; the dates decide the rest (`LandingState`). */
+export type LandingStatus = 'draft' | 'published';
+
+/**
+ * Where a landing page stands now (admin lists): `draft`; `scheduled` (published, before its start); `live`; `ended`
+ * (published, after its inclusive end).
+ */
+export type LandingState = 'draft' | 'scheduled' | 'live' | 'ended';
+
+/** Staff preview tokens last 30 minutes. */
+export const LANDING_PREVIEW_TTL_MS = 30 * 60_000;
+
+/** A landing page as the site shows it (`/collection/:slug`). */
+export interface LandingPageView {
+  slug: string;
+  titleHe: string;
+  sublineHe: string | null;
+  /** Page rich text (h2, h3). */
+  introHtml: string;
+  /** Inline rich text under the grid (small print); null = none. */
+  outroHtml: string | null;
+  /** `altHe` of both images is the page's alt text. */
+  image: ImageRef;
+  mobileImage: ImageRef | null;
+  altHe: string;
+  /**
+   * The grid in the source's order ("מומלץ"), up to 48 cards; empty when the source has nothing to show now (an ended
+   * promotion, a hidden category) — the page says "אין כרגע מוצרים להצגה".
+   */
+  items: ProductCard[];
+  /** Ids of `items`, newest product first: the "חדש באתר" sort (cards carry no creation date). */
+  newestOrder: number[];
+  metaDescriptionHe: string | null;
+  noindex: boolean;
+}
+
+/**
+ * `GET /api/content/landing/:slug[?preview=<token>]` (200). `preview`: a valid staff token showed the page whatever its
+ * status or dates (answered `Cache-Control: no-store`; render `noindex` with the "תצוגה מקדימה" strip). A draft or a
+ * page before its start is a 404 `not_found` with nothing of the page.
+ */
+export interface LandingResponse {
+  state: 'live' | 'preview';
+  page: LandingPageView;
+}
+
+/** The 410 body after a landing page's end: render `noindex`, the title, "המבצע הסתיים" and a button to the link. */
+export interface LandingEnded {
+  state: 'ended';
+  titleHe: string;
+  /** A site path or an https address (default "/"). */
+  endedLinkUrl: string;
+}
+
+/** Products of a landing source the site cannot show now; the admin marks them. */
+export interface LandingUnavailable {
+  /** Manual picks not shown on the site. */
+  productIds: number[];
+  /** The category, room or promotion is gone, hidden, or not a live usable promotion. */
+  source: boolean;
+}
+
+export interface AdminLandingPage {
+  id: number;
+  slug: string;
+  titleHe: string;
+  sublineHe: string | null;
+  introHtml: string;
+  outroHtml: string | null;
+  imageId: number;
+  image: ImageRef;
+  mobileImageId: number | null;
+  mobileImage: ImageRef | null;
+  altHe: string;
+  source: ProductSource;
+  status: LandingStatus;
+  state: LandingState;
+  startsAt: string | null;
+  endsAt: string | null;
+  endedLinkUrl: string;
+  metaDescriptionHe: string | null;
+  noindex: boolean;
+  unavailable: LandingUnavailable;
+  /** The listing page of a category or room source with products shown (the ended-link shortcut), else null. */
+  sourceLink: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminLandingPageInput {
+  /** `CONTENT_SLUG_PATTERN`, unique among landing pages (409 `slug_taken`). */
+  slug: string;
+  titleHe: string;
+  sublineHe: string | null;
+  introHtml: string;
+  /** Empty or null = no closing text. */
+  outroHtml: string | null;
+  /** A content image (`POST /api/admin/content/images`). */
+  imageId: number;
+  mobileImageId: number | null;
+  altHe: string;
+  source: ProductSource;
+  status: LandingStatus;
+  /** ISO times; the admin sends the start of the first Israel day and 23:59:59.999 of the last. */
+  startsAt: string | null;
+  endsAt: string | null;
+  /** A site path or an https address (else `invalid_link`); null or empty = "/". */
+  endedLinkUrl: string | null;
+  metaDescriptionHe: string | null;
+  noindex: boolean;
+  expectedUpdatedAt?: string;
+}
+
+/** `POST /api/admin/content/landing/:id/preview`: the storefront address with a signed token, valid 30 minutes. */
+export interface AdminLandingPreview {
+  url: string;
+  expiresAt: string;
 }

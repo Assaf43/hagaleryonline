@@ -63,6 +63,10 @@ const ACTIONS: Record<string, string> = {
   'content.banner.update': 'עדכון באנר',
   'content.banner.delete': 'מחיקת באנר',
   'content.home.update': 'עדכון דף הבית',
+  'content.landing.create': 'יצירת עמוד נחיתה',
+  'content.landing.update': 'עדכון עמוד נחיתה',
+  'content.landing.delete': 'מחיקת עמוד נחיתה',
+  'content.landing.preview': 'קישור לתצוגה מקדימה',
 };
 
 const ENTITIES: Record<string, string> = {
@@ -84,6 +88,7 @@ const ENTITIES: Record<string, string> = {
   banner: 'באנר',
   content_image: 'תמונת תוכן',
   home_page: 'דף הבית',
+  landing_page: 'עמוד נחיתה',
 };
 
 /** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
@@ -98,6 +103,7 @@ const READABLE = new Set([
   'banner',
   'content_image',
   'home_page',
+  'landing_page',
 ]);
 
 /** Prices are stored in agorot; show them in shekels. */

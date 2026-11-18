@@ -9,6 +9,7 @@ describe('buildSitemapXml', () => {
       categories: [{ slug: 'sofas' }, { slug: 'a&b' }],
       rooms: [{ slug: 'living-room' }],
       infoPages: [{ slug: 'shipping', updatedAt: '2026-11-01T10:00:00.000Z' }],
+      landingPages: [{ slug: 'winter', updatedAt: '2026-11-10T10:00:00.000Z' }],
     },
     origin,
   );
@@ -26,6 +27,7 @@ describe('buildSitemapXml', () => {
       `${origin}/sizing-guide`,
       `${origin}/faq`,
       `${origin}/info/shipping`,
+      `${origin}/collection/winter`,
     ]);
     expect(locs.every((l) => l.startsWith(`${origin}/`))).toBe(true);
   });
@@ -38,7 +40,7 @@ describe('buildSitemapXml', () => {
   it('gives products a lastmod date (YYYY-MM-DD) from updatedAt', () => {
     expect(xml).toContain(`<url><loc>${origin}/product/alba-corner-sofa</loc><lastmod>2026-10-05</lastmod></url>`);
     expect(xml).toContain(`<url><loc>${origin}/info/shipping</loc><lastmod>2026-11-01</lastmod></url>`);
-    expect(xml.match(/<lastmod>/g)).toHaveLength(2);
+    expect(xml.match(/<lastmod>/g)).toHaveLength(3);
   });
 
   it('escapes & in URLs', () => {
@@ -88,7 +90,7 @@ describe('registerSeoRoutes /sitemap.xml', () => {
     };
     return res;
   };
-  const data = { products: [], categories: [], rooms: [], infoPages: [] };
+  const data = { products: [], categories: [], rooms: [], infoPages: [], landingPages: [] };
   const okResponse = () => ({ ok: true, status: 200, json: async () => data });
 
   let handlers: Record<string, Handler>;

@@ -60,10 +60,14 @@ export class CatalogController {
     return this.catalog.suggest(typeof q === 'string' ? q.slice(0, 100) : '');
   }
 
-  /** Catalog items plus the published, indexable info pages (Phase 8 §9). */
+  /** Catalog items plus the published, indexable info pages and the live, indexable landing pages (Phase 8 §9). */
   @Get('seo/sitemap')
   async sitemap(): Promise<SitemapData> {
-    const [catalog, infoPages] = await Promise.all([this.catalog.sitemap(), this.content.sitemapPages()]);
-    return { ...catalog, infoPages };
+    const [catalog, infoPages, landingPages] = await Promise.all([
+      this.catalog.sitemap(),
+      this.content.sitemapPages(),
+      this.content.sitemapLandingPages(),
+    ]);
+    return { ...catalog, infoPages, landingPages };
   }
 }

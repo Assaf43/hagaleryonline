@@ -6,6 +6,7 @@ import {
 } from '@angular/ssr/node';
 import express from 'express';
 import { join } from 'node:path';
+import { previewNoStore } from './preview-no-store';
 import { registerSeoRoutes } from './seo-routes';
 import { securityHeaders } from './security-headers';
 import { readServerEnv } from './server-env';
@@ -37,6 +38,7 @@ app.use(
 /**
  * Handle all other requests by rendering the Angular application.
  */
+app.use(previewNoStore);
 app.use((req, res, next) => {
   angularApp
     .handle(req)
