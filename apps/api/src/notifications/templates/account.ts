@@ -18,8 +18,8 @@ const hello = (name: string | undefined): string => (name?.trim() ? `שלום ${
  * (decision 43).
  */
 export function storeWelcome(d: StoreWelcomeData): RenderedEmail {
-  const subject = `החשבון שלך ב${BRAND.nameHe} מוכן`;
-  const opened = `פתחנו עבורך חשבון ב${BRAND.nameHe}, ובו ההזמנות שלך.`;
+  const subject = `החשבון שלכם ב${BRAND.nameHe} מוכן`;
+  const opened = `פתחנו עבורכם חשבון ב${BRAND.nameHe}, ובו ההזמנות שלכם.`;
   // `wrap` isolates the phone in the html (bidi) and leaves it as is in the plain text.
   const how = (wrap: (v: string) => string) =>
     `כדי להיכנס, בחרו באתר בכניסה עם ״קוד ב־SMS״ והזינו את הקוד שיישלח לטלפון ${wrap(d.phoneMasked)}.`;

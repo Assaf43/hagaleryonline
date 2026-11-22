@@ -139,7 +139,7 @@ describe('support e-mail templates (spec §7.1)', () => {
       phoneMasked: '050-***-4567',
       link: 'https://shop.test/account',
     });
-    expect(m.subject).toBe('החשבון שלך בנסטו מוכן');
+    expect(m.subject).toBe('החשבון שלכם בנסטו מוכן');
     expect(m.html).toContain('dir="rtl"');
     expect(m.html).toContain('<bdi>050-***-4567</bdi>');
     expect(m.html).toContain('https://shop.test/account');
