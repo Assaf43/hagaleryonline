@@ -376,6 +376,8 @@ describe('Admin support inbox (e2e, SRV-02, SRV-03, SRV-05)', () => {
     expect(res.headers['content-type']).toBe('image/webp');
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.headers['x-content-type-options']).toBe('nosniff');
+    // Its own policy wins over the API-wide default-src 'none'; frame-ancestors 'none' (NFR-07).
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; img-src 'self'");
     expect(Buffer.compare(res.body as Buffer, first.data)).toBe(0);
 
     // Another ticket's photo through this ticket's URL, unknown and malformed ids: one 404.
