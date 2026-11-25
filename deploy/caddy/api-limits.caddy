@@ -1,0 +1,18 @@
+# Size and rate limits for the signed webhooks (spec 9a.3). Imported by Phase 9b
+# inside the site block that proxies /api. rate_limit needs the caddy-ratelimit
+# plugin (see README.md).
+(webhook_limits) {
+	@webhooks path /api/payments/webhook /api/marketing/webhook
+
+	request_body @webhooks {
+		max_size 64KB
+	}
+
+	rate_limit @webhooks {
+		zone webhooks {
+			key {remote_host}
+			events 120
+			window 1m
+		}
+	}
+}

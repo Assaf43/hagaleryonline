@@ -1,0 +1,16 @@
+# Security headers for the admin site block (spec 9a.1). Imported by Phase 9b:
+#   admin.example.test { import admin_headers  ... }
+# style-src keeps 'unsafe-inline': Angular Material injects <style> tags at
+# run time and a static build has no server to put a nonce on them.
+# No HSTS here: the 9b site block adds it.
+(admin_headers) {
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=()"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+}
