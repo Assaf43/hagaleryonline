@@ -326,15 +326,57 @@ describe('Admin auth (e2e)', () => {
       expect((await prisma.adminUser.findUniqueOrThrow({ where: { id: newUser.id } })).status).toBe('ACTIVE');
     });
 
-    it('refuses an e-mail in use', async () => {
+    it('re-onboards the Super Admin when the e-mail is theirs', async () => {
+      const users = app.get(AdminUsersService);
+      await acceptLink(await users.createSuperAdmin(OLD.email, OLD.name), OLD.password);
+      const oldBrowser = browser();
+      await signIn(oldBrowser, OLD, true);
+      await oldBrowser.get('/auth/me').expect(200);
+      const before = await prisma.adminUser.findUniqueOrThrow({ where: { email: OLD.email } });
+      expect(before.passwordHash).not.toBeNull();
+      expect(await prisma.adminRecoveryCode.count({ where: { userId: before.id } })).toBe(10);
+
+      const link = await users.replaceSuperAdmin(OLD.email.toUpperCase(), 'Renamed Owner');
+
+      const after = await prisma.adminUser.findUniqueOrThrow({ where: { id: before.id } });
+      expect(after).toMatchObject({
+        email: OLD.email,
+        name: 'Renamed Owner',
+        status: 'INVITED',
+        isSuperAdmin: true,
+        passwordHash: null,
+        totpSecretEnc: null,
+        totpEnabledAt: null,
+        failedLogins: 0,
+        loginBlockedUntil: null,
+      });
+      expect(await prisma.adminRecoveryCode.count({ where: { userId: before.id } })).toBe(0);
+      expect(await prisma.adminUser.count()).toBe(1);
+      await oldBrowser.get('/auth/me').expect(401);
+      await browser().post('/auth/login', { email: OLD.email, password: OLD.password }).expect(401);
+
+      const rows = await prisma.auditLog.findMany({ where: { action: 'user.super_admin_replaced' } });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        actorId: null,
+        entityId: String(before.id),
+        before: { id: before.id, name: OLD.name },
+      });
+      expect(JSON.stringify(rows[0].before)).not.toContain('@');
+
+      await acceptLink(link, NEW.password);
+      expect((await prisma.adminUser.findUniqueOrThrow({ where: { id: before.id } })).status).toBe('ACTIVE');
+    });
+
+    it('refuses an e-mail used by another admin user', async () => {
       const users = app.get(AdminUsersService);
       await users.createSuperAdmin(OLD.email, OLD.name);
-      await expect(users.replaceSuperAdmin(OLD.email, 'Someone')).rejects.toThrow('E-mail already in use');
       await prisma.adminUser.create({ data: { email: 'staff@example.test', name: 'Staff', template: 'manager' } });
       await expect(users.replaceSuperAdmin('staff@example.test', 'Someone')).rejects.toThrow('E-mail already in use');
       expect(await prisma.adminUser.findUniqueOrThrow({ where: { email: OLD.email } })).toMatchObject({
         isSuperAdmin: true,
         status: 'INVITED',
+        name: OLD.name,
       });
     });
 

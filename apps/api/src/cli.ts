@@ -3,6 +3,7 @@
  *
  *   npm run admin -w @hg/api -- create-super-admin --email <e-mail> --name "<name>"
  *   npm run admin -w @hg/api -- replace-super-admin --email <e-mail> --name "<name>"
+ *     (a new e-mail replaces the Super Admin; the current Super Admin's own e-mail re-onboards that same user)
  *   npm run admin -w @hg/api -- reset-2fa --email <e-mail>
  *
  * Prints a one-time invite link for the new Super Admin. Run it on the server (or locally);
