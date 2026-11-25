@@ -40,7 +40,8 @@ export class SecretBox {
   decrypt(sealed: string): string {
     const [iv, tag, data] = sealed.split('.').map((part) => Buffer.from(part, 'base64url'));
     if (!iv || !tag || !data) throw new Error('Malformed secret');
-    const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
+    // A full 16-byte tag only: a truncated GCM tag is refused (DEP0182).
+    const decipher = createDecipheriv('aes-256-gcm', this.key, iv, { authTagLength: 16 });
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   }

@@ -28,8 +28,13 @@ describe('order public token sealed with ORDER_TOKEN_KEY (spec 9a.7, NFR-07)', (
     const { token, sealed } = tokens.issue();
     expect(new OrderTokens(key()).matches(token, { publicToken: null, publicTokenSealed: sealed })).toBe(false);
     const [iv, tag, data] = sealed.split('.');
-    const tampered = [iv, tag, `${data.slice(0, -2)}AA`].join('.');
+    const bytes = Buffer.from(data, 'base64url');
+    bytes[0] ^= 0x01;
+    const tampered = [iv, tag, bytes.toString('base64url')].join('.');
     expect(tokens.matches(token, { publicToken: null, publicTokenSealed: tampered })).toBe(false);
+    // A truncated tag is refused too (full 16-byte GCM tags only).
+    const short = [iv, Buffer.from(tag, 'base64url').subarray(0, 12).toString('base64url'), data].join('.');
+    expect(tokens.matches(token, { publicToken: null, publicTokenSealed: short })).toBe(false);
     expect(tokens.matches(token, { publicToken: null, publicTokenSealed: 'junk' })).toBe(false);
   });
 

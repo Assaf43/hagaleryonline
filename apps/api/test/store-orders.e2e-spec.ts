@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
@@ -36,6 +37,7 @@ import {
   type EmailProvider,
   type SmsProvider,
 } from './../src/notifications/notification-provider.js';
+import { OrderTokens } from './../src/orders/order-token.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { MarketingService } from './../src/marketing/marketing.service.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
@@ -452,7 +454,13 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect((await sellerA.get('/store-orders/pending').expect(200)).body).toEqual([
       expect.objectContaining({ number: a.number, status: 'payment_failed' }),
     ]);
+    // A store return never decrypts the order token (spec 9a.7): the seller's retry works even with a sealed value
+    // this key cannot open (restored right after, so later e-mail jobs of the order are unaffected).
+    const { publicTokenSealed } = await orderOf(a.number);
+    const foreign = new OrderTokens(randomBytes(32).toString('base64')).seal('zz-foreign');
+    await prisma.order.update({ where: { number: a.number }, data: { publicTokenSealed: foreign } });
     const retry = (await sellerA.post(`/store-orders/${a.number}/retry`).expect(201)).body as CheckoutResponse;
+    await prisma.order.update({ where: { number: a.number }, data: { publicTokenSealed } });
     expect(retry.redirectUrl).not.toBe(a.redirectUrl);
     expect((await complete(txOf(retry.redirectUrl), 'success').expect(200)).body).toEqual({
       confirmationUrl: '/pay/done',

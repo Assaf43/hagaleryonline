@@ -100,9 +100,11 @@ export class PaymentsService {
    * seller's endpoints return to `/pay/done`, the website's to the tokened confirmation page (order-number.ts).
    */
   async openPaymentPage(order: PayableOrder, returnTo: PaymentReturn): Promise<string> {
-    const returnPath = returnPathFor({ number: order.number, token: this.tokens.reveal(order) }, returnTo);
     let page: { redirectUrl: string; transactionId: string };
     try {
+      // Inside the try: a token that cannot be revealed (key mismatch) fails the order like a provider error, so its
+      // reservation is released.
+      const returnPath = returnPathFor({ number: order.number, token: () => this.tokens.reveal(order) }, returnTo);
       const contact = order.contact as { fullName: string; phone: string; email: string };
       page = await this.provider.createPaymentPage({
         orderId: order.id,
@@ -448,7 +450,7 @@ export class PaymentsService {
     return {
       confirmationUrl:
         sandbox.returnPath(payment.transactionId) ??
-        defaultReturnPath({ ...payment.order, token: this.tokens.reveal(payment.order) }),
+        defaultReturnPath({ ...payment.order, token: () => this.tokens.reveal(payment.order) }),
     };
   }
 

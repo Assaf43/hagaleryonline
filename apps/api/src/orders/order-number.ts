@@ -47,15 +47,18 @@ export const STORE_RETURN_PATH = '/pay/done';
  */
 export type PaymentReturn = 'store' | 'order';
 
-/** `order.token` is the plain token of the link (`OrderTokens.reveal`). */
-export function returnPathFor(order: { number: number; token: string }, returnTo: PaymentReturn): string {
-  return returnTo === 'store' ? STORE_RETURN_PATH : confirmationPath(order);
+/**
+ * `order.token` gives the plain token of the link (`OrderTokens.reveal`). It is called only for the website return, so
+ * a store return never decrypts the token.
+ */
+export function returnPathFor(order: { number: number; token: () => string }, returnTo: PaymentReturn): string {
+  return returnTo === 'store' ? STORE_RETURN_PATH : confirmationPath({ number: order.number, token: order.token() });
 }
 
 /**
  * The fallback when the provider no longer knows the return path it was given (the sandbox after a restart): by the
  * order's channel — a store order never gets the tokened link on what may be the store tablet.
  */
-export function defaultReturnPath(order: { number: number; token: string; channel: 'WEB' | 'STORE' }): string {
+export function defaultReturnPath(order: { number: number; token: () => string; channel: 'WEB' | 'STORE' }): string {
   return returnPathFor(order, order.channel === 'STORE' ? 'store' : 'order');
 }
