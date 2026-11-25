@@ -1,0 +1,8 @@
+[
+  {
+    "id": "GHSA-7589-6fvf-x4pw",
+    "package": "effect",
+    "reason": "ReDoS in effect Schema.TemplateLiteral decoding. effect is only a dependency of @prisma/config, which the Prisma CLI uses to load our own prisma.config.ts (generate, migrate deploy); the API process never loads it (the generated client and @prisma/adapter-pg do not import @prisma/config or effect) and no request input is ever decoded by it. prisma is a dev dependency, listed by --omit=dev only as @prisma/client's peer. npm's only 'fix' is a downgrade to Prisma 6. Re-check when Prisma ships effect >=3.22.1.",
+    "reviewBy": "2027-01-31"
+  }
+]
