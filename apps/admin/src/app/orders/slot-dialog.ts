@@ -6,6 +6,7 @@ import { MatInputModule } from '@angular/material/input';
 import type { AdminOrderDetail, DeliverySlotView } from '@hg/models';
 import { errorMessage } from '../core/errors';
 import { OrdersApi } from '../core/orders.api';
+import { DateField } from '../shared/date-field';
 
 export interface SlotDialogData {
   number: number;
@@ -28,16 +29,13 @@ const MESSAGES = {
 /** Moves an order to "delivery scheduled" with a date and a time window, or changes the slot of one already there. */
 @Component({
   selector: 'hga-slot-dialog',
-  imports: [MatButtonModule, MatDialogModule, MatFormFieldModule, MatInputModule],
+  imports: [DateField, MatButtonModule, MatDialogModule, MatFormFieldModule, MatInputModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2 mat-dialog-title>{{ data.slot ? 'שינוי מועד האספקה' : 'תיאום אספקה' }}</h2>
     <form (submit)="submit($event)">
       <mat-dialog-content class="dialog-form">
-        <mat-form-field>
-          <mat-label>תאריך</mat-label>
-          <input matInput type="date" name="date" dir="ltr" [value]="date()" (input)="date.set(value($event))" />
-        </mat-form-field>
+        <hga-date-field label="תאריך" name="date" [(value)]="date" />
         <mat-form-field>
           <mat-label>משעה</mat-label>
           <input matInput type="time" name="from" dir="ltr" [value]="from()" (input)="from.set(value($event))" />

@@ -227,8 +227,8 @@ describe('admin promotions screens', () => {
       fixture.detectChanges();
       type('promo-value', '250');
       type('promo-min', '1000');
-      type('promo-start-date', '2026-03-27');
-      type('promo-end-date', '2026-03-27');
+      type('promo-start-date', '27.3.2026');
+      type('promo-end-date', '27.3.2026');
       type('promo-limit', '20');
       await save();
       const req = http.expectOne({ method: 'POST', url: '/api/admin/promotions' });

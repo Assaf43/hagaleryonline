@@ -59,7 +59,7 @@ describe('VatPage ("מע"מ")', () => {
   it('adds a rate as a fraction, then reloads the list', async () => {
     const { fixture, el, type, submit } = await open();
     await type('rate', '17.5');
-    await type('effectiveFrom', '2027-01-01');
+    await type('effectiveFrom', '1.1.2027');
     await submit();
     const req = http.expectOne((r) => r.method === 'POST' && r.url === URL);
     expect(req.request.body).toEqual({ rate: 0.175, effectiveFrom: '2027-01-01' });
@@ -74,7 +74,7 @@ describe('VatPage ("מע"מ")', () => {
   it('refuses a percent with more than 2 decimals without rounding or sending it', async () => {
     const { el, type, submit } = await open();
     await type('rate', '17.555');
-    await type('effectiveFrom', '2027-01-01');
+    await type('effectiveFrom', '1.1.2027');
     await submit();
     http.expectNone((r) => r.method === 'POST');
     expect(el.querySelector('.error')?.textContent).toContain(RATE_MESSAGE);
@@ -83,7 +83,7 @@ describe('VatPage ("מע"מ")', () => {
   it('shows the 409 message when a rate already starts on that date', async () => {
     const { fixture, el, type, submit } = await open();
     await type('rate', '19');
-    await type('effectiveFrom', '2027-01-01');
+    await type('effectiveFrom', '1.1.2027');
     await submit();
     http
       .expectOne((r) => r.method === 'POST')

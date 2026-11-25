@@ -52,17 +52,13 @@
           (ngModelChange)="rate.set($event)"
         />
       </label>
-      <label>
-        <span>בתוקף מתאריך</span>
-        <input
-          name="effectiveFrom"
-          type="date"
-          dir="ltr"
-          required
-          [ngModel]="effectiveFrom()"
-          (ngModelChange)="effectiveFrom.set($event)"
-        />
-      </label>
+      <hga-date-field
+        label="בתוקף מתאריך"
+        name="effectiveFrom"
+        required
+        [ngModel]="effectiveFrom()"
+        (ngModelChange)="effectiveFrom.set($event)"
+      />
     </div>
     @if (error()) {
       <p class="error" role="alert">{{ error() }}</p>

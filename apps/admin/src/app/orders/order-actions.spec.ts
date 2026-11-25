@@ -136,7 +136,7 @@ describe('order action dialogs', () => {
     const fixture = mount(SlotDialog, { number: 100002, slot: null });
     const el = fixture.nativeElement as HTMLElement;
     const q = <E extends HTMLElement>(s: string) => el.querySelector<E>(s)!;
-    type(q<HTMLInputElement>('input[name=date]'), '2026-12-01');
+    type(q<HTMLInputElement>('input[name=date]'), '1.12.2026');
     type(q<HTMLInputElement>('input[name=from]'), '14:00');
     type(q<HTMLInputElement>('input[name=to]'), '12:00');
     fixture.detectChanges();

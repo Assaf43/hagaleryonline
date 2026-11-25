@@ -30,6 +30,7 @@ import {
 import { CatalogApi } from '../core/catalog.api';
 import { errorMessage } from '../core/errors';
 import { MAX_DATE, MIN_DATE } from '../core/israel-time';
+import { DateField } from '../shared/date-field';
 import { RichTextEditor } from '../shared/rich-text-editor';
 import { ContentImageField } from './content-image-field';
 import { ContentApi } from './content.api';
@@ -79,6 +80,7 @@ const LANDING_UNAVAILABLE_NOTE =
 @Component({
   selector: 'hga-landing-form-page',
   imports: [
+    DateField,
     FormsModule,
     RouterLink,
     MatButtonModule,
@@ -272,36 +274,30 @@ const LANDING_UNAVAILABLE_NOTE =
 
           <p class="muted">שעון ישראל. מתחילת יום ההתחלה ועד סוף יום הסיום. ריק = בלי הגבלת תאריך.</p>
           <div class="date-grid">
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך התחלה</mat-label>
-              <input
-                matInput
-                type="date"
-                id="landing-start"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().startDate"
-                (ngModelChange)="set('startDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('startDate')"
-              />
-              <mat-error>{{ fe.all()['startDate'] }}</mat-error>
-            </mat-form-field>
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך סיום</mat-label>
-              <input
-                matInput
-                type="date"
-                id="landing-end"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().endDate"
-                (ngModelChange)="set('endDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('endDate')"
-              />
-              <mat-error>{{ fe.all()['endDate'] }}</mat-error>
-            </mat-form-field>
+            <hga-date-field
+              label="תאריך התחלה"
+              inputId="landing-start"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().startDate"
+              (ngModelChange)="set('startDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('startDate')"
+              [errorText]="fe.all()['startDate'] ?? ''"
+            />
+            <hga-date-field
+              label="תאריך סיום"
+              inputId="landing-end"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().endDate"
+              (ngModelChange)="set('endDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('endDate')"
+              [errorText]="fe.all()['endDate'] ?? ''"
+            />
           </div>
 
           <mat-form-field subscriptSizing="dynamic">
