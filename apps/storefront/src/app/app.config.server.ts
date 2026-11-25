@@ -10,6 +10,7 @@ import {
 import { provideServerRendering, withRoutes } from '@angular/ssr';
 import { THEME_ATTRIBUTE, readThemeCookie } from '@hg/theme';
 import { appConfig } from './app.config';
+import { applyCspNonce, provideCspNonce } from './core/csp-nonce';
 import { API_ORIGIN, SEO_INDEXING, SEO_INDEXING_STATE, SITE_ORIGIN } from './core/server-tokens';
 import { serverRoutes } from './app.routes.server';
 import { readServerEnv } from '../server-env';
@@ -30,6 +31,8 @@ const serverConfig: ApplicationConfig = {
     provideServerRendering(withRoutes(serverRoutes)),
     provideAppInitializer(applySavedTheme),
     provideAppInitializer(transferSeoIndexing),
+    provideCspNonce(),
+    provideAppInitializer(applyCspNonce),
     // The server render calls the API directly (API_URL), not through the browser-facing address.
     { provide: API_ORIGIN, useFactory: () => readServerEnv().apiUrl },
     { provide: SITE_ORIGIN, useFactory: () => readServerEnv().siteUrl },

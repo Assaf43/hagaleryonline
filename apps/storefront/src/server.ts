@@ -15,14 +15,16 @@ const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+const env = readServerEnv();
 
-app.use(securityHeaders);
+/** CSP with a per-request nonce, Permissions-Policy, nosniff, X-Frame-Options, Referrer-Policy (NFR-07). */
+app.use(securityHeaders(env.csp));
 
 /**
  * sitemap.xml and robots.txt (NFR-06), before the static files and the Angular handler.
  * Same defaults as the server render (app.config.server.ts).
  */
-registerSeoRoutes(app, readServerEnv());
+registerSeoRoutes(app, env);
 
 /**
  * Serve static files from /browser
@@ -41,7 +43,8 @@ app.use(
 app.use(previewNoStore);
 app.use((req, res, next) => {
   angularApp
-    .handle(req)
+    // The nonce reaches the render as CSP_NONCE (app.config.server.ts), so Angular puts it on its inline tags.
+    .handle(req, { cspNonce: res.locals['cspNonce'] })
     .then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
     .catch(next);
 });
