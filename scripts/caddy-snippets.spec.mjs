@@ -13,12 +13,21 @@ function block(text, opener) {
   const open = text.indexOf('{', start + opener.length - 1);
   let depth = 0;
   for (let i = open; i < text.length; i++) {
-    if (text[i] === '{' && text[i - 1] !== '$') depth++;
-    if (text[i] === '}' && !/\{[a-z_]*$/.test(text.slice(open, i))) depth--;
+    if (text[i] === '{') depth++;
+    if (text[i] === '}') depth--;
     if (depth === 0) return text.slice(open + 1, i);
   }
   return '';
 }
+
+describe('block helper', () => {
+  it('returns only what is inside the braces, placeholders included', () => {
+    const fixture = ['zone z {', ' key {remote_host}', ' events 1', '}', ' window 1m'].join('\n');
+    const body = block(fixture, 'zone z {');
+    expect(body).toContain('events 1');
+    expect(body).not.toContain('window');
+  });
+});
 
 describe('admin-headers.caddy', () => {
   const text = read('admin-headers.caddy');
@@ -37,6 +46,21 @@ describe('admin-headers.caddy', () => {
     expect(text).toContain('Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=()"');
     expect(text).toContain('X-Robots-Tag "noindex, nofollow"');
     expect(text).toMatch(/^\s*-Server\s*$/m);
+  });
+
+  it('keeps every header and -Server inside the header block', () => {
+    const body = block(text, 'header {');
+    for (const line of [
+      'Content-Security-Policy "',
+      'X-Content-Type-Options nosniff',
+      'X-Frame-Options DENY',
+      'Referrer-Policy same-origin',
+      'Permissions-Policy "',
+      'X-Robots-Tag "noindex, nofollow"',
+    ]) {
+      expect(body).toContain(line);
+    }
+    expect(body).toMatch(/^\s*-Server\s*$/m);
   });
 
   it('forbids framing and never allows eval', () => {
