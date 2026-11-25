@@ -2,6 +2,7 @@
  * Server CLI for what must not be reachable from the web (decisions 48, 51):
  *
  *   npm run admin -w @hg/api -- create-super-admin --email <e-mail> --name "<name>"
+ *   npm run admin -w @hg/api -- replace-super-admin --email <e-mail> --name "<name>"
  *   npm run admin -w @hg/api -- reset-2fa --email <e-mail>
  *
  * Prints a one-time invite link for the new Super Admin. Run it on the server (or locally);
@@ -23,11 +24,16 @@ try {
   if (command === 'create-super-admin' && values.email && values.name) {
     const link = await users.createSuperAdmin(values.email, values.name);
     console.log(`Super Admin created. Open this link within 7 days to choose a password:\n${link.url}`);
+  } else if (command === 'replace-super-admin' && values.email && values.name) {
+    const link = await users.replaceSuperAdmin(values.email, values.name);
+    console.log(`Super Admin replaced. Open this link within 7 days to choose a password:\n${link.url}`);
   } else if (command === 'reset-2fa' && values.email) {
     await users.resetTwoFactorByEmail(values.email);
     console.log('2FA was reset. The user sets it up again at the next login.');
   } else {
-    console.error('Usage:\n  create-super-admin --email <e-mail> --name "<name>"\n  reset-2fa --email <e-mail>');
+    console.error(
+      'Usage:\n  create-super-admin --email <e-mail> --name "<name>"\n  replace-super-admin --email <e-mail> --name "<name>"\n  reset-2fa --email <e-mail>',
+    );
     process.exitCode = 1;
   }
 } catch (e) {

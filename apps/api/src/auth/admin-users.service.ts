@@ -188,6 +188,57 @@ export class AdminUsersService {
     return this.auth.issueLink(user.id, AdminTokenType.INVITE);
   }
 
+  /**
+   * Replaces the one Super Admin in a single step (decision 48): the current one is disabled and loses the role, their
+   * sessions end, and a new Super Admin is invited. Returns the new invite link.
+   */
+  async replaceSuperAdmin(email: string, name: string): Promise<OneTimeLink> {
+    const data = validateInput({ email, name, template: 'manager' });
+    let newId: number;
+    try {
+      newId = await this.prisma.$transaction(async (tx) => {
+        const old = await tx.adminUser.findFirst({ where: { isSuperAdmin: true } });
+        if (!old) throw new NotFoundException('No Super Admin — use create-super-admin');
+        if (await tx.adminUser.findUnique({ where: { email: data.email } }))
+          throw new ConflictException('E-mail already in use');
+        await tx.adminUser.update({
+          where: { id: old.id },
+          data: { isSuperAdmin: false, status: AdminUserStatus.DISABLED, template: null },
+        });
+        await tx.adminSession.updateMany({
+          where: { userId: old.id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        const user = await tx.adminUser.create({
+          data: {
+            email: data.email,
+            name: data.name,
+            isSuperAdmin: true,
+            template: null,
+            status: AdminUserStatus.INVITED,
+          },
+        });
+        await this.audit.record(
+          {
+            actorId: null,
+            action: 'user.super_admin_replaced',
+            entityType: 'admin_user',
+            entityId: user.id,
+            before: { id: old.id, name: old.name },
+            after: auditView(user),
+          },
+          tx,
+        );
+        return user.id;
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+        throw new ConflictException('E-mail already in use');
+      throw e;
+    }
+    return this.auth.issueLink(newId, AdminTokenType.INVITE);
+  }
+
   /** Emergency reset of any user's 2FA from the server, including the Super Admin (decision 51). */
   async resetTwoFactorByEmail(email: string): Promise<void> {
     const user = await this.prisma.adminUser.findUnique({ where: { email: email.trim().toLowerCase() } });
