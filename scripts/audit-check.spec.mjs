@@ -94,6 +94,26 @@ describe('evaluateAudit', () => {
     expect(result.notes.join('\n')).toMatch(/GHSA-9999-8888-7777.*no longer/);
   });
 
+  it.each([
+    ['an empty id', { ...entry('', 'lib') }],
+    ['a blank package', { ...entry('GHSA-aaaa-bbbb-cccc', ' ') }],
+    ['an empty reason', { ...entry('GHSA-aaaa-bbbb-cccc', 'lib'), reason: '' }],
+    ['a reviewBy that is not YYYY-MM-DD', entry('GHSA-aaaa-bbbb-cccc', 'lib', '31/01/2027')],
+    ['a reviewBy that is no calendar day', entry('GHSA-aaaa-bbbb-cccc', 'lib', '2027-02-30')],
+    ['a missing reviewBy', { id: 'GHSA-aaaa-bbbb-cccc', package: 'lib', reason: 'x' }],
+  ])('a malformed entry (%s) is a failure and covers nothing', (_, bad) => {
+    const { failures } = evaluateAudit(report(advisory('lib', 'high', 'GHSA-aaaa-bbbb-cccc')), [bad], TODAY);
+    expect(failures.some((f) => f.includes('is invalid'))).toBe(true);
+    expect(failures.some((f) => f.startsWith('not allow-listed'))).toBe(true);
+  });
+
+  it('an allow-list that is not an array is a failure', () => {
+    const empty = { auditReportVersion: 2, vulnerabilities: {} };
+    expect(evaluateAudit(empty, { id: 'x' }, TODAY).failures).toEqual([
+      'audit-allowlist.json must be an array of entries',
+    ]);
+  });
+
   it('fails a report npm could not produce (an error body)', () => {
     expect(evaluateAudit({ error: { code: 'ENOAUDIT', summary: 'no network' } }, [], TODAY).failures).toHaveLength(1);
   });

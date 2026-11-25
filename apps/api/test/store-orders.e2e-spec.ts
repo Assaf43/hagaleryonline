@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -47,6 +46,7 @@ import { deleteMarketingContacts } from './test-marketing.js';
 import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const STOREFRONT = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -163,8 +163,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     outbox = app.get(OutboxService);
     throttle = app.get(WriteThrottle);

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const API_SRC = join(root, 'apps', 'api', 'src');
 const SKIP = new Set(['generated', 'node_modules', 'dist']);
-const UNSAFE = /\$queryRawUnsafe|\$executeRawUnsafe|Prisma\.raw\s*\(/;
+const UNSAFE = /RawUnsafe|Prisma\.raw\b/;
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -39,11 +39,14 @@ describe('no unsafe raw SQL in the API', () => {
       ['b.ts', 'ok\nawait tx.$executeRawUnsafe(sql);'],
       ['c.ts', 'const part = Prisma.raw(column);'],
       ['d.ts', 'await db.$queryRaw`SELECT ${x}`; const s = Prisma.sql`a = ${b}`;'],
+      ['e.ts', 'const run = db.queryRawUnsafe;'],
+      ['f.ts', 'const raw = Prisma.raw;'],
+      ['g.ts', 'const rawText = Prisma.rawText; // a different name'],
     ];
-    expect(findUnsafeSql(sample)).toEqual(['a.ts:1', 'b.ts:2', 'c.ts:1']);
+    expect(findUnsafeSql(sample)).toEqual(['a.ts:1', 'b.ts:2', 'c.ts:1', 'e.ts:1', 'f.ts:1']);
   });
 
-  it('apps/api/src (outside generated/) uses none of $queryRawUnsafe, $executeRawUnsafe or Prisma.raw(', () => {
+  it('apps/api/src (outside generated/) uses no *RawUnsafe call and no Prisma.raw', () => {
     const files = walk(API_SRC).map((file) => [relative(root, file).split(sep).join('/'), readFileSync(file, 'utf8')]);
     expect(files.length).toBeGreaterThan(50);
     expect(findUnsafeSql(files)).toEqual([]);

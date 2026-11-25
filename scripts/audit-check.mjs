@@ -13,6 +13,25 @@ const BLOCKING = new Set(['high', 'critical']);
 
 const advisoryId = (advisory) => advisory.url?.match(/GHSA-[\w-]+/)?.[0] ?? `npm-${advisory.source}`;
 
+const filled = (value) => typeof value === 'string' && value.trim() !== '';
+
+/** A real calendar day written YYYY-MM-DD. */
+const isIsoDay = (value) =>
+  typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+function entryProblem(entry) {
+  if (typeof entry !== 'object' || entry === null) return 'not an object';
+  for (const field of ['id', 'package', 'reason']) if (!filled(entry[field])) return `${field} is empty`;
+  try {
+    if (!isIsoDay(entry.reviewBy)) return 'reviewBy is not a YYYY-MM-DD date';
+  } catch {
+    return 'reviewBy is not a YYYY-MM-DD date';
+  }
+  return null;
+}
+
 /**
  * Pure core. `report` is `npm audit --json` (auditReportVersion 2), `today` an ISO day (YYYY-MM-DD).
  * Each advisory is counted once, on the package it belongs to (transitive entries name it by a string in `via`).
@@ -20,6 +39,16 @@ const advisoryId = (advisory) => advisory.url?.match(/GHSA-[\w-]+/)?.[0] ?? `npm
 export function evaluateAudit(report, allowlist, today) {
   const failures = [];
   const notes = [];
+  if (!Array.isArray(allowlist)) {
+    failures.push('audit-allowlist.json must be an array of entries');
+    allowlist = [];
+  }
+  // A malformed entry is a failure of its own and covers nothing.
+  allowlist = allowlist.filter((entry, i) => {
+    const problem = entryProblem(entry);
+    if (problem) failures.push(`allow-list entry ${i} (${entry?.id ?? 'no id'}) is invalid: ${problem}`);
+    return !problem;
+  });
   if (!report || report.error || typeof report.vulnerabilities !== 'object') {
     failures.push(`npm audit gave no report: ${report?.error?.summary ?? report?.error?.code ?? 'unreadable output'}`);
     return { failures, notes };

@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -33,6 +32,7 @@ import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, type AdminBrowser } from './admin-session.js';
 import { orderLinkToken, testOrderTokens } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -191,8 +191,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     await cleanup();
 

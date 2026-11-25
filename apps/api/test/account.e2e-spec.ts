@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -35,6 +34,7 @@ import { deleteMarketingContacts } from './test-marketing.js';
 import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc12.e2e.test';
@@ -168,8 +168,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     passwordHash = await hashPassword(PASSWORD);
     smsSpy = vi.spyOn(app.get<SmsProvider>(SMS_PROVIDER), 'sendSms');

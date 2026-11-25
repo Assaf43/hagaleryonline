@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -25,6 +24,7 @@ import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-sessi
 import { deleteMarketingContacts } from './test-marketing.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@mksync.e2e.test';
@@ -169,8 +169,7 @@ describe('Marketing sync and webhook (e2e, CLB-11)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     outbox = app.get(OutboxService);
     marketing = app.get(MarketingService);
