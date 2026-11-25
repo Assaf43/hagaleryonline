@@ -37,9 +37,10 @@
   <form class="add" (submit)="add($event)">
     <h2>הוספת שיעור עתידי</h2>
     <div class="fields">
-      <label>
-        <span>שיעור (באחוזים)</span>
+      <mat-form-field>
+        <mat-label>שיעור (באחוזים)</mat-label>
         <input
+          matInput
           name="rate"
           type="number"
           inputmode="decimal"
@@ -51,7 +52,7 @@
           [ngModel]="rate()"
           (ngModelChange)="rate.set($event)"
         />
-      </label>
+      </mat-form-field>
       <hga-date-field
         label="בתוקף מתאריך"
         name="effectiveFrom"

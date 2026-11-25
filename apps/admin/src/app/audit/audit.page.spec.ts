@@ -139,8 +139,63 @@ describe('AuditPageComponent', () => {
     ]);
     expect(changes(el)).toEqual([
       'מצב: בהכנה ← אספקה מתואמת',
-      'חלון אספקה: — ← 2026-11-17 09:00–13:00',
-      'חלון אספקה: — ← 2026-11-18 10:00–12:00',
+      'חלון אספקה: — ← 17.11.2026 09:00–13:00',
+      'חלון אספקה: — ← 18.11.2026 10:00–12:00',
+    ]);
+  });
+
+  it('shows a refund as amounts in shekels, without the provider or refund id', async () => {
+    const el = await render([
+      entry({
+        action: 'order.refund',
+        entityType: 'order',
+        entityId: '100008',
+        before: { refundedTotal: 0 },
+        after: { amount: 12500, reason: 'x', provider: 'sandbox', refundId: 'abc-uuid', refundedTotal: 12500 },
+      }),
+    ]);
+    const lines = changes(el);
+    expect(lines).toHaveLength(3);
+    expect(lines.join('|')).toMatch(/סכום: — ← .*125/);
+    expect(lines.join('|')).toMatch(/סה״כ הוחזר: .*0.* ← .*125/);
+    expect(el.textContent).not.toContain('sandbox');
+    expect(el.textContent).not.toContain('abc-uuid');
+  });
+
+  it('shows a VAT rate add as a percent and a day.month.year date', async () => {
+    const el = await render([
+      entry({ action: 'vat.add', entityType: 'vat_rate', after: { rate: 0.19, effectiveFrom: '2099-01-01' } }),
+    ]);
+    expect(changes(el)).toEqual(['שיעור: — ← 19%', 'בתוקף מתאריך: — ← 01.01.2099']);
+  });
+
+  it('shows a store order number and never the customer id', async () => {
+    const el = await render([
+      entry({
+        action: 'store_order.create',
+        entityType: 'order',
+        entityId: '100011',
+        after: { number: 100011, customerId: 'secret-customer-uuid' },
+      }),
+    ]);
+    expect(changes(el)).toEqual(['מספר הזמנה: — ← #100011']);
+    expect(el.textContent).not.toContain('secret-customer-uuid');
+  });
+
+  it('shows user status and permissions in Hebrew', async () => {
+    const el = await render([
+      entry({
+        action: 'user.update',
+        entityType: 'admin_user',
+        entityId: '4',
+        before: { status: 'invited', extraPermissions: [], removedPermissions: ['orders.view'] },
+        after: { status: 'active', extraPermissions: ['orders.cancel'], removedPermissions: [] },
+      }),
+    ]);
+    expect(changes(el)).toEqual([
+      'מצב: הוזמן ← פעיל',
+      'הרשאות שנוספו: — ← ביטול הזמנות והחזרים כספיים',
+      'הרשאות שהוסרו: צפייה בהזמנות ← —',
     ]);
   });
 

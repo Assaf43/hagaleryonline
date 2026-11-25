@@ -141,6 +141,12 @@ export function israelDateTime(iso: string): string {
   return `${wall.day}.${wall.month}.${wall.year} ${time}`;
 }
 
+/** A stored "YYYY-MM-DD" day as "03.12.2026"; anything else comes back as it is. */
+export function isoDayLabel(day: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : day;
+}
+
 /** The years the content and promotion APIs accept (and the date inputs' min/max). */
 export const MIN_DATE = '2000-01-01';
 export const MAX_DATE = '2100-12-31';

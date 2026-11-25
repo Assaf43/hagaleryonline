@@ -19,6 +19,7 @@ import {
 import { formatAmount, formatPrice } from '../catalog/catalog-format';
 import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
+import { isoDayLabel } from '../core/israel-time';
 import { OrdersApi } from '../core/orders.api';
 import { CancelDialog, type CancelDialogData } from './cancel-dialog';
 import { ConfirmDialog, type ConfirmDialogData } from './confirm-dialog';
@@ -67,6 +68,7 @@ export class OrderDetailPage {
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
   protected readonly slotStateLabels = DELIVERY_SLOT_STATE_LABELS_HE;
+  protected readonly dayLabel = isoDayLabel;
   /** The customer's wording, so staff and customer name the method the same way. */
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly paymentLabels = PAYMENT_LABELS;

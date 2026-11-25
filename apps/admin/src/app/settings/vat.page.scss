@@ -56,23 +56,23 @@ thead th {
   justify-items: start;
 }
 
+.add {
+  justify-items: stretch;
+}
+
 .fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-label {
   display: grid;
-  gap: var(--space-1);
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  align-items: start;
 }
 
-input {
-  min-block-size: var(--control-height-sm);
-  padding-inline: var(--space-3);
-  font: inherit;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: var(--border-width) solid var(--color-border);
-  border-radius: var(--radius-md);
+@media (width >= 40rem) {
+  .fields {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.add button {
+  justify-self: start;
 }

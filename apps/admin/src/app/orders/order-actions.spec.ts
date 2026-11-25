@@ -384,6 +384,15 @@ describe('order detail actions', () => {
     }
   });
 
+  it('shows the delivery slot date as day.month.year', async () => {
+    const fixture = await mount(['orders.manage'], {
+      deliverySlot: { date: '2026-12-03', windowFrom: '10:00', windowTo: '14:00', state: 'proposed' },
+    });
+    const text = (fixture.nativeElement as HTMLElement).querySelector('.slot')?.textContent ?? '';
+    expect(text).toContain('03.12.2026');
+    expect(text).not.toContain('2026-12-03');
+  });
+
   it('asks before an ordinary move, then saves; delivery_scheduled opens only the slot form', async () => {
     const fixture = await mount(['orders.manage']);
     const first = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);

@@ -5,11 +5,14 @@ import {
   AUDIT_ACTION_LABELS,
   AUDIT_ENTITY_LABELS,
   ORDER_STATUS_LABELS_HE,
+  PERMISSIONS,
   type AuditEntry,
   type AuditPage,
 } from '@hg/models';
 import { errorMessage } from '../core/errors';
+import { isoDayLabel } from '../core/israel-time';
 import { UsersApi } from '../core/users.api';
+import { percentLabel } from '../settings/vat.page';
 
 /** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
 const READABLE = new Set([
@@ -27,7 +30,7 @@ const READABLE = new Set([
 ]);
 
 /** Prices are stored in agorot; show them in shekels. */
-const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice', 'refundAmount']);
+const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice', 'refundAmount', 'amount', 'refundedTotal']);
 const ILS = new Intl.NumberFormat('he-IL', {
   style: 'currency',
   currency: 'ILS',
@@ -87,7 +90,18 @@ const FIELDS: Record<string, string> = {
   altHe: 'תיאור התמונה',
   order: 'סדר התמונות',
   slot: 'חלון אספקה',
+  amount: 'סכום',
+  refundedTotal: 'סה״כ הוחזר',
+  rate: 'שיעור',
+  effectiveFrom: 'בתוקף מתאריך',
+  number: 'מספר הזמנה',
 };
+
+/** Rows written without a before (a create) that still list their fields. */
+const CREATE_WITH_FIELDS = new Set(['vat.add', 'store_order.create']);
+
+const USER_STATUS: Record<string, string> = { invited: 'הוזמן', active: 'פעיל', disabled: 'מושבת' };
+const PERMISSION_LABEL = new Map<string, string>(PERMISSIONS.map((p) => [p.key, p.labelHe]));
 
 /** Who changed what and when (ADM-11, decision 54). */
 @Component({
@@ -234,7 +248,7 @@ export class AuditPageComponent implements OnInit {
         .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
         .map((key) => ({ field: key, label: key, before: show(key, before[key]), after: show(key, after[key]) }));
     }
-    if (!entry.before || !entry.after) return [];
+    if ((!entry.before || !entry.after) && !CREATE_WITH_FIELDS.has(entry.action)) return [];
     return Object.keys(FIELDS)
       .filter(
         (field) =>
@@ -259,6 +273,13 @@ function show(field: string, value: unknown, entityType?: string): string {
     return ({ full: 'מלא', partial: 'חלקי', none: 'ללא' } as Record<string, string>)[value] ?? value;
   }
   if (field === 'slot' && typeof value === 'object') return slotText(value as Record<string, unknown>);
+  if (field === 'status' && typeof value === 'string' && value in USER_STATUS) return USER_STATUS[value];
+  if ((field === 'extraPermissions' || field === 'removedPermissions') && Array.isArray(value)) {
+    return value.length ? value.map((k) => PERMISSION_LABEL.get(String(k)) ?? String(k)).join(', ') : '—';
+  }
+  if (field === 'rate' && typeof value === 'number') return percentLabel(value);
+  if (field === 'effectiveFrom' && typeof value === 'string') return isoDayLabel(value);
+  if (field === 'number') return `#${String(value)}`;
   if (MONEY.has(field) && typeof value === 'number') return ILS.format(value / 100);
   // A description is HTML and can be long: say it changed rather than print it.
   if (field === 'descriptionHe' || field === 'תוכן' || field === 'טקסט משלוח' || /^תשובה \d+$/.test(field)) {
@@ -276,8 +297,9 @@ function show(field: string, value: unknown, entityType?: string): string {
   return String(value);
 }
 
-/** "2026-11-17 09:00–13:00" (+ the note, when there is one). */
+/** "17.11.2026 09:00–13:00" (+ the note, when there is one). */
 function slotText(slot: Record<string, unknown>): string {
-  const text = `${slot['date'] ?? ''} ${slot['windowFrom'] ?? ''}–${slot['windowTo'] ?? ''}`.trim();
+  const text =
+    `${isoDayLabel(String(slot['date'] ?? ''))} ${slot['windowFrom'] ?? ''}–${slot['windowTo'] ?? ''}`.trim();
   return slot['note'] ? `${text} (${String(slot['note'])})` : text;
 }
