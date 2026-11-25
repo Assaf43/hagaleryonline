@@ -331,7 +331,14 @@ describe('order detail actions', () => {
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
     http = TestBed.inject(HttpTestingController);
-    const me: AdminMe = { id: 7, email: 'a@example.test', name: 'נועה', isSuperAdmin: false, permissions };
+    const me: AdminMe = {
+      id: 7,
+      email: 'a@example.test',
+      name: 'נועה',
+      isSuperAdmin: false,
+      permissions,
+      idleTimeoutMs: null,
+    };
     vi.spyOn(TestBed.inject(AuthService), 'can').mockImplementation((p) => permissions.includes(p));
     vi.spyOn(TestBed.inject(AuthService), 'me').mockReturnValue(me);
     const fixture = TestBed.createComponent(OrderDetailPage);

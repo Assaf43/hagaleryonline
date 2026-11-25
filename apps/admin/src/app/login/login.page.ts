@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { BRAND } from '@hg/models';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -18,6 +18,9 @@ import { errorMessage } from '../core/errors';
       <form class="auth-card" [formGroup]="form" (ngSubmit)="submit()">
         <p class="auth-brand">{{ brand }}</p>
         <h1>כניסה לממשק הניהול</h1>
+        @if (idleEnded) {
+          <p class="auth-hint" role="status">החיבור הסתיים אחרי 8 שעות ללא פעילות. יש להתחבר מחדש.</p>
+        }
 
         <mat-form-field>
           <mat-label>אימייל</mat-label>
@@ -42,6 +45,7 @@ export class LoginPage {
   protected readonly brand = BRAND.name;
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  protected readonly idleEnded = inject(ActivatedRoute).snapshot.queryParamMap.get('reason') === 'idle';
 
   protected readonly form = inject(FormBuilder).nonNullable.group({
     email: ['', [Validators.required, Validators.email]],

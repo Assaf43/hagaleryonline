@@ -384,4 +384,24 @@ describe('Admin auth (e2e)', () => {
       await expect(app.get(AdminUsersService).replaceSuperAdmin(NEW.email, NEW.name)).rejects.toThrow('No Super Admin');
     });
   });
+  describe('me idleTimeoutMs (decision 53)', () => {
+    const USER = { email: 'idle-owner@example.test', name: 'Idle Owner', password: 'maple table morning coffee' };
+
+    beforeEach(async () => {
+      await resetAdminData(prisma);
+      await acceptLink(await app.get(AdminUsersService).createSuperAdmin(USER.email, USER.name), USER.password);
+    });
+
+    it('is the 8 h idle limit for an ordinary session', async () => {
+      const b = browser();
+      await signIn(b, USER);
+      expect((await b.get('/auth/me').expect(200)).body).toMatchObject({ idleTimeoutMs: 28_800_000 });
+    });
+
+    it('is null for a remember-this-device session', async () => {
+      const b = browser();
+      await signIn(b, USER, true);
+      expect((await b.get('/auth/me').expect(200)).body.idleTimeoutMs).toBeNull();
+    });
+  });
 });

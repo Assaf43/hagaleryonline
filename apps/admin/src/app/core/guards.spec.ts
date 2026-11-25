@@ -1,8 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, UrlTree, type CanMatchFn, type PartialMatchRouteSnapshot } from '@angular/router';
+import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { Router, provideRouter, UrlTree, type CanMatchFn, type PartialMatchRouteSnapshot } from '@angular/router';
 import type { AdminMe } from '@hg/models';
 import { AuthService } from './auth.service';
-import { hasPermission, signedIn, signedOut, superAdminOnly } from './guards';
+import { hasPermission, sessionExpiredInterceptor, signedIn, signedOut, superAdminOnly } from './guards';
+import { IdleWatch } from './idle-watch';
 
 /** The user the fake AuthService resolves to; null = signed out. */
 let me: Partial<AdminMe> | null = null;
@@ -55,5 +58,74 @@ describe('admin guards', () => {
     expect(await redirectOf(guard, null)).toBe('/');
     expect(await redirectOf(guard, admin)).toBe('/');
     expect(await runGuard(guard, { ...admin, permissions: ['catalog.edit'] })).toBe(true);
+  });
+});
+
+describe('sessionExpiredInterceptor', () => {
+  const noteActivity = vi.fn();
+  let expired = false;
+  const clear = vi.fn();
+  let http: HttpTestingController;
+  let client: HttpClient;
+  let navigate: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    noteActivity.mockReset();
+    clear.mockReset();
+    expired = false;
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(withInterceptors([sessionExpiredInterceptor])),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: { clear } },
+        {
+          provide: IdleWatch,
+          useValue: {
+            noteActivity,
+            get expired() {
+              return expired;
+            },
+          },
+        },
+      ],
+    });
+    http = TestBed.inject(HttpTestingController);
+    client = TestBed.inject(HttpClient);
+    navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+  });
+
+  it('counts a successful admin call as activity', () => {
+    client.get('/api/admin/orders').subscribe();
+    http.expectOne('/api/admin/orders').flush({});
+    expect(noteActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count logging out, failures or other APIs as activity', () => {
+    client.post('/api/admin/auth/logout', {}).subscribe();
+    http.expectOne('/api/admin/auth/logout').flush(null, { status: 204, statusText: 'No Content' });
+    client.get('/api/orders').subscribe();
+    http.expectOne('/api/orders').flush({});
+    client.get('/api/admin/orders').subscribe({ error: () => undefined });
+    http.expectOne('/api/admin/orders').flush({ code: 'boom' }, { status: 500, statusText: 'Server Error' });
+    expect(noteActivity).not.toHaveBeenCalled();
+  });
+
+  it('sends a signed-out user to /login', () => {
+    client.get('/api/admin/orders').subscribe({ error: () => undefined });
+    http
+      .expectOne('/api/admin/orders')
+      .flush({ code: 'not_authenticated' }, { status: 401, statusText: 'Unauthorized' });
+    expect(clear).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/login');
+  });
+
+  it('sends a user whose idle time ran out to /login?reason=idle', () => {
+    expired = true;
+    client.get('/api/admin/orders').subscribe({ error: () => undefined });
+    http
+      .expectOne('/api/admin/orders')
+      .flush({ code: 'not_authenticated' }, { status: 401, statusText: 'Unauthorized' });
+    expect(navigate).toHaveBeenCalledWith('/login?reason=idle');
   });
 });

@@ -77,7 +77,12 @@ export interface AdminMe {
   name: string;
   isSuperAdmin: boolean;
   permissions: Permission[];
+  /** Idle logout limit in ms (decision 53); null for a "remember this device" session, which has none. */
+  idleTimeoutMs: number | null;
 }
+
+/** The server writes a session's last-seen time at most this often, so its idle clock can lag real activity by this much. */
+export const ADMIN_SESSION_TOUCH_MS = 60_000;
 
 /** PUT /api/admin/users/me/opt-in — only keys of `SUPER_ADMIN_OPT_IN`; replaces the Super Admin's own list. */
 export interface SuperAdminOptInRequest {

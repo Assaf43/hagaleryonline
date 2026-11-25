@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { ADMIN_SESSION_TOUCH_MS } from '@hg/models';
 import { AdminUserStatus, type AdminSession, type AdminUser } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PENDING_SESSION_MS, SESSION_IDLE_MS, SESSION_MAX_MS, TRUSTED_SESSION_MS } from './auth.config.js';
 import { hashToken, randomToken } from './crypto.js';
 
-/** Don't write last_seen_at on every request. */
-const TOUCH_EVERY_MS = 60_000;
+/** Don't write last_seen_at on every request (the admin idle warning allows for this lag). */
+const TOUCH_EVERY_MS = ADMIN_SESSION_TOUCH_MS;
 
 export interface ResolvedSession {
   session: AdminSession;

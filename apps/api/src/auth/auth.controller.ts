@@ -92,7 +92,7 @@ export class AuthController {
 
   @Get('me')
   me(@Admin() admin: AdminContext): AdminMe {
-    return this.auth.me(admin.user);
+    return this.auth.me(admin.user, admin.session);
   }
 
   @Post('password')
