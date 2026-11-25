@@ -56,6 +56,27 @@ describe('checkResponse storefront', () => {
     const ok = page('<script nonce="abc">var s = "<b onclick=1>"</script>');
     expect(checkResponse(good(), ok, 'storefront')).toEqual([]);
   });
+  it.each([
+    ['<img/onerror=alert(1) src=x>', 'onerror='],
+    ['<a href="x"onclick="f()">x</a>', 'onclick='],
+    ['<a title="a>b" onclick="f()">x</a>', 'onclick='],
+  ])('finds the handler in %s', (html, name) => {
+    expect(checkResponse(good(), page(html), 'storefront')).toEqual([`inline event-handler attribute ${name}`]);
+  });
+  it('does not treat text inside a quoted value as an attribute', () => {
+    expect(checkResponse(good(), page('<a title=" onclick=x">t</a>'), 'storefront')).toEqual([]);
+    const problems = checkResponse(good(), page('<script data-x=" src=abc">x()</script>'), 'storefront');
+    expect(problems).toEqual(['inline script without a nonce']);
+  });
+  it('can require an enforced policy', () => {
+    const h = good();
+    h['Content-Security-Policy-Report-Only'] = h['Content-Security-Policy'];
+    delete h['Content-Security-Policy'];
+    expect(checkResponse(h, page(''), 'storefront', { requireEnforce: true })).toEqual([
+      'CSP is report-only, enforcement required',
+    ]);
+    expect(checkResponse(good(), page(''), 'storefront', { requireEnforce: true })).toEqual([]);
+  });
   it('requires a nonce in the CSP', () => {
     const h = good();
     h['Content-Security-Policy'] = "default-src 'self'; frame-ancestors 'none'";

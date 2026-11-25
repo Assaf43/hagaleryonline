@@ -18,12 +18,16 @@ function headerReader(headers) {
   return (name) => map.get(name.toLowerCase());
 }
 
-const attr = (attrs, name) => {
-  const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(attrs);
-  return m ? (m[1] ?? m[2] ?? m[3]) : undefined;
-};
+const TAG = /<([a-z][^\s/>]*)((?:"[^"]*"|'[^']*'|[^'">])*)>/gi;
+const ATTR = /([^\s"'=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
-export function checkResponse(headers, html, kind) {
+/** The real attributes of one tag: names are lower-cased, text inside a quoted value is never an attribute. */
+function parseAttrs(source) {
+  return [...source.matchAll(ATTR)].map((m) => ({ name: m[1].toLowerCase(), value: m[2] ?? m[3] ?? m[4] }));
+}
+const attrValue = (attrs, name) => attrs.find((a) => a.name === name)?.value;
+
+export function checkResponse(headers, html, kind, options = {}) {
   const get = headerReader(headers);
   const problems = [];
   const need = (name, ok, expected) => {
@@ -52,6 +56,9 @@ export function checkResponse(headers, html, kind) {
     problems.push('missing header content-security-policy');
     return problems;
   }
+  if (options.requireEnforce && cspName !== 'content-security-policy') {
+    problems.push('CSP is report-only, enforcement required');
+  }
   const csp = get(cspName);
   if (!/frame-ancestors 'none'/.test(csp)) problems.push("CSP lacks frame-ancestors 'none'");
   const nonceOf = (directive) => new RegExp(`(?:^|;)\\s*${directive}\\s[^;]*'nonce-([^']+)'`).exec(csp)?.[1];
@@ -62,13 +69,14 @@ export function checkResponse(headers, html, kind) {
 
   const page = html ?? '';
   const check = (tag, expected, label) => {
-    for (const m of page.matchAll(new RegExp(`<${tag}\\b([^>]*)>`, 'gi'))) {
-      const attrs = m[1];
+    for (const m of page.matchAll(TAG)) {
+      if (m[1].toLowerCase() !== tag) continue;
+      const attrs = parseAttrs(m[2]);
       if (tag === 'script') {
-        if (attr(attrs, 'src') !== undefined) continue;
-        if (DATA_SCRIPT_TYPES.has((attr(attrs, 'type') ?? '').toLowerCase())) continue;
+        if (attrs.some((a) => a.name === 'src')) continue;
+        if (DATA_SCRIPT_TYPES.has((attrValue(attrs, 'type') ?? '').toLowerCase())) continue;
       }
-      const nonce = attr(attrs, 'nonce');
+      const nonce = attrValue(attrs, 'nonce');
       if (nonce === undefined) problems.push(`inline ${label} without a nonce`);
       else if (expected && nonce !== expected) problems.push(`inline ${label} nonce does not match the CSP`);
     }
@@ -82,27 +90,34 @@ export function checkResponse(headers, html, kind) {
     .replace(/<style\b[\s\S]*?<\/style>/gi, '<style></style>')
     .replace(/<!--[\s\S]*?-->/g, '');
   const handlers = new Set();
-  for (const m of markup.matchAll(/<[a-z][^>]*?\son([a-z]+)\s*=/gi)) handlers.add(`on${m[1].toLowerCase()}`);
-  for (const h of handlers) problems.push(`inline event-handler attribute ${h}=`);
+  for (const m of markup.matchAll(TAG)) {
+    for (const a of parseAttrs(m[2])) if (/^on[a-z]+$/.test(a.name)) handlers.add(`${a.name}=`);
+  }
+  for (const h of handlers) problems.push(`inline event-handler attribute ${h}`);
   return problems;
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const kindFlag = args.find((a) => a.startsWith('--kind='));
-  const [base, ...paths] = args.filter((a) => !a.startsWith('--kind='));
+  const requireEnforce = args.includes('--require-enforce');
+  const [base, ...paths] = args.filter((a) => !a.startsWith('--'));
   if (!base || paths.length === 0) {
-    console.error('usage: check-security-headers.mjs [--kind=storefront|api] <base-url> <path…>');
+    console.error('usage: check-security-headers.mjs [--kind=storefront|api] [--require-enforce] <base-url> <path…>');
     process.exit(2);
   }
   const kind = kindFlag ? kindFlag.slice(7) : paths.every((p) => p.startsWith('/api')) ? 'api' : 'storefront';
+  if (kind !== 'storefront' && kind !== 'api') {
+    console.error(`unknown --kind=${kind}; use storefront or api`);
+    process.exit(2);
+  }
   let failed = 0;
   for (const path of paths) {
     let line;
     try {
-      const res = await fetch(new URL(path, base), { redirect: 'manual' });
+      const res = await fetch(new URL(path, base), { redirect: 'manual', signal: AbortSignal.timeout(15_000) });
       const body = await res.text();
-      const problems = checkResponse(res.headers, body, kind);
+      const problems = checkResponse(res.headers, body, kind, { requireEnforce });
       line = problems.length ? `FAIL ${res.status} ${path}: ${problems.join('; ')}` : `OK   ${res.status} ${path}`;
       if (problems.length) failed++;
     } catch (error) {
