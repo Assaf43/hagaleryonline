@@ -29,8 +29,8 @@ export function parseOrderNumber(value: string): number | null {
 }
 
 /** The confirmation page of an order (storefront, relative). */
-export function confirmationPath(number: number, token: string): string {
-  return `/order/${formatOrderNumber(number)}?t=${encodeURIComponent(token)}`;
+export function confirmationPath(order: { number: number; token: string }): string {
+  return `/order/${formatOrderNumber(order.number)}?t=${encodeURIComponent(order.token)}`;
 }
 
 /** Where the payment provider returns a store order paid on the store tablet: a page without personal data (§4.7). */
@@ -47,14 +47,15 @@ export const STORE_RETURN_PATH = '/pay/done';
  */
 export type PaymentReturn = 'store' | 'order';
 
-export function returnPathFor(order: { number: number; publicToken: string }, returnTo: PaymentReturn): string {
-  return returnTo === 'store' ? STORE_RETURN_PATH : confirmationPath(order.number, order.publicToken);
+/** `order.token` is the plain token of the link (`OrderTokens.reveal`). */
+export function returnPathFor(order: { number: number; token: string }, returnTo: PaymentReturn): string {
+  return returnTo === 'store' ? STORE_RETURN_PATH : confirmationPath(order);
 }
 
 /**
  * The fallback when the provider no longer knows the return path it was given (the sandbox after a restart): by the
  * order's channel — a store order never gets the tokened link on what may be the store tablet.
  */
-export function defaultReturnPath(order: { number: number; publicToken: string; channel: 'WEB' | 'STORE' }): string {
+export function defaultReturnPath(order: { number: number; token: string; channel: 'WEB' | 'STORE' }): string {
   return returnPathFor(order, order.channel === 'STORE' ? 'store' : 'order');
 }

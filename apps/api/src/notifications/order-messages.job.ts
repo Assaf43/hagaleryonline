@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { OrderStatus } from '../generated/prisma/client.js';
+import { OrderTokens } from '../orders/order-token.js';
 import { LATE_PAYMENT_REASON } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -22,9 +23,9 @@ interface StoreWelcomeJob extends OrderJob {
 /**
  * Handlers of the outbox e-mail jobs of an order (spec §5.3, decision 83): `email.order_paid`, `email.status`
  * (shipped, delivered), `email.cancelled` and `email.refund`. Each mails the order contact e-mail with the link
- * `/order/{number}?t={publicToken}`. Also `email.store_welcome` (Phase 6): how a quick account signs in, after its
- * first paid order. A provider error throws, so the outbox retries; a job may run twice after a
- * crash, which at worst sends the same e-mail twice.
+ * `/order/{number}?t={token}` (the order's token, `OrderTokens.reveal`: sealed or, for an older order, plain). Also
+ * `email.store_welcome` (Phase 6): how a quick account signs in, after its first paid order. A provider error throws,
+ * so the outbox retries; a job may run twice after a crash, which at worst sends the same e-mail twice.
  */
 @Injectable()
 export class OrderMessagesJob implements OnModuleInit {
@@ -34,6 +35,7 @@ export class OrderMessagesJob implements OnModuleInit {
     private readonly outbox: OutboxService,
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly tokens: OrderTokens,
   ) {}
 
   onModuleInit(): void {
@@ -61,7 +63,7 @@ export class OrderMessagesJob implements OnModuleInit {
       base: {
         number: order.number,
         customerName: contact.fullName,
-        link: `${this.notifications.siteUrl()}/order/${order.number}?t=${encodeURIComponent(order.publicToken)}`,
+        link: `${this.notifications.siteUrl()}/order/${order.number}?t=${encodeURIComponent(this.tokens.reveal(order))}`,
       },
     };
   }

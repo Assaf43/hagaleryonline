@@ -12,6 +12,7 @@ import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { adminBrowser, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { sealedToken } from './order-token.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const ORIGIN = 'http://localhost:4200';
@@ -36,10 +37,11 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
   const http = () => request(app.getHttpServer() as App);
   const cleanup = () => deleteOrders(prisma, TEST_ORDERS);
 
-  const makeOrder = async (key: string, status: OrderStatus, opts: { variant?: boolean; reserved?: boolean } = {}) =>
-    prisma.order.create({
+  const makeOrder = async (key: string, status: OrderStatus, opts: { variant?: boolean; reserved?: boolean } = {}) => ({
+    token: `zz-token-${key}`,
+    ...(await prisma.order.create({
       data: {
-        publicToken: `zz-token-${key}`,
+        ...sealedToken(`zz-token-${key}`),
         status,
         contact: { fullName: `ZZ ${key}`, phone: '0501234567', email: 'zz@example.test' },
         address: {
@@ -86,7 +88,8 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
           ],
         },
       },
-    });
+    })),
+  });
   const move = (b: AdminBrowser, number: number, body: object) => b.post(`/orders/${number}/status`, body);
   const slot = (date = israelDate(3), windowFrom = '09:00', windowTo = '13:00') => ({ date, windowFrom, windowTo });
   const cancel = (number: number, token: string) =>
@@ -223,7 +226,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
     expect(slots.map((s) => s.state)).toEqual(['SUPERSEDED', 'PROPOSED']);
     expect(slots[1].note).toBe('נא להתקשר');
     // The customer's view shows the live slot.
-    expect((await view(n, order.publicToken)).deliverySlot).toMatchObject({ date: israelDate(4), windowFrom: '14:00' });
+    expect((await view(n, order.token)).deliverySlot).toMatchObject({ date: israelDate(4), windowFrom: '14:00' });
     // A later status keeps the slot; only delivery_scheduled → delivery_scheduled with a slot is a slot change.
     await move(owner, n, { to: 'shipped' }).expect(201);
     await move(owner, n, { to: 'delivery_scheduled', slot: slot() }).expect(409);
@@ -243,20 +246,20 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
   it('the customer view carries the Hebrew label, canCancel and refundedTotal', async () => {
     const pending = await makeOrder('view-pending', OrderStatus.PENDING_PAYMENT);
     const paid = await makeOrder('view-paid', OrderStatus.PAID);
-    expect(await view(pending.number, pending.publicToken)).toMatchObject({
+    expect(await view(pending.number, pending.token)).toMatchObject({
       status: 'pending_payment',
       statusLabelHe: 'ממתינה לתשלום',
       canCancel: true,
       refundedTotal: 0,
       deliverySlot: null,
     });
-    expect(await view(paid.number, paid.publicToken)).toMatchObject({
+    expect(await view(paid.number, paid.token)).toMatchObject({
       status: 'paid',
       statusLabelHe: 'שולמה',
       canCancel: false,
     });
     const stale = await makeOrder('view-stale', OrderStatus.PENDING_PAYMENT, { reserved: false });
-    expect(await view(stale.number, stale.publicToken)).toMatchObject({ status: 'expired', canCancel: false });
+    expect(await view(stale.number, stale.token)).toMatchObject({ status: 'expired', canCancel: false });
   });
 
   it('customer cancel of a pending order: cancelled, stock available again, payments cancelled, event written', async () => {
@@ -265,7 +268,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
     const stock = (await prisma.variant.findUniqueOrThrow({ where: { id: variantId } })).stock;
     expect(before).toBe(stock - 2);
 
-    const res = await cancel(order.number, order.publicToken).expect(201);
+    const res = await cancel(order.number, order.token).expect(201);
     expect(res.body).toMatchObject({ status: 'cancelled', statusLabelHe: 'בוטלה', canCancel: false });
     expect((await availableStock(prisma, [variantId])).get(variantId)).toBe(stock);
     expect((await prisma.variant.findUniqueOrThrow({ where: { id: variantId } })).stock).toBe(stock);
@@ -283,15 +286,15 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       actorAdminId: null,
     });
     // Cancelling again is refused.
-    expect((await cancel(order.number, order.publicToken).expect(409)).body.code).toBe('invalid_transition');
+    expect((await cancel(order.number, order.token).expect(409)).body.code).toBe('invalid_transition');
   });
 
   it('customer cancel is refused for paid and expired orders (409), unknown token 404, missing token 404', async () => {
     const paid = await makeOrder('cancel-paid', OrderStatus.PAID);
-    expect((await cancel(paid.number, paid.publicToken).expect(409)).body.code).toBe('invalid_transition');
+    expect((await cancel(paid.number, paid.token).expect(409)).body.code).toBe('invalid_transition');
     expect((await prisma.order.findUniqueOrThrow({ where: { id: paid.id } })).status).toBe(OrderStatus.PAID);
     const stale = await makeOrder('cancel-stale', OrderStatus.PENDING_PAYMENT, { reserved: false });
-    await cancel(stale.number, stale.publicToken).expect(409);
+    await cancel(stale.number, stale.token).expect(409);
 
     const pending = await makeOrder('cancel-token', OrderStatus.PENDING_PAYMENT);
     await cancel(pending.number, 'wrong').expect(404);
@@ -301,7 +304,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       OrderStatus.PENDING_PAYMENT,
     );
     // The storefront origin is required.
-    await http().post(`/api/orders/${pending.number}/cancel?t=${pending.publicToken}`).expect(403);
+    await http().post(`/api/orders/${pending.number}/cancel?t=${pending.token}`).expect(403);
   });
 
   it('webhook success first, then customer cancel → 409 (the order is paid)', async () => {
@@ -314,7 +317,7 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
       .set('x-sandbox-signature', sign(body, SECRET))
       .send(body)
       .expect(200);
-    expect((await cancel(order.number, order.publicToken).expect(409)).body.code).toBe('invalid_transition');
+    expect((await cancel(order.number, order.token).expect(409)).body.code).toBe('invalid_transition');
     const row = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { payments: true } });
     expect(row.status).toBe(OrderStatus.PAID);
     expect(row.payments[0].status).toBe(PaymentStatus.SUCCEEDED);
@@ -325,9 +328,9 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
     throttle.setLimit('cancel', 2);
     try {
       const order = await makeOrder('throttle', OrderStatus.PAID);
-      await cancel(order.number, order.publicToken).expect(409);
-      await cancel(order.number, order.publicToken).expect(409);
-      await cancel(order.number, order.publicToken).expect(429);
+      await cancel(order.number, order.token).expect(409);
+      await cancel(order.number, order.token).expect(409);
+      await cancel(order.number, order.token).expect(429);
     } finally {
       throttle.setLimit('cancel', 1000);
     }

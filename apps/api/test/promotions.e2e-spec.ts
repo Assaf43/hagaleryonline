@@ -19,6 +19,7 @@ import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
 
@@ -109,8 +110,11 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     const { redirectUrl } = res.body as CheckoutResponse;
     return /\/pay\/sandbox\/([\w-]+)$/.exec(redirectUrl)![1];
   };
-  const orderOfTx = async (transactionId: string) =>
-    (await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } })).order;
+  /** The order of a payment, with `token`: its link token (stored sealed only, spec 9a.7). */
+  const orderOfTx = async (transactionId: string) => {
+    const { order } = await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } });
+    return { ...order, token: await orderLinkToken(prisma, order.number) };
+  };
   const pay = (tx: string) =>
     http()
       .post(`/api/payments/sandbox/${tx}/complete`)
@@ -407,7 +411,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
       discountInfo: { name: 'עשרה אחוז', kind: 'coupon', code: 'SAVE10', labelHe: 'עשרה אחוז', source: 'coupon' },
     });
     expect((await prisma.payment.findUniqueOrThrow({ where: { transactionId: tx } })).amount).toBe(total);
-    const confirmation = (await http().get(`/api/orders/${order.number}?t=${order.publicToken}`).expect(200))
+    const confirmation = (await http().get(`/api/orders/${order.number}?t=${order.token}`).expect(200))
       .body as OrderView;
     expect(confirmation).toMatchObject({
       discount: 25_000,
@@ -675,7 +679,7 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     const tx1 = txOf(await a.checkout());
     await fail(tx1).expect(200);
     const order = await orderOfTx(tx1);
-    const tx2 = txOf(await retry(order.number, order.publicToken).expect(201));
+    const tx2 = txOf(await retry(order.number, order.token).expect(201));
     await pay(tx2).expect(200);
     expect(await usedCount(p.id)).toBe(1);
     await signedSuccess(tx1, order.total).expect(200);
@@ -709,14 +713,14 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
     await fail(tx1).expect(200);
     const order = await orderOfTx(tx1);
     // Its own (failed) order does not use up the coupon: retry works.
-    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(true);
-    const tx2 = txOf(await retry(order.number, order.publicToken).expect(201));
+    expect((await viewOf(order.number, order.token)).canRetryPayment).toBe(true);
+    const tx2 = txOf(await retry(order.number, order.token).expect(201));
     await fail(tx2).expect(200);
 
     // Someone else used the last use.
     await prisma.promotion.update({ where: { id: p.id }, data: { usedCount: 1 } });
-    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(false);
-    const ended = await retry(order.number, order.publicToken).expect(409);
+    expect((await viewOf(order.number, order.token)).canRetryPayment).toBe(false);
+    const ended = await retry(order.number, order.token).expect(409);
     expect(ended.body).toEqual({
       statusCode: 409,
       code: 'promotion_ended',
@@ -728,8 +732,8 @@ describe('Promotions and coupons (e2e, CRT-03, ADM-05, spec §6)', () => {
       where: { id: p.id },
       data: { usedCount: 0, endsAt: new Date(Date.now() - 1_000) },
     });
-    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(false);
-    expect((await retry(order.number, order.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await viewOf(order.number, order.token)).canRetryPayment).toBe(false);
+    expect((await retry(order.number, order.token).expect(409)).body.code).toBe('promotion_ended');
     expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(OrderStatus.PAYMENT_FAILED);
   });
 

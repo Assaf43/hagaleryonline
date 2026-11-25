@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   ORDER_STATUS_LABELS_HE,
@@ -31,6 +30,7 @@ import { currentSlotView } from './delivery-slot.js';
 import { lockCart, lockOrder, lockOrderPayments, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
 import { notRetryable, orderNotFound, promotionEndedError, shortage, superseded } from './order-errors.js';
 import { parseOrderNumber, reservedUntil } from './order-number.js';
+import { OrderTokens } from './order-token.js';
 import { canCancel } from './order-transitions.js';
 
 export const STATUS_VIEW: Record<OrderStatus, OrderStatusView> = {
@@ -79,12 +79,6 @@ export function sellerRetryable(order: { status: OrderStatus; reservedUntil: Dat
  */
 export type OrderAccess = { token: string | undefined } | { customerId: string } | { sellerId: number };
 
-/** Constant-time comparison of the URL token with the order's (both hashed to equal length first). */
-export function tokenMatches(given: string, expected: string): boolean {
-  const digest = (value: string) => createHash('sha256').update(value).digest();
-  return given.length > 0 && timingSafeEqual(digest(given), digest(expected));
-}
-
 /** The confirmation page (spec §5.5) and "נסו לשלם שוב" (spec §5.4). The URL token is the only key. */
 @Injectable()
 export class OrdersService {
@@ -93,6 +87,7 @@ export class OrdersService {
     private readonly catalog: CatalogService,
     private readonly payments: PaymentsService,
     private readonly promotions: PromotionsService,
+    private readonly tokens: OrderTokens,
   ) {}
 
   /**
@@ -240,7 +235,7 @@ export class OrdersService {
     if (!order) throw orderNotFound();
     const allowed =
       token !== null
-        ? tokenMatches(token, order.publicToken)
+        ? this.tokens.matches(token, order)
         : 'customerId' in access
           ? order.customerId === access.customerId
           : 'sellerId' in access && order.channel === OrderChannel.STORE && order.sellerId === access.sellerId;

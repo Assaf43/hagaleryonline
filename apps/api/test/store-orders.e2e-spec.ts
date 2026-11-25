@@ -42,6 +42,7 @@ import { OutboxService } from './../src/outbox/outbox.service.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteMarketingContacts } from './test-marketing.js';
+import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
 
@@ -571,7 +572,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     await confirm(sellerA, customer.phone);
     const b = (await placeStore(sellerA)).body as StoreOrderCreated;
     await complete(txOf(b.redirectUrl), 'failure').expect(200);
-    const token = (await orderOf(b.number)).publicToken;
+    const token = await orderLinkToken(prisma, b.number);
     const t = encodeURIComponent(token);
     await http().post(`/api/orders/${b.number}/cancel?t=${t}`).set('Origin', STOREFRONT).expect(409);
 
@@ -839,7 +840,7 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(payment.order).toMatchObject({ channel: OrderChannel.WEB, sellerId: null, storeId: null });
     const done = (await complete(tx, 'success').expect(200)).body as SandboxCompleteResponse;
     expect(done.confirmationUrl).toBe(
-      `/order/${payment.order.number}?t=${encodeURIComponent(payment.order.publicToken)}`,
+      `/order/${payment.order.number}?t=${encodeURIComponent(await orderLinkToken(prisma, payment.order.number))}`,
     );
     // A website order never sends the store welcome.
     expect(await prisma.outboxJob.count({ where: { type: 'email.store_welcome' } })).toBe(0);

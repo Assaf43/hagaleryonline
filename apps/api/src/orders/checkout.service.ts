@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   CHECKOUT_EMAIL_PATTERN,
@@ -30,6 +29,7 @@ import { MarketingService } from '../marketing/marketing.service.js';
 import type { ShipmentItem } from '../shipping/shipping-provider.js';
 import { ShippingNotConfiguredError, ShippingService } from '../shipping/shipping.service.js';
 import { lockCart, lockStoreCart, lockVariants, lockWelcome } from './locks.js';
+import { OrderTokens } from './order-token.js';
 import {
   cartChanged,
   couponInvalid,
@@ -118,6 +118,7 @@ export class CheckoutService {
     private readonly payments: PaymentsService,
     private readonly promotions: PromotionsService,
     private readonly marketing: MarketingService,
+    private readonly tokens: OrderTokens,
   ) {}
 
   /**
@@ -245,7 +246,8 @@ export class CheckoutService {
             channel: store ? OrderChannel.STORE : OrderChannel.WEB,
             sellerId: store ? opts.sellerId : null,
             storeId: store ? opts.storeId : null,
-            publicToken: randomBytes(32).toString('base64url'),
+            // Spec 9a.7: the link token is stored sealed only; the plain column stays null.
+            publicTokenSealed: this.tokens.issue().sealed,
             status: OrderStatus.PENDING_PAYMENT,
             contact: { ...input.contact },
             address: { ...input.address, localityNameHe: locality.nameHe },

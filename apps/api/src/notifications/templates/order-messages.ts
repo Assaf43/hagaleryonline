@@ -4,7 +4,7 @@ import { bdi, button, emailLayout, esc, greeting, paragraph, type RenderedEmail 
 export interface OrderLinkData {
   number: number;
   customerName?: string;
-  /** Absolute link to /order/{number}?t={publicToken}. */
+  /** Absolute link to /order/{number}?t={token}. */
   link: string;
 }
 

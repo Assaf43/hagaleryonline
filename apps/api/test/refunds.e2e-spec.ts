@@ -9,6 +9,7 @@ import { FulfillmentMode, OrderShippingMethod, OrderStatus, PaymentStatus } from
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { sealedToken } from './order-token.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
@@ -35,10 +36,11 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
   };
   const stock = async () => (await prisma.variant.findUniqueOrThrow({ where: { id: variantId } })).stock;
 
-  const makeOrder = (key: string, status: OrderStatus, opts: { variant?: boolean; cartId?: string } = {}) =>
-    prisma.order.create({
+  const makeOrder = async (key: string, status: OrderStatus, opts: { variant?: boolean; cartId?: string } = {}) => ({
+    token: `zz-token-${key}`,
+    ...(await prisma.order.create({
       data: {
-        publicToken: `zz-token-${key}`,
+        ...sealedToken(`zz-token-${key}`),
         status,
         cartId: opts.cartId,
         contact: { fullName: `ZZ ${key}`, phone: '0501234567', email: 'zz@example.test' },
@@ -86,7 +88,8 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
           ],
         },
       },
-    });
+    })),
+  });
   const detail = async (number: number) => (await owner.get(`/orders/${number}`).expect(200)).body as AdminOrderDetail;
   const cancel = (b: AdminBrowser, number: number, body: object) => b.post(`/orders/${number}/cancel`, body);
   const refund = (b: AdminBrowser, number: number, body: object) => b.post(`/orders/${number}/refunds`, body);
@@ -96,8 +99,8 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     prisma.payment.create({ data: { orderId, provider: 'sandbox', transactionId, amount: TOTAL } });
   const ownerId = async () =>
     (await prisma.adminUser.findUniqueOrThrow({ where: { email: 'owner@example.test' }, select: { id: true } })).id;
-  const customerCancel = (order: { number: number; publicToken: string }) =>
-    http().post(`/api/orders/${order.number}/cancel?t=${order.publicToken}`).set('Origin', ORIGIN).expect(201);
+  const customerCancel = (order: { number: number; token: string }) =>
+    http().post(`/api/orders/${order.number}/cancel?t=${order.token}`).set('Origin', ORIGIN).expect(201);
   const webhook = (transactionId: string, amount: number, status = 'succeeded') => {
     const body = JSON.stringify({ transactionId, status, amount, installments: 1 });
     return http()
@@ -440,15 +443,15 @@ describe('Refunds and staff cancel (e2e, ADM-04)', () => {
     const order = await makeOrder('retry-cancelled', OrderStatus.PENDING_PAYMENT);
     await customerCancel(order);
     const res = await http()
-      .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
+      .post(`/api/orders/${order.number}/retry-payment?t=${order.token}`)
       .set('Origin', ORIGIN)
       .expect(409);
     expect(res.body.code).toBe('not_retryable');
   });
 
   it('a failed or cancelled payment result after a cancel leaves the order CANCELLED (not retryable)', async () => {
-    const retryPayment = (o: { number: number; publicToken: string }) =>
-      http().post(`/api/orders/${o.number}/retry-payment?t=${o.publicToken}`).set('Origin', ORIGIN);
+    const retryPayment = (o: { number: number; token: string }) =>
+      http().post(`/api/orders/${o.number}/retry-payment?t=${o.token}`).set('Origin', ORIGIN);
 
     const byStaff = await makeOrder('cancel-fail-admin', OrderStatus.PENDING_PAYMENT);
     await cancel(owner, byStaff.number, { refund: 'none', reason: 'בוטל על ידי הצוות' }).expect(200);

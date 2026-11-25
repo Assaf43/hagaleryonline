@@ -1,10 +1,13 @@
 /**
- * Server CLI for what must not be reachable from the web (decisions 48, 51):
+ * Server CLI for what must not be reachable from the web (decisions 48, 51, spec 9a.7):
  *
  *   npm run admin -w @hg/api -- create-super-admin --email <e-mail> --name "<name>"
  *   npm run admin -w @hg/api -- replace-super-admin --email <e-mail> --name "<name>"
  *     (a new e-mail replaces the Super Admin; the current Super Admin's own e-mail re-onboards that same user)
  *   npm run admin -w @hg/api -- reset-2fa --email <e-mail>
+ *   npm run admin -w @hg/api -- seal-order-tokens
+ *     (seals the plain link tokens of orders placed before spec 9a.7 with ORDER_TOKEN_KEY; their links keep working;
+ *     safe to run again; prints only a count)
  *
  * Prints a one-time invite link for the new Super Admin. Run it on the server (or locally);
  * the e-mail is passed at runtime and never stored in the repository.
@@ -13,6 +16,8 @@ import { NestFactory } from '@nestjs/core';
 import { parseArgs } from 'node:util';
 import { AppModule } from './app.module.js';
 import { AdminUsersService } from './auth/admin-users.service.js';
+import { OrderTokens, sealOrderTokens } from './orders/order-token.js';
+import { PrismaService } from './prisma/prisma.service.js';
 
 const [command, ...rest] = process.argv.slice(2);
 const { values } = parseArgs({ args: rest, options: { email: { type: 'string' }, name: { type: 'string' } } });
@@ -31,9 +36,12 @@ try {
   } else if (command === 'reset-2fa' && values.email) {
     await users.resetTwoFactorByEmail(values.email);
     console.log('2FA was reset. The user sets it up again at the next login.');
+  } else if (command === 'seal-order-tokens') {
+    const sealed = await sealOrderTokens(app.get(PrismaService), app.get(OrderTokens));
+    console.log(`Sealed ${sealed} order token(s)`);
   } else {
     console.error(
-      'Usage:\n  create-super-admin --email <e-mail> --name "<name>"\n  replace-super-admin --email <e-mail> --name "<name>"\n  reset-2fa --email <e-mail>',
+      'Usage:\n  create-super-admin --email <e-mail> --name "<name>"\n  replace-super-admin --email <e-mail> --name "<name>"\n  reset-2fa --email <e-mail>\n  seal-order-tokens',
     );
     process.exitCode = 1;
   }
