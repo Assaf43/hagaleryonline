@@ -84,7 +84,7 @@ export function hashOtp(pepper: string, code: string, target: string, purpose: O
 }
 
 /** Only for development and tests: production refuses to start without its own `OTP_PEPPER`. */
-const DEV_PEPPER = 'dev-otp-pepper-not-for-production';
+export const DEV_PEPPER = 'dev-otp-pepper-not-for-production';
 const MIN_PEPPER_LENGTH = 32;
 
 /** The HMAC key of the codes: `OTP_PEPPER`, required in production (at least 32 characters). */

@@ -9,7 +9,7 @@ import { LANDING_PREVIEW_TTL_MS } from '@hg/models';
  */
 
 /** Only for development and tests: production refuses to start without its own `CONTENT_PREVIEW_SECRET`. */
-const DEV_PREVIEW_SECRET = 'dev-content-preview-secret-not-for-production';
+export const DEV_PREVIEW_SECRET = 'dev-content-preview-secret-not-for-production';
 const MIN_SECRET_LENGTH = 32;
 /** Longer input is refused before any work (a real token is about 70 characters). */
 const MAX_TOKEN_LENGTH = 200;

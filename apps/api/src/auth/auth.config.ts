@@ -15,6 +15,8 @@ export const PENDING_SESSION_MS = 10 * 60_000;
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 export const RESET_TTL_MS = 24 * 60 * 60_000;
+/** Password and code attempts per IP per 15 minutes when AUTH_IP_ATTEMPT_LIMIT is unset (the production value). */
+export const AUTH_IP_ATTEMPT_DEFAULT = 30;
 
 @Injectable()
 export class AuthConfig {
@@ -39,7 +41,7 @@ export class AuthConfig {
     this.cookieSecure = config.get<string>('COOKIE_SECURE', 'false') === 'true';
     this.nodeEnv = config.get<string>('NODE_ENV');
     this.secretBox = new SecretBox(config.getOrThrow<string>('TOTP_ENCRYPTION_KEY'));
-    this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', '30'));
+    this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', String(AUTH_IP_ATTEMPT_DEFAULT)));
   }
 
   /** Origins allowed to send state-changing admin requests (CSRF defence). */

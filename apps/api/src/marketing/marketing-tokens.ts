@@ -11,7 +11,7 @@ export function newConfirmToken(): { token: string; hash: string } {
 }
 
 /** Only for development and tests: production refuses to start without its own `MARKETING_TOKEN_SECRET`. */
-const DEV_TOKEN_SECRET = 'dev-marketing-token-secret-not-for-production';
+export const DEV_TOKEN_SECRET = 'dev-marketing-token-secret-not-for-production';
 const MIN_SECRET_LENGTH = 32;
 
 /**
