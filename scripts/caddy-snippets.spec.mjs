@@ -6,6 +6,20 @@ import { describe, expect, it } from 'vitest';
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'deploy', 'caddy');
 const read = (name) => readFileSync(join(dir, name), 'utf8');
 
+// Body of the first `<opener> { ... }` block, brace-aware.
+function block(text, opener) {
+  const start = text.indexOf(opener);
+  if (start < 0) return '';
+  const open = text.indexOf('{', start + opener.length - 1);
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{' && text[i - 1] !== '$') depth++;
+    if (text[i] === '}' && !/\{[a-z_]*$/.test(text.slice(open, i))) depth--;
+    if (depth === 0) return text.slice(open + 1, i);
+  }
+  return '';
+}
+
 describe('admin-headers.caddy', () => {
   const text = read('admin-headers.caddy');
 
@@ -43,12 +57,19 @@ describe('api-limits.caddy', () => {
   });
 
   it('matches both webhook paths and caps the body at 64KB', () => {
-    expect(text).toMatch(/@webhooks path \/api\/payments\/webhook \/api\/marketing\/webhook/);
-    expect(text).toMatch(/request_body @webhooks \{\s*max_size 64KB\s*\}/);
+    expect(text).toMatch(/@signed_webhooks path \/api\/payments\/webhook \/api\/marketing\/webhook/);
+    expect(text).toMatch(/request_body @signed_webhooks \{\s*max_size 64KB\s*\}/);
+  });
+
+  it('keeps key, events and window inside the zone block', () => {
+    const body = block(text, 'zone webhooks {');
+    expect(body).toMatch(/key\s+\{remote_host\}/);
+    expect(body).toMatch(/events\s+120/);
+    expect(body).toMatch(/window\s+1m/);
   });
 
   it('rate limits per remote host, 120 events a minute', () => {
-    expect(text).toContain('rate_limit @webhooks');
+    expect(text).toContain('rate_limit @signed_webhooks');
     expect(text).toMatch(/key\s+\{remote_host\}/);
     expect(text).toMatch(/events\s+120/);
     expect(text).toMatch(/window\s+1m/);

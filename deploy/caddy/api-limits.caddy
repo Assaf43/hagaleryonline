@@ -2,13 +2,13 @@
 # inside the site block that proxies /api. rate_limit needs the caddy-ratelimit
 # plugin (see README.md).
 (webhook_limits) {
-	@webhooks path /api/payments/webhook /api/marketing/webhook
+	@signed_webhooks path /api/payments/webhook /api/marketing/webhook
 
-	request_body @webhooks {
+	request_body @signed_webhooks {
 		max_size 64KB
 	}
 
-	rate_limit @webhooks {
+	rate_limit @signed_webhooks {
 		zone webhooks {
 			key {remote_host}
 			events 120

@@ -52,6 +52,11 @@ done | sort | uniq -c
 
 # body limit: a body over 64KB answers 413
 head -c 70000 /dev/zero | curl -s -o /dev/null -w '%{http_code}\n' -X POST --data-binary @- https://shop.example.test/api/payments/webhook
+
+# CSP: verify against the real built admin index.html (apps/admin/dist/admin/browser):
+# no inline <script> and no on*= attributes, or script-src 'self' blocks them.
+# The admin production build sets inlineCritical to false for this reason.
+grep -cE '<script[^>]*>[^<]' index.html; grep -cE ' on[a-z]+=' index.html   # both 0
 ```
 
 Validate syntax with `caddy fmt --diff` and `caddy adapt` before deploying.
