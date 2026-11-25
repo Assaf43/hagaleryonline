@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -10,6 +9,7 @@ import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
 import { ConsentAction, MarketingStatus, OutboxJobState } from './../src/generated/prisma/client.js';
 import { MARKETING_PROVIDER, type SyncedContact } from './../src/marketing/marketing-provider.js';
+import { MarketingSyncJob } from './../src/marketing/marketing-sync.job.js';
 import { MarketingService } from './../src/marketing/marketing.service.js';
 import { MOCK_MARKETING_SIGNATURE_HEADER, MockMarketingProvider } from './../src/marketing/mock-marketing.provider.js';
 import {
@@ -24,12 +24,14 @@ import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-sessi
 import { deleteMarketingContacts } from './test-marketing.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@mksync.e2e.test';
 const PASSWORD = 'correct horse 12';
 /** תל אביב - יפו: in no zone. */
 const LOCALITY = 5000;
+const NO_TOKEN = '00000000-0000-4000-8000-000000000000';
 
 // Phase 7 §5.4 (CLB-11, decision 95): only subscribed contacts reach the e-mail tool, through outbox `marketing.sync`
 // jobs that read the contact when they run; the tool reports unsubscribes through a signed webhook.
@@ -167,8 +169,7 @@ describe('Marketing sync and webhook (e2e, CLB-11)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     outbox = app.get(OutboxService);
     marketing = app.get(MarketingService);
@@ -285,6 +286,71 @@ describe('Marketing sync and webhook (e2e, CLB-11)', () => {
     expect((await prisma.outboxJob.findUniqueOrThrow({ where: { id: queued.id } })).state).toBe(OutboxJobState.DONE);
     expect(synced(email)).toBeUndefined();
     expect((await contactOf(email))!.status).toBe(MarketingStatus.UNSUBSCRIBED);
+  });
+
+  // Spec 9a.4: two runs for one contact never overlap, so an older read can never land last at the tool.
+  it('marketing sync runs per contact in order: a newer job waits for the held older one', async () => {
+    const email = newEmail();
+    await subscribe(email);
+    const { id, syncVersion: v1 } = (await contactOf(email))!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const realUpsert = mock.upsertContact.bind(mock);
+    const upserted: string[] = [];
+    const upsert = vi.spyOn(mock, 'upsertContact').mockImplementation(async (fields) => {
+      upserted.push(fields.email);
+      if (fields.email === email) await held;
+      return realUpsert(fields);
+    });
+    const remove = vi.spyOn(mock, 'removeContact');
+    try {
+      // v1 (subscribed) reads the contact and is held at the tool.
+      const first = outbox.runDue(100);
+      for (let i = 0; i < 200 && !upserted.includes(email); i++) await new Promise((r) => setTimeout(r, 10));
+      expect(upserted).toContain(email);
+
+      // The unsubscribe is not held up by the provider call, and queues v2.
+      await withdraw(email);
+      const v2 = (await contactOf(email))!.syncVersion;
+      expect(v2).toBeGreaterThan(v1);
+      expect(
+        (await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `marketing.sync:${id}:${v2}` } })).state,
+      ).toBe(OutboxJobState.PENDING);
+
+      const second = outbox.runDue(100);
+      await new Promise((r) => setTimeout(r, 300));
+      // v2 waits for v1's lock: nothing removed yet.
+      expect(remove.mock.calls.filter(([e]) => e === email)).toEqual([]);
+
+      release();
+      await Promise.all([first, second]);
+      expect(remove.mock.calls.filter(([e]) => e === email)).toHaveLength(1);
+      expect(synced(email)).toBeUndefined();
+      expect((await contactOf(email))!.syncedVersion).toBe(v2);
+    } finally {
+      release();
+      upsert.mockRestore();
+      remove.mockRestore();
+    }
+  });
+
+  it('marketing sync: a run whose claim is gone calls nothing', async () => {
+    const email = newEmail();
+    await subscribe(email);
+    const { id, syncVersion } = (await contactOf(email))!;
+    const job = await prisma.outboxJob.findUniqueOrThrow({
+      where: { dedupeKey: `marketing.sync:${id}:${syncVersion}` },
+    });
+    const sync = app.get(MarketingSyncJob);
+    const upsert = vi.spyOn(mock, 'upsertContact');
+    try {
+      // PENDING, not RUNNING with this token: the run has no claim.
+      await sync.run({ contactId: id, version: syncVersion }, { id: job.id, claimToken: NO_TOKEN });
+      expect(upsert.mock.calls.filter(([c]) => c.email === email)).toEqual([]);
+      expect((await contactOf(email))!.syncedVersion).toBeLessThan(syncVersion);
+    } finally {
+      upsert.mockRestore();
+    }
   });
 
   it('webhook: a bad or missing signature is 401 and changes nothing', async () => {

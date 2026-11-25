@@ -33,7 +33,7 @@ export type ThrottleBucket =
 
 const WINDOW_MS = 15 * 60_000;
 /** Production defaults per key (mostly the IP) per 15 minutes; `THROTTLE_<BUCKET>_LIMIT` overrides (e2e raises them). */
-const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
+export const DEFAULT_LIMITS: Record<ThrottleBucket, number> = {
   checkout: 20,
   retry: 20,
   sandbox: 60,

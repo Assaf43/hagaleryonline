@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { CookieOptions } from 'express';
 import { SecretBox } from './crypto.js';
 
 export const SESSION_COOKIE = 'hg_admin_session';
@@ -15,6 +16,8 @@ export const PENDING_SESSION_MS = 10 * 60_000;
 
 export const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 export const RESET_TTL_MS = 24 * 60 * 60_000;
+/** Password and code attempts per IP per 15 minutes when AUTH_IP_ATTEMPT_LIMIT is unset (the production value). */
+export const AUTH_IP_ATTEMPT_DEFAULT = 30;
 
 @Injectable()
 export class AuthConfig {
@@ -39,7 +42,7 @@ export class AuthConfig {
     this.cookieSecure = config.get<string>('COOKIE_SECURE', 'false') === 'true';
     this.nodeEnv = config.get<string>('NODE_ENV');
     this.secretBox = new SecretBox(config.getOrThrow<string>('TOTP_ENCRYPTION_KEY'));
-    this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', '30'));
+    this.ipAttemptLimit = Number(config.get<string>('AUTH_IP_ATTEMPT_LIMIT', String(AUTH_IP_ATTEMPT_DEFAULT)));
   }
 
   /** Origins allowed to send state-changing admin requests (CSRF defence). */
@@ -51,4 +54,19 @@ export class AuthConfig {
   get storefrontOrigins(): string[] {
     return [new URL(this.storefrontUrl).origin];
   }
+}
+
+/** Admin session cookie flags; Secure in production whatever COOKIE_SECURE says (same rule as the customer cookie). */
+export function adminCookieOptions(
+  config: Pick<AuthConfig, 'cookieSecure' | 'nodeEnv'>,
+  remember: boolean,
+): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: config.cookieSecure || config.nodeEnv === 'production',
+    sameSite: 'strict',
+    path: ADMIN_API_PATH,
+    // Without "remember", a browser-session cookie; the server still enforces the 8 h idle limit.
+    ...(remember ? { maxAge: TRUSTED_SESSION_MS } : {}),
+  };
 }

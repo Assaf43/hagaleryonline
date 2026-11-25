@@ -5,6 +5,7 @@ import { normalizePhone } from '../customers/contact-normalize.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CheckoutError } from './order-errors.js';
 import { confirmationPath, parseOrderNumber } from './order-number.js';
+import { ORDER_TOKEN_FIELDS, OrderTokens } from './order-token.js';
 
 /** Longest order number text kept as a throttle key (anything longer is malformed anyway). */
 const MAX_KEY_LENGTH = 32;
@@ -44,7 +45,10 @@ export function lookupThrottleKey(raw: unknown): string {
  */
 @Injectable()
 export class OrderLookupService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tokens: OrderTokens,
+  ) {}
 
   async lookup(rawNumber: unknown, rawPhone: unknown): Promise<string> {
     const number = parseOrderNumber(lookupNumberText(rawNumber));
@@ -52,12 +56,12 @@ export class OrderLookupService {
     const phone = normalizePhone(rawPhone);
     const order = await this.prisma.order.findUnique({
       where: { number: number ?? 0 },
-      select: { number: true, publicToken: true, contact: true },
+      select: { number: true, ...ORDER_TOKEN_FIELDS, contact: true },
     });
     const stored = order ? phoneOf(order.contact) : null;
     const same = safeEqual(phone ?? NO_GIVEN_PHONE, stored ?? NO_ORDER_PHONE);
     if (!order || !same) throw lookupMiss();
-    return confirmationPath(order.number, order.publicToken);
+    return confirmationPath({ number: order.number, token: this.tokens.reveal(order) });
   }
 }
 

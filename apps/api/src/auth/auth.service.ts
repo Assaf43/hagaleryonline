@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AdminMe, LoginStep, OneTimeLink, RecoveryCodes, TotpSetup } from '@hg/models';
 import { effectivePermissions } from '@hg/models';
-import { AdminTokenType, AdminUserStatus, type AdminUser } from '../generated/prisma/client.js';
+import { AdminTokenType, AdminUserStatus, type AdminSession, type AdminUser } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { AuthConfig, INVITE_TTL_MS, RESET_TTL_MS } from './auth.config.js';
+import { AuthConfig, INVITE_TTL_MS, RESET_TTL_MS, SESSION_IDLE_MS } from './auth.config.js';
 import { invalidCode, invalidCredentials, invalidLink, tooManyAttempts, weakPassword } from './auth-errors.js';
 import { hashToken, randomToken } from './crypto.js';
 import { IpThrottle, accountDelayMs } from './login-throttle.js';
@@ -125,13 +125,14 @@ export class AuthService {
     });
   }
 
-  me(user: AdminUser): AdminMe {
+  me(user: AdminUser, session: Pick<AdminSession, 'trusted'>): AdminMe {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       isSuperAdmin: user.isSuperAdmin,
       permissions: effectivePermissions(user),
+      idleTimeoutMs: session.trusted ? null : SESSION_IDLE_MS,
     };
   }
 

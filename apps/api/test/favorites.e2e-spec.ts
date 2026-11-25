@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -12,6 +11,7 @@ import { MarketingConsentSource, MarketingStatus } from './../src/generated/pris
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { deleteMarketingContacts } from './test-marketing.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@fav0.e2e.test';
@@ -65,8 +65,7 @@ describe('Account favorites (e2e, CLB-09)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     await cleanup();
     await prisma.product.deleteMany({ where: { slug: { startsWith: SLUG_PREFIX } } });

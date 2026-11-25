@@ -173,7 +173,7 @@ describe('VatPage ("מע״מ")', () => {
     const date = el.querySelector<HTMLInputElement>('input[name="effectiveFrom"]')!;
     rate.value = '19';
     rate.dispatchEvent(new Event('input'));
-    date.value = '2099-01-01';
+    date.value = '1.1.2099';
     date.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));
@@ -194,7 +194,7 @@ describe('VatPage ("מע״מ")', () => {
     const date = el.querySelector<HTMLInputElement>('input[name="effectiveFrom"]')!;
     rate.value = '19';
     rate.dispatchEvent(new Event('input'));
-    date.value = '2099-01-01';
+    date.value = '1.1.2099';
     date.dispatchEvent(new Event('input'));
     fixture.detectChanges();
     el.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit'));

@@ -149,6 +149,7 @@ export interface CheckoutResponse {
  * - `empty_cart` (409): nothing in the cart can be ordered;
  * - `cart_changed` (409): the cart changed while the order was being placed — try again;
  * - `price_changed` (409): the total differs from `expectedTotal`; `total` is the new one (agorot);
+ * - `zero_total` (422): the order would cost ₪0 (decision 109) — not placed, on the website or in the store;
  * - `coupon_invalid` (409): the cart's coupon was used up in the meantime; `field: 'coupon'` and `messageHe`
  *   (`CouponErrorBody`) — remove it and try again;
  * - `too_many_requests` (429): per-IP limit of a public write; `retryAfterSeconds`;
@@ -175,6 +176,7 @@ export type CheckoutErrorCode =
   | 'empty_cart'
   | 'cart_changed'
   | 'price_changed'
+  | 'zero_total'
   | 'coupon_invalid'
   | 'too_many_requests'
   | 'shipping_unavailable'

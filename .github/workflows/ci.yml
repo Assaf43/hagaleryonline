@@ -31,6 +31,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # production dependencies: fails on a high / critical advisory not in audit-allowlist.json (OWASP A06)
+      - run: node scripts/audit-check.mjs
       - run: npm run format:check
       # build first: it builds the shared libs and generates the Prisma client that type-aware lint reads
       - run: npm run build

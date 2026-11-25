@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -32,8 +31,10 @@ import { SMS_PROVIDER, type SmsProvider } from './../src/notifications/notificat
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { deleteMarketingContacts } from './test-marketing.js';
+import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 const DOMAIN = '@acc12.e2e.test';
@@ -145,7 +146,9 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     const { redirectUrl } = res.body as CheckoutResponse;
     const transactionId = /\/pay\/sandbox\/([\w-]+)$/.exec(redirectUrl)![1];
-    return (await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } })).order;
+    const { order } = await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } });
+    // With `token`: the order's link token (stored sealed only, spec 9a.7).
+    return { ...order, token: await orderLinkToken(prisma, order.number) };
   };
   /** A signed-in browser with one lamp in its cart, checked out: the account's pending order. */
   const placeOrder = async (b: Browser, extra: Partial<CheckoutRequest> = {}) => {
@@ -165,8 +168,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     passwordHash = await hashPassword(PASSWORD);
     smsSpy = vi.spyOn(app.get<SmsProvider>(SMS_PROVIDER), 'sendSms');
@@ -327,12 +329,11 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       const view = (await b.agent.get(`/api/account/orders/${order.number}`).expect(200)).body as OrderView;
       expect(view).toMatchObject({ number: order.number, total: order.total, canCancel: true, guestOrder: false });
       // The tokened page of an account order says it is not a guest order, and nothing more (decision 77).
-      const tokened = (
-        await browser().agent.get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200)
-      ).body as OrderView;
+      const tokened = (await browser().agent.get(`/api/orders/${order.number}`).query({ t: order.token }).expect(200))
+        .body as OrderView;
       expect(tokened.guestOrder).toBe(false);
       const guestView = (
-        await browser().agent.get(`/api/orders/${guestOrder.number}`).query({ t: guestOrder.publicToken }).expect(200)
+        await browser().agent.get(`/api/orders/${guestOrder.number}`).query({ t: guestOrder.token }).expect(200)
       ).body as OrderView;
       expect(guestView.guestOrder).toBe(true);
       await b.agent.get(`/api/account/orders/${guestOrder.number}`).expect(404);
@@ -827,13 +828,13 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
     it('a matching number and phone (any typing of the phone) answer the order link; guest and account orders alike', async () => {
       const order = await guestOrder();
       const res = await lookup({ number: String(order.number), phone: '+972 50-123-4567' }).expect(200);
-      expect(res.body).toEqual({ url: `/order/${order.number}?t=${order.publicToken}` });
+      expect(res.body).toEqual({ url: `/order/${order.number}?t=${order.token}` });
       expect(res.headers['cache-control']).toBe('no-store');
       // A token handover only: no session or cart cookie is set.
       expect(res.headers['set-cookie']).toBeUndefined();
       await request(app.getHttpServer() as App)
         .get(`/api/orders/${order.number}`)
-        .query({ t: order.publicToken })
+        .query({ t: order.token })
         .expect(200);
       // The number may be typed with spaces around it.
       await lookup({ number: ` ${order.number} `, phone: '0501234567' }).expect(200);
@@ -844,7 +845,7 @@ describe('Customer account data (e2e, ACC-03, ACC-04, ACC-05)', () => {
       await b.signIn(c.email);
       const own = await placeOrder(b);
       const mine = await lookup({ number: String(own.number), phone: '050-1234567' }).expect(200);
-      expect(mine.body).toEqual({ url: `/order/${own.number}?t=${own.publicToken}` });
+      expect(mine.body).toEqual({ url: `/order/${own.number}?t=${own.token}` });
       expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ customerId: null });
     });
 

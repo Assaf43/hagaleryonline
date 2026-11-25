@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
+import { OrderTokensModule } from '../orders/order-token.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { selectProvider } from '../providers/select-provider.js';
@@ -18,7 +19,7 @@ import { VatAdminService } from './vat-admin.service.js';
  * when it is the one configured. The outbox handlers `invoice.issue` and `invoice.credit_note` are registered here.
  */
 @Module({
-  imports: [AuthModule, OutboxModule],
+  imports: [AuthModule, OutboxModule, OrderTokensModule],
   controllers: [InvoicesController, InvoicesAdminController, VatAdminController],
   providers: [
     InvoicingService,

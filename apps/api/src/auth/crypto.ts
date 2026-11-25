@@ -17,16 +17,17 @@ export function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * AES-256-GCM for secrets we must read back (TOTP secrets). The key comes from TOTP_ENCRYPTION_KEY
- * (32 bytes, base64) so a database dump alone cannot generate 2FA codes.
+ * AES-256-GCM for secrets we must read back (TOTP secrets, order link tokens). The key comes from an environment
+ * variable (`keyName`: TOTP_ENCRYPTION_KEY, ORDER_TOKEN_KEY; 32 bytes, base64) so a database dump alone cannot
+ * generate 2FA codes or open orders.
  * Format: base64url(iv).base64url(tag).base64url(ciphertext)
  */
 export class SecretBox {
   private readonly key: Buffer;
 
-  constructor(base64Key: string) {
+  constructor(base64Key: string, keyName = 'TOTP_ENCRYPTION_KEY') {
     this.key = Buffer.from(base64Key, 'base64');
-    if (this.key.length !== 32) throw new Error('TOTP_ENCRYPTION_KEY must be 32 bytes, base64-encoded');
+    if (this.key.length !== 32) throw new Error(`${keyName} must be 32 bytes, base64-encoded`);
   }
 
   encrypt(plain: string): string {
@@ -39,7 +40,8 @@ export class SecretBox {
   decrypt(sealed: string): string {
     const [iv, tag, data] = sealed.split('.').map((part) => Buffer.from(part, 'base64url'));
     if (!iv || !tag || !data) throw new Error('Malformed secret');
-    const decipher = createDecipheriv('aes-256-gcm', this.key, iv);
+    // A full 16-byte tag only: a truncated GCM tag is refused (DEP0182).
+    const decipher = createDecipheriv('aes-256-gcm', this.key, iv, { authTagLength: 16 });
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
   }

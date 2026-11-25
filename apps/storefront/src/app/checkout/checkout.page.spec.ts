@@ -516,6 +516,23 @@ describe('CheckoutPage', () => {
     expect(navigateByUrl).toHaveBeenCalledWith('/cart', { replaceUrl: true });
   });
 
+  it('on zero_total explains that a ₪0 order cannot be placed and keeps the form (decision 109)', async () => {
+    await setup();
+    await fillValid();
+    await submit();
+    http
+      .expectOne('/api/checkout')
+      .flush({ statusCode: 422, code: 'zero_total' }, { status: 422, statusText: 'Unprocessable Entity' });
+    await render();
+    expect(q<HTMLElement>('.form-error').textContent).toContain(
+      'לא ניתן להשלים הזמנה בסכום 0 ₪. לשאלות פנו לשירות הלקוחות.',
+    );
+    expect(q<HTMLInputElement>('#chk-fullName').value).toBe('דנה כהן');
+    expect(q<HTMLInputElement>('#chk-street').value).toBe('הרצל');
+    expect(q<HTMLButtonElement>('button[type="submit"]').disabled).toBe(false);
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
   it('explains a payment provider failure', async () => {
     await setup();
     await fillValid();

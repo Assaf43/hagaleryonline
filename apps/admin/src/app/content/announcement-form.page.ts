@@ -18,6 +18,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { CONTENT_LIMITS, type AdminAnnouncement } from '@hg/models';
 import { errorMessage } from '../core/errors';
 import { MAX_DATE, MIN_DATE } from '../core/israel-time';
+import { DateField } from '../shared/date-field';
 import {
   announcementInput,
   emptyAnnouncementForm,
@@ -41,7 +42,7 @@ const SERVER_FIELDS: Record<string, string> = {
 /** Create or edit one announcement (`/content/announcements/new`, `/:id`; NAV-04): text, link, order, Israel-day dates. */
 @Component({
   selector: 'hga-announcement-form-page',
-  imports: [FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule],
+  imports: [DateField, FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './content.scss',
   template: `
@@ -124,36 +125,30 @@ const SERVER_FIELDS: Record<string, string> = {
           <legend>תאריכים</legend>
           <p class="muted">שעון ישראל. מתחילת יום ההתחלה ועד סוף יום הסיום. ריק = בלי הגבלת תאריך.</p>
           <div class="date-grid">
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך התחלה</mat-label>
-              <input
-                matInput
-                type="date"
-                id="ann-start"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().startDate"
-                (ngModelChange)="set('startDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('startDate')"
-              />
-              <mat-error>{{ fe.all()['startDate'] }}</mat-error>
-            </mat-form-field>
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך סיום</mat-label>
-              <input
-                matInput
-                type="date"
-                id="ann-end"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().endDate"
-                (ngModelChange)="set('endDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('endDate')"
-              />
-              <mat-error>{{ fe.all()['endDate'] }}</mat-error>
-            </mat-form-field>
+            <hga-date-field
+              label="תאריך התחלה"
+              inputId="ann-start"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().startDate"
+              (ngModelChange)="set('startDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('startDate')"
+              [errorText]="fe.all()['startDate'] ?? ''"
+            />
+            <hga-date-field
+              label="תאריך סיום"
+              inputId="ann-end"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().endDate"
+              (ngModelChange)="set('endDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('endDate')"
+              [errorText]="fe.all()['endDate'] ?? ''"
+            />
           </div>
         </fieldset>
 

@@ -14,6 +14,7 @@ import { MarketingService } from '../marketing/marketing.service.js';
 import { lockOrder, lockVariants } from '../orders/locks.js';
 import { CheckoutError, invalidInput, orderNotFound, paymentUnavailable } from '../orders/order-errors.js';
 import { defaultReturnPath, returnPathFor, type PaymentReturn } from '../orders/order-number.js';
+import { ORDER_TOKEN_FIELDS, OrderTokens, type OrderTokenFields } from '../orders/order-token.js';
 import { PAID_OR_LATER } from '../orders/order-transitions.js';
 import { LATE_PAYMENT_MANUAL_NOTE } from '../orders/refund.service.js';
 import { OutboxService } from '../outbox/outbox.service.js';
@@ -51,12 +52,11 @@ const VIEW_STATUS: Record<PaymentStatus, SandboxPaymentView['status']> = {
 export type WebhookOutcome = 'paid' | 'failed' | 'amount_mismatch' | 'duplicate' | 'ignored' | 'late_payment';
 
 /** The order fields needed to open a payment page (the token makes the website's return link). */
-export interface PayableOrder {
+export interface PayableOrder extends OrderTokenFields {
   id: string;
   number: number;
   total: number;
   contact: Prisma.JsonValue;
-  publicToken: string;
   channel: OrderChannel;
 }
 
@@ -66,7 +66,7 @@ export const PAYABLE_ORDER = {
   number: true,
   total: true,
   contact: true,
-  publicToken: true,
+  ...ORDER_TOKEN_FIELDS,
   channel: true,
 } as const satisfies Prisma.OrderSelect;
 
@@ -86,6 +86,7 @@ export class PaymentsService {
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
     private readonly marketing: MarketingService,
+    private readonly tokens: OrderTokens,
   ) {}
 
   get providerCode(): string {
@@ -101,13 +102,16 @@ export class PaymentsService {
   async openPaymentPage(order: PayableOrder, returnTo: PaymentReturn): Promise<string> {
     let page: { redirectUrl: string; transactionId: string };
     try {
+      // Inside the try: a token that cannot be revealed (key mismatch) fails the order like a provider error, so its
+      // reservation is released.
+      const returnPath = returnPathFor({ number: order.number, token: () => this.tokens.reveal(order) }, returnTo);
       const contact = order.contact as { fullName: string; phone: string; email: string };
       page = await this.provider.createPaymentPage({
         orderId: order.id,
         orderNumber: order.number,
         amount: order.total,
         customer: { fullName: contact.fullName, phone: contact.phone, email: contact.email },
-        returnPath: returnPathFor(order, returnTo),
+        returnPath,
       });
     } catch (error) {
       this.logger.error(`Payment page for order ${order.number} failed`, error);
@@ -443,7 +447,11 @@ export class PaymentsService {
       this.logger.error(`Sandbox webhook answered ${status}`);
       throw paymentUnavailable();
     }
-    return { confirmationUrl: sandbox.returnPath(payment.transactionId) ?? defaultReturnPath(payment.order) };
+    return {
+      confirmationUrl:
+        sandbox.returnPath(payment.transactionId) ??
+        defaultReturnPath({ ...payment.order, token: () => this.tokens.reveal(payment.order) }),
+    };
   }
 
   /** 404 unless the active provider is the sandbox. */
@@ -456,7 +464,7 @@ export class PaymentsService {
     const sandbox = this.sandbox();
     const payment = await this.prisma.payment.findUnique({
       where: { transactionId },
-      include: { order: { select: { number: true, publicToken: true, channel: true } } },
+      include: { order: { select: { number: true, ...ORDER_TOKEN_FIELDS, channel: true } } },
     });
     if (!payment || payment.provider !== sandbox.code) throw orderNotFound();
     return payment;

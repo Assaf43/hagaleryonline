@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module.js';
+import { OrderTokensModule } from '../orders/order-token.module.js';
 import { OutboxModule } from '../outbox/outbox.module.js';
 import { selectProvider } from '../providers/select-provider.js';
 import { MockNotificationProvider } from './mock-notification.provider.js';
@@ -18,7 +19,7 @@ import { PersonalCodeMessagesJob } from './personal-code-messages.job.js';
  * here.
  */
 @Module({
-  imports: [AuthModule, OutboxModule],
+  imports: [AuthModule, OutboxModule, OrderTokensModule],
   controllers: [NotificationsAdminController],
   providers: [
     NotificationsService,

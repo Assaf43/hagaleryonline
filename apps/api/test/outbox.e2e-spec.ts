@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
@@ -362,6 +363,102 @@ describe('Outbox (e2e, decision 83)', () => {
       attempts: 8,
       lastError: 'reclaimed after a stuck run',
     });
+  });
+
+  /** Moves a RUNNING job's claim time back past STUCK_RUNNING_MS, as if its worker had hung. */
+  const makeStuck = (dedupeKey: string) =>
+    prisma.$executeRaw`
+      UPDATE outbox_jobs SET updated_at = (now() AT TIME ZONE 'UTC') - interval '11 minutes' WHERE dedupe_key = ${dedupeKey}`;
+  const waitFor = async (check: () => boolean) => {
+    for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(check()).toBe(true);
+  };
+
+  // Spec 9a.4: a run that hangs past 10 minutes loses its claim; when it wakes up it cannot overwrite the result of
+  // the run that reclaimed the job.
+  for (const outcome of ['succeeds', 'throws'] as const) {
+    it(`a stuck run that later ${outcome} cannot finish a reclaimed job`, async () => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const tokens: string[] = [];
+      outbox.register('email.status', async (_payload, job) => {
+        tokens.push(job.claimToken);
+        if (tokens.length === 1) {
+          await held;
+          if (outcome === 'throws') throw new Error('woke up late');
+        }
+      });
+      await enqueue('email.status', 'zz:lost-claim');
+
+      const stuckRun = outbox.runDue();
+      await waitFor(() => tokens.length === 1);
+      const running = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:lost-claim' } });
+      expect(running.state).toBe(OutboxJobState.RUNNING);
+      expect(running.claimToken).toBe(tokens[0]);
+
+      await makeStuck('zz:lost-claim');
+      expect(await outbox.runDue()).toBe(1);
+      expect(tokens).toHaveLength(2);
+      expect(tokens[1]).not.toBe(tokens[0]);
+      const done = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:lost-claim' } });
+      expect(done).toMatchObject({ state: OutboxJobState.DONE, attempts: 1, lastError: null });
+
+      const warn = vi.spyOn(Logger.prototype, 'warn');
+      try {
+        release();
+        await stuckRun;
+        expect(warn.mock.calls.map(([m]) => String(m))).toContain(
+          'Outbox job zz:lost-claim finished after losing its claim; result dropped',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+      const after = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:lost-claim' } });
+      expect(after).toMatchObject({ state: OutboxJobState.DONE, attempts: 1, lastError: null });
+      expect(after.updatedAt).toEqual(done.updatedAt);
+    });
+  }
+
+  it('reclaim and retry clear the claim token', async () => {
+    outbox.register('email.status', async () => {});
+    await enqueue('email.status', 'zz:token-reclaim');
+    await prisma.$executeRaw`
+      UPDATE outbox_jobs SET state = 'running', attempts = 7, claim_token = gen_random_uuid(),
+        updated_at = (now() AT TIME ZONE 'UTC') - interval '11 minutes'
+      WHERE dedupe_key = 'zz:token-reclaim'`;
+    await outbox.runDue();
+    expect(await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:token-reclaim' } })).toMatchObject({
+      state: OutboxJobState.FAILED,
+      claimToken: null,
+    });
+
+    const order = await makeOrder('token-retry', OrderStatus.PAID);
+    await enqueue('email.refund', 'zz:token-retry', order.id);
+    await prisma.$executeRaw`
+      UPDATE outbox_jobs SET state = 'failed', attempts = 8, claim_token = gen_random_uuid()
+      WHERE dedupe_key = 'zz:token-retry'`;
+    const job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: 'zz:token-retry' } });
+    expect(job.claimToken).not.toBeNull();
+    await owner.post(`/jobs/${job.id}/retry`).expect(204);
+    expect(await prisma.outboxJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({
+      state: OutboxJobState.PENDING,
+      claimToken: null,
+    });
+  });
+
+  it('holdsClaim is true only while the job is RUNNING with that token', async () => {
+    let seen: OutboxJobRow | undefined;
+    const answers: boolean[] = [];
+    outbox.register('email.status', async (_payload, job) => {
+      seen = job;
+      answers.push(await prisma.$transaction((tx) => outbox.holdsClaim(tx, job)));
+      answers.push(await prisma.$transaction((tx) => outbox.holdsClaim(tx, { id: job.id, claimToken: NO_JOB })));
+    });
+    await enqueue('email.status', 'zz:holds');
+    await outbox.runDue();
+    expect(answers).toEqual([true, false]);
+    // DONE now: the claim is over.
+    expect(await prisma.$transaction((tx) => outbox.holdsClaim(tx, seen!))).toBe(false);
   });
 
   it('a PAID webhook enqueues the paid jobs in the webhook transaction, once', async () => {

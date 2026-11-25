@@ -2,10 +2,13 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import type { AdminVatRate } from '@hg/models';
 import { errorMessage, VAT_RATE_MESSAGE } from '../core/errors';
 import { InvoicesApi } from '../core/invoices.api';
+import { DateField } from '../shared/date-field';
 
 /** A percent as typed: above 0, below 100, at most two decimals ("18", "17.5", "17.25"). */
 const PERCENT = /^\d{1,2}(?:\.\d{1,2})?$/;
@@ -22,7 +25,7 @@ export function percentLabel(rate: number): string {
  */
 @Component({
   selector: 'hga-vat-page',
-  imports: [DatePipe, FormsModule, MatButtonModule],
+  imports: [DatePipe, DateField, FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './vat.page.html',
   styleUrl: './vat.page.scss',

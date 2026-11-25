@@ -42,6 +42,7 @@ import type {
 import { AuthService } from '../core/auth.service';
 import { CatalogApi } from '../core/catalog.api';
 import { errorMessage } from '../core/errors';
+import { DateField } from '../shared/date-field';
 import { FULFILLMENT_LABEL, categoryOptions, suggestSlug, toAgorot, toShekels } from './catalog-format';
 import { ProductImages, type ColorOption } from './product-images';
 import { ProductRelations } from './product-relations';
@@ -75,6 +76,7 @@ let nextKey = 1;
 @Component({
   selector: 'hga-product-form-page',
   imports: [
+    DateField,
     FormsModule,
     RouterLink,
     MatButtonModule,

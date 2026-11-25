@@ -1,3 +1,4 @@
+import type { AuditAction, AuditEntityType } from '@hg/models';
 import type { AuditService } from '../audit/audit.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { auditDiff, type AuditView } from '../shipping/shipping-audit.js';
@@ -12,8 +13,8 @@ export async function recordContentChange(
   audit: AuditService,
   tx: Prisma.TransactionClient,
   meta: ContentMeta,
-  action: string,
-  entityType: string,
+  action: AuditAction,
+  entityType: AuditEntityType,
   entityId: number,
   before: AuditView | null,
   after: AuditView | null,

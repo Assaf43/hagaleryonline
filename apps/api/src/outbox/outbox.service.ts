@@ -17,6 +17,8 @@ export interface OutboxJobRow {
   attempts: number;
   orderId: string | null;
   createdAt: Date;
+  /** This run's claim: the result is recorded only while the job still holds it (see `holdsClaim`). */
+  claimToken: string;
 }
 
 /** Runs one job. It may run more than once (a crash before DONE): it must be idempotent. Throwing retries it. */
@@ -49,14 +51,17 @@ interface ClaimedRow {
   attempts: number;
   order_id: string | null;
   created_at: Date;
+  claim_token: string;
 }
 
 /**
  * The durable outbox (spec §5.1, decision 83). A job is inserted in the transaction of the change that causes it
  * (`enqueue`), so it exists exactly when the change committed. `runDue` (called by `OutboxWorker`, or by tests)
  * claims due jobs with `FOR UPDATE SKIP LOCKED` (the claim itself is safe across processes) and runs their handlers
- * outside any transaction. A job still running after 10 minutes is reclaimed and can run twice, since `finish` does
- * not check a claim token yet — add one before scaling to several API processes. Only types with a registered
+ * outside any transaction. Each claim gets a fresh `claimToken`; a job still running after 10 minutes is reclaimed (the
+ * token is cleared) and runs again under a new one. The stuck run may still wake up: its handler may have repeated a
+ * side effect (handlers are idempotent), but its result is dropped — `finish` matches the token (spec 9a.4). A handler
+ * that must not overlap a reclaimed run checks `holdsClaim` inside its own transaction. Only types with a registered
  * handler are claimed: a job enqueued before its handler exists waits.
  */
 @Injectable()
@@ -93,14 +98,14 @@ export class OutboxService {
     if (types.length === 0) return 0;
     await this.reclaimStuck();
     const claimed = await this.prisma.$queryRaw<ClaimedRow[]>`
-      UPDATE outbox_jobs SET state = 'running', updated_at = ${NOW}
+      UPDATE outbox_jobs SET state = 'running', claim_token = gen_random_uuid(), updated_at = ${NOW}
       WHERE state = 'pending' AND id IN (
         SELECT id FROM outbox_jobs
         WHERE state = 'pending' AND run_after <= ${NOW} AND type IN (${Prisma.join(types)})
         ORDER BY run_after, created_at
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED)
-      RETURNING id, type, dedupe_key, payload, attempts, order_id, created_at`;
+      RETURNING id, type, dedupe_key, payload, attempts, order_id, created_at, claim_token`;
     for (const row of claimed)
       await this.run({
         id: row.id,
@@ -110,6 +115,7 @@ export class OutboxService {
         attempts: row.attempts,
         orderId: row.order_id,
         createdAt: row.created_at,
+        claimToken: row.claim_token,
       });
     return claimed.length;
   }
@@ -124,7 +130,8 @@ export class OutboxService {
       SET attempts = attempts + 1,
           state = CASE WHEN attempts + 1 >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'pending' END::outbox_job_state,
           updated_at = ${NOW},
-          last_error = ${RECLAIMED_ERROR}
+          last_error = ${RECLAIMED_ERROR},
+          claim_token = NULL
       WHERE state = 'running' AND updated_at < ${NOW} - make_interval(secs => ${STUCK_RUNNING_MS / 1000})`;
     if (reclaimed > 0) this.logger.warn(`Reclaimed ${reclaimed} outbox job(s) stuck in RUNNING`);
   }
@@ -140,7 +147,7 @@ export class OutboxService {
       const message = (error instanceof Error ? error.message : String(error)).slice(0, ERROR_MAX) || 'error';
       if (failed) this.logger.error(`Outbox job ${job.dedupeKey} failed after ${attempts} attempts`, error);
       else this.logger.warn(`Outbox job ${job.dedupeKey} failed (attempt ${attempts}): ${message}`);
-      await this.finish(job.id, {
+      await this.finish(job, {
         state: failed ? OutboxJobState.FAILED : OutboxJobState.PENDING,
         attempts,
         runAfter: new Date(Date.now() + backoff(attempts)),
@@ -148,14 +155,36 @@ export class OutboxService {
       });
       return;
     }
-    await this.finish(job.id, { state: OutboxJobState.DONE, lastError: null });
+    await this.finish(job, { state: OutboxJobState.DONE, lastError: null });
   }
 
-  /** Records the result, only while the job is still RUNNING. A failure here leaves it to be reclaimed. */
-  private async finish(id: string, data: Prisma.OutboxJobUpdateManyMutationInput): Promise<void> {
-    await this.prisma.outboxJob
-      .updateMany({ where: { id, state: OutboxJobState.RUNNING }, data })
-      .catch((error: unknown) => this.logger.error(`Could not record the result of outbox job ${id}`, error));
+  /**
+   * Records the result, only while the job is still RUNNING under this run's claim; the claim ends with it. A run
+   * that lost its claim (reclaimed while it hung) changes nothing. A failure here leaves the job to be reclaimed.
+   */
+  private async finish(job: OutboxJobRow, data: Prisma.OutboxJobUpdateManyMutationInput): Promise<void> {
+    try {
+      const { count } = await this.prisma.outboxJob.updateMany({
+        where: { id: job.id, state: OutboxJobState.RUNNING, claimToken: job.claimToken },
+        data: { ...data, claimToken: null },
+      });
+      if (count === 0) this.logger.warn(`Outbox job ${job.dedupeKey} finished after losing its claim; result dropped`);
+    } catch (error) {
+      this.logger.error(`Could not record the result of outbox job ${job.id}`, error);
+    }
+  }
+
+  /**
+   * Locks the job row (`FOR UPDATE`, held until `tx` ends) and tells whether it is still RUNNING under this claim.
+   * A handler calls it inside the transaction of its side effect: while it holds the row a reclaim waits, and once the
+   * job was reclaimed the stale run sees `false` and stops.
+   */
+  async holdsClaim(tx: Prisma.TransactionClient, job: { id: string; claimToken: string }): Promise<boolean> {
+    const rows = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM outbox_jobs
+      WHERE id = ${job.id}::uuid AND state = 'running' AND claim_token = ${job.claimToken}::uuid
+      FOR UPDATE`;
+    return rows.length > 0;
   }
 
   /** GET /api/admin/jobs/failed: the FAILED jobs, the latest first. */
@@ -188,7 +217,7 @@ export class OutboxService {
       if (job.state !== OutboxJobState.FAILED) throw new ConflictException({ statusCode: 409, code: 'not_failed' });
       await tx.outboxJob.update({
         where: { id },
-        data: { state: OutboxJobState.PENDING, attempts: 0, runAfter: new Date(), lastError: null },
+        data: { state: OutboxJobState.PENDING, attempts: 0, runAfter: new Date(), lastError: null, claimToken: null },
       });
       await this.audit.record(
         {

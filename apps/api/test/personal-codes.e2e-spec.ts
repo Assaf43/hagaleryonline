@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { vi, type MockInstance } from 'vitest';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -38,8 +37,10 @@ import { issuePersonalCode } from './../src/promotions/personal-codes.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 import { deleteMarketingContacts } from './test-marketing.js';
+import { orderLinkToken } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
 import { uniqueIds } from './unique-ids.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -120,8 +121,11 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     return /\/pay\/sandbox\/([\w-]+)$/.exec((res.body as CheckoutResponse).redirectUrl)![1];
   };
-  const orderOfTx = async (transactionId: string) =>
-    (await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } })).order;
+  /** The order of a payment, with `token`: its link token (stored sealed only, spec 9a.7). */
+  const orderOfTx = async (transactionId: string) => {
+    const { order } = await prisma.payment.findUniqueOrThrow({ where: { transactionId }, include: { order: true } });
+    return { ...order, token: await orderLinkToken(prisma, order.number) };
+  };
   const complete = (tx: string, outcome: 'success' | 'failure') =>
     http().post(`/api/payments/sandbox/${tx}/complete`).set('Origin', ORIGIN).send({ outcome, installments: 1 });
   const retry = (number: number, token: string) =>
@@ -237,8 +241,7 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     outbox = app.get(OutboxService);
     smsSpy = vi.spyOn(app.get<SmsProvider>(SMS_PROVIDER), 'sendSms');
@@ -528,15 +531,15 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     const failed = await orderOfTx(tx);
     expect(failed.personalCodeId).not.toBeNull();
     await prisma.order.update({ where: { id: failed.id }, data: { cartId: null } });
-    expect((await viewOf(failed.number, failed.publicToken)).canRetryPayment).toBe(true);
+    expect((await viewOf(failed.number, failed.token)).canRetryPayment).toBe(true);
 
     // Template off → refused; on again → the retry goes through.
     await prisma.promotion.update({ where: { id: t.id }, data: { active: false } });
-    expect((await retry(failed.number, failed.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await retry(failed.number, failed.token).expect(409)).body.code).toBe('promotion_ended');
     await prisma.promotion.update({ where: { id: t.id }, data: { active: true } });
     // Expired → refused.
     await prisma.personalCode.update({ where: { code }, data: { expiresAt: new Date(Date.now() - 1_000) } });
-    expect((await retry(failed.number, failed.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await retry(failed.number, failed.token).expect(409)).body.code).toBe('promotion_ended');
     await prisma.personalCode.update({ where: { code }, data: { expiresAt: new Date(Date.now() + DAY) } });
 
     // Another order of the account used it meanwhile → refused.
@@ -547,7 +550,7 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     expect((await prisma.personalCode.findUniqueOrThrow({ where: { code } })).orderId).toBe(
       (await orderOfTx(other)).id,
     );
-    expect((await retry(failed.number, failed.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await retry(failed.number, failed.token).expect(409)).body.code).toBe('promotion_ended');
   });
 
   it('retry: refused while another live order holds the code; a welcome code after a paid order', async () => {
@@ -565,7 +568,7 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     await b.add(lamp, 1);
     await b.apply(code).expect(200);
     const holding = txOf(await b.checkout());
-    expect((await retry(failed.number, failed.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await retry(failed.number, failed.token).expect(409)).body.code).toBe('promotion_ended');
     await complete(holding, 'failure').expect(200);
     // Released again: the failed order's retry would work, until the account pays an order without the code.
     const holdingOrder = await orderOfTx(holding);
@@ -573,7 +576,7 @@ describe('Personal codes (e2e, CLB-04, CLB-05, decisions 93–94)', () => {
     await b.add(lamp, 1);
     await b.agent.delete('/api/cart/coupon').set('Origin', ORIGIN).expect(200);
     await complete(txOf(await b.checkout()), 'success').expect(200);
-    expect((await retry(failed.number, failed.publicToken).expect(409)).body.code).toBe('promotion_ended');
+    expect((await retry(failed.number, failed.token).expect(409)).body.code).toBe('promotion_ended');
   });
 
   it('a late payment of an order whose code another paid order used is honored, and the code keeps its first use', async () => {

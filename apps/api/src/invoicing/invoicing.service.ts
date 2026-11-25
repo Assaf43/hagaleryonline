@@ -3,7 +3,7 @@ import type { InvoiceType as InvoiceTypeView } from '@hg/models';
 import { InvoiceType, PaymentStatus, Prisma, RefundStatus } from '../generated/prisma/client.js';
 import { StorageProvider } from '../media/storage.js';
 import { parseOrderNumber } from '../orders/order-number.js';
-import { tokenMatches } from '../orders/orders.service.js';
+import { ORDER_TOKEN_FIELDS, OrderTokens } from '../orders/order-token.js';
 import { OutboxService, type OutboxJobRow } from '../outbox/outbox.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { creditNoteLines, orderInvoiceLines } from './invoice-lines.js';
@@ -47,6 +47,7 @@ export class InvoicingService implements OnModuleInit {
     private readonly outbox: OutboxService,
     private readonly storage: StorageProvider,
     @Inject(INVOICE_PROVIDER) private readonly provider: InvoiceProvider,
+    private readonly tokens: OrderTokens,
   ) {}
 
   onModuleInit(): void {
@@ -196,8 +197,11 @@ export class InvoicingService implements OnModuleInit {
   async documentForCustomer(numberParam: string, token: string | undefined, id: string): Promise<InvoiceDocument> {
     const number = parseOrderNumber(numberParam);
     if (number === null || typeof token !== 'string' || !UUID.test(id)) throw notFound();
-    const order = await this.prisma.order.findUnique({ where: { number }, select: { id: true, publicToken: true } });
-    if (!order || !tokenMatches(token, order.publicToken)) throw notFound();
+    const order = await this.prisma.order.findUnique({
+      where: { number },
+      select: { id: true, ...ORDER_TOKEN_FIELDS },
+    });
+    if (!order || !this.tokens.matches(token, order)) throw notFound();
     const invoice = await this.prisma.invoice.findUnique({ where: { id }, select: { orderId: true, fileKey: true } });
     if (!invoice || invoice.orderId !== order.id) throw notFound();
     return this.read(invoice.fileKey);

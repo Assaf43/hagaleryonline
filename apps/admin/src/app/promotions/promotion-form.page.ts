@@ -35,6 +35,7 @@ import {
 import { ProductRelations } from '../catalog/product-relations';
 import { errorMessage } from '../core/errors';
 import { MAX_DATE, MIN_DATE } from '../core/israel-time';
+import { DateField } from '../shared/date-field';
 import { PromotionsApi } from '../core/promotions.api';
 import {
   FIELD_IDS,
@@ -69,7 +70,7 @@ type TextField =
  */
 @Component({
   selector: 'hga-promotion-form-page',
-  imports: [FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, ProductRelations],
+  imports: [DateField, FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, ProductRelations],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './promotion-form.page.html',
   styleUrl: './promotion-form.page.scss',

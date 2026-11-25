@@ -11,6 +11,7 @@ import { EMAIL_PROVIDER, type EmailProvider } from './../src/notifications/notif
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { sealedToken } from './order-token.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
 
@@ -41,10 +42,11 @@ describe('Notifications (e2e, CHK-07)', () => {
   const logs = (orderId: string) =>
     prisma.notificationLog.findMany({ where: { orderId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
 
-  const makeOrder = (key: string, status: OrderStatus) =>
-    prisma.order.create({
+  const makeOrder = async (key: string, status: OrderStatus) => ({
+    token: `zz-token-ntf-${key}`,
+    ...(await prisma.order.create({
       data: {
-        publicToken: `zz-token-ntf-${key}`,
+        ...sealedToken(`zz-token-ntf-${key}`),
         status,
         contact: { fullName: `ZZ ntf ${key}`, phone: '0501234567', email: 'zz@example.test' },
         address: {
@@ -91,7 +93,8 @@ describe('Notifications (e2e, CHK-07)', () => {
           ],
         },
       },
-    });
+    })),
+  });
   const webhook = (transactionId: string) => {
     const body = JSON.stringify({ transactionId, status: 'succeeded', amount: TOTAL, installments: 1 });
     return http()
@@ -145,13 +148,24 @@ describe('Notifications (e2e, CHK-07)', () => {
     expect(rows[0].providerMessageId).toMatch(/^mock_/);
     expect(rows[0].subject).toBe(`ההזמנה ${order.number} התקבלה`);
     expect(rows[0].body).toContain('dir="rtl"');
-    expect(rows[0].body).toContain(`${SITE}/order/${order.number}?t=${order.publicToken}`);
+    expect(rows[0].body).toContain(`${SITE}/order/${order.number}?t=${order.token}`);
     expect(rows[0].body).toContain('ZZ ALBA');
     expect(rows[0].body).toContain('החשבונית זמינה בעמוד ההזמנה.');
     // The full address is never stored outside the mock body.
     expect(rows[0].recipientMasked).not.toContain('zz@example.test');
     const job = await prisma.outboxJob.findUniqueOrThrow({ where: { dedupeKey: `email.order_paid:${order.id}` } });
     expect(job.state).toBe(OutboxJobState.DONE);
+  });
+
+  it('an order from before the sealed token (plain column only) gets the same link in its e-mails', async () => {
+    const order = await makeOrder('legacy', OrderStatus.PENDING_PAYMENT);
+    await prisma.$executeRaw`UPDATE orders SET public_token = ${order.token}, public_token_sealed = NULL
+      WHERE id = ${order.id}::uuid`;
+    await webhook('sbx_zz_ntf_legacy').expect(200);
+    await runJobs();
+    const [row] = await logs(order.id);
+    expect(row.template).toBe('order_paid');
+    expect(row.body).toContain(`${SITE}/order/${order.number}?t=${order.token}`);
   });
 
   it('shipped and delivered send status e-mails', async () => {

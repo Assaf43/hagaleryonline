@@ -5,3 +5,5 @@ coverage/
 apps/api/src/generated/
 package-lock.json
 .superpowers/
+# Test snapshots are written by the tests, byte for byte
+**/__snapshots__/

@@ -18,6 +18,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { CONTENT_LIMITS, type AdminBanner, type AdminContentImage } from '@hg/models';
 import { errorMessage } from '../core/errors';
 import { MAX_DATE, MIN_DATE } from '../core/israel-time';
+import { DateField } from '../shared/date-field';
 import { bannerInput, emptyBannerForm, toBannerForm, type BannerField, type BannerForm } from './banner-form';
 import { ContentImageField } from './content-image-field';
 import { ContentApi } from './content.api';
@@ -43,7 +44,7 @@ const SERVER_FIELDS: Record<string, BannerField> = {
  */
 @Component({
   selector: 'hga-banner-form-page',
-  imports: [FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, ContentImageField],
+  imports: [DateField, FormsModule, RouterLink, MatButtonModule, MatFormFieldModule, MatInputModule, ContentImageField],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './content.scss',
   template: `
@@ -170,36 +171,30 @@ const SERVER_FIELDS: Record<string, BannerField> = {
           <legend>תאריכים</legend>
           <p class="muted">שעון ישראל. מתחילת יום ההתחלה ועד סוף יום הסיום. ריק = בלי הגבלת תאריך.</p>
           <div class="date-grid">
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך התחלה</mat-label>
-              <input
-                matInput
-                type="date"
-                id="banner-start"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().startDate"
-                (ngModelChange)="set('startDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('startDate')"
-              />
-              <mat-error>{{ fe.all()['startDate'] }}</mat-error>
-            </mat-form-field>
-            <mat-form-field subscriptSizing="dynamic">
-              <mat-label>תאריך סיום</mat-label>
-              <input
-                matInput
-                type="date"
-                id="banner-end"
-                [min]="minDate"
-                [max]="maxDate"
-                [ngModel]="form().endDate"
-                (ngModelChange)="set('endDate', $event)"
-                [ngModelOptions]="{ standalone: true }"
-                [errorStateMatcher]="fe.matcher('endDate')"
-              />
-              <mat-error>{{ fe.all()['endDate'] }}</mat-error>
-            </mat-form-field>
+            <hga-date-field
+              label="תאריך התחלה"
+              inputId="banner-start"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().startDate"
+              (ngModelChange)="set('startDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('startDate')"
+              [errorText]="fe.all()['startDate'] ?? ''"
+            />
+            <hga-date-field
+              label="תאריך סיום"
+              inputId="banner-end"
+              subscriptSizing="dynamic"
+              [min]="minDate"
+              [max]="maxDate"
+              [ngModel]="form().endDate"
+              (ngModelChange)="set('endDate', $event)"
+              [ngModelOptions]="{ standalone: true }"
+              [errorStateMatcher]="fe.matcher('endDate')"
+              [errorText]="fe.all()['endDate'] ?? ''"
+            />
           </div>
         </fieldset>
 

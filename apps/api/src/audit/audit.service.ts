@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import type { AuditPage } from '@hg/models';
+import type { AuditAction, AuditEntityType, AuditPage } from '@hg/models';
 import { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -10,8 +10,8 @@ export const AUDIT_PAGE_SIZE = 50;
 
 export interface AuditRecord {
   actorId: number | null;
-  action: string;
-  entityType: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
   entityId?: string | number | null;
   before?: unknown;
   after?: unknown;

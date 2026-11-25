@@ -27,6 +27,7 @@ import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersAdminService } from './orders-admin.service.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import { OrderTokensModule } from './order-token.module.js';
 import { WriteThrottleModule } from './write-throttle.module.js';
 
 /**
@@ -46,6 +47,7 @@ import { WriteThrottleModule } from './write-throttle.module.js';
     WriteThrottleModule,
     OutboxModule,
     SupportModule,
+    OrderTokensModule,
   ],
   controllers: [
     DeliverySlotController,
@@ -75,6 +77,13 @@ import { WriteThrottleModule } from './write-throttle.module.js';
         }),
     },
   ],
-  exports: [PAYMENT_PROVIDER, PaymentsService, OrdersService, OrderLifecycleService, CheckoutService],
+  exports: [
+    PAYMENT_PROVIDER,
+    PaymentsService,
+    OrdersService,
+    OrderLifecycleService,
+    CheckoutService,
+    OrderTokensModule,
+  ],
 })
 export class OrdersModule {}

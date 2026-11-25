@@ -1,4 +1,3 @@
-import type { AddressInfo } from 'node:net';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
@@ -18,12 +17,22 @@ import { AppModule } from './../src/app.module.js';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
-import { FulfillmentMode, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
+import {
+  DiscountType,
+  FulfillmentMode,
+  OrderStatus,
+  PaymentStatus,
+  PromotionKind,
+  PromotionTarget,
+} from './../src/generated/prisma/client.js';
+import { sealOrderTokens } from './../src/orders/order-token.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { acceptAndSignIn, resetAdminData, type AdminBrowser } from './admin-session.js';
+import { orderLinkToken, testOrderTokens } from './order-token.js';
 import { deleteOrders } from './test-orders.js';
+import { listenSafe } from './listen-safe.js';
 
 const ORIGIN = 'http://localhost:4200';
 /** תל אביב - יפו: in no zone. */
@@ -139,13 +148,14 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     if (!match) throw new Error(`unexpected redirect ${redirectUrl}`);
     return match[1];
   };
-  const orderOfTx = async (transactionId: string) =>
-    (
-      await prisma.payment.findUniqueOrThrow({
-        where: { transactionId },
-        include: { order: { include: { items: true } } },
-      })
-    ).order;
+  /** The order of a payment, with `token`: its link token (stored sealed only, spec 9a.7). */
+  const orderOfTx = async (transactionId: string) => {
+    const { order } = await prisma.payment.findUniqueOrThrow({
+      where: { transactionId },
+      include: { order: { include: { items: true } } },
+    });
+    return { ...order, token: await orderLinkToken(prisma, order.number) };
+  };
   /** Checks out the browser's cart and returns the order with its payment's transaction id. */
   const placeOrder = async (b: ReturnType<typeof browser>, body = checkoutBody()) => {
     const tx = txOf(await b.checkout(body).expect(201));
@@ -181,8 +191,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true }));
-    await app.listen(0, '127.0.0.1');
-    process.env.API_INTERNAL_URL = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    process.env.API_INTERNAL_URL = await listenSafe(app);
     prisma = app.get(PrismaService);
     await cleanup();
 
@@ -260,7 +269,10 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
 
     expect(order.status).toBe(OrderStatus.PENDING_PAYMENT);
     expect(order.number).toBeGreaterThanOrEqual(100_001);
-    expect(order.publicToken).toMatch(/^[\w-]{40,}$/);
+    expect(order.token).toMatch(/^[\w-]{43}$/);
+    // Spec 9a.7: no plain token is stored, only the sealed value (which does not contain the token).
+    expect(order.publicToken).toBeNull();
+    expect(order.publicTokenSealed).not.toContain(order.token);
     expect(order.items).toEqual([
       expect.objectContaining({
         variantId: plenty,
@@ -308,7 +320,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     // The cart keeps its lines until the payment succeeds.
     expect((await b.cart()).lines.map((l) => l.quantity)).toEqual([2]);
 
-    const view = await viewOf(order.number, order.publicToken);
+    const view = await viewOf(order.number, order.token);
     expect(view).toMatchObject({
       number: order.number,
       status: 'pending_payment',
@@ -366,11 +378,12 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
   });
 
   it('after reservedUntil passes the unit is available again and the order reads expired', async () => {
-    const order = await prisma.order.findFirstOrThrow({ where: { items: { some: { variantId: last } } } });
+    const found = await prisma.order.findFirstOrThrow({ where: { items: { some: { variantId: last } } } });
+    const order = { ...found, token: await orderLinkToken(prisma, found.number) };
     await prisma.order.update({ where: { id: order.id }, data: { reservedUntil: new Date(Date.now() - 1_000) } });
 
     expect(await limitOf(last)).toBe(1);
-    const view = await viewOf(order.number, order.publicToken);
+    const view = await viewOf(order.number, order.token);
     expect(view.status).toBe('expired');
     expect(view.canRetryPayment).toBe(true);
 
@@ -378,9 +391,9 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     const c = browser();
     await c.add(last, 1);
     await placeOrder(c);
-    expect((await viewOf(order.number, order.publicToken)).canRetryPayment).toBe(false);
+    expect((await viewOf(order.number, order.token)).canRetryPayment).toBe(false);
     const retry = await http()
-      .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
+      .post(`/api/orders/${order.number}/retry-payment?t=${order.token}`)
       .set('Origin', ORIGIN)
       .expect(409);
     expect(retry.body).toEqual({ statusCode: 409, code: 'insufficient_stock', variantId: last, available: 0 });
@@ -408,7 +421,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
 
     const res = await complete(tx, 'success', 3).expect(200);
     expect(res.body as SandboxCompleteResponse).toEqual({
-      confirmationUrl: `/order/${order.number}?t=${order.publicToken}`,
+      confirmationUrl: `/order/${order.number}?t=${order.token}`,
     });
     const paid = await prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { payments: true } });
     expect(paid.status).toBe(OrderStatus.PAID);
@@ -417,7 +430,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     ]);
     expect(await stockOf(plenty)).toBe(stock - 3);
     expect((await b.cart()).lines).toEqual([]);
-    expect((await viewOf(order.number, order.publicToken)).status).toBe('paid');
+    expect((await viewOf(order.number, order.token)).status).toBe('paid');
 
     // The same webhook again (through the sandbox and directly): stock goes down once.
     await complete(tx, 'success', 3).expect(200);
@@ -432,7 +445,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(still.payments[0].status).toBe(PaymentStatus.SUCCEEDED);
     expect(await stockOf(plenty)).toBe(stock - 3);
     await http()
-      .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
+      .post(`/api/orders/${order.number}/retry-payment?t=${order.token}`)
       .set('Origin', ORIGIN)
       .expect(409)
       .expect((r) => expect(r.body.code).toBe('not_retryable'));
@@ -490,15 +503,15 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(after.status).toBe(OrderStatus.PAYMENT_FAILED);
     expect(after.payments[0].status).toBe(PaymentStatus.FAILED);
     expect(await limitOf(few)).toBe(2);
-    const view = await viewOf(order.number, order.publicToken);
+    const view = await viewOf(order.number, order.token);
     expect(view).toMatchObject({ status: 'payment_failed', canRetryPayment: true });
 
     // Retry needs the storefront origin and the right token.
-    await http().post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`).expect(403);
+    await http().post(`/api/orders/${order.number}/retry-payment?t=${order.token}`).expect(403);
     await http().post(`/api/orders/${order.number}/retry-payment?t=wrong`).set('Origin', ORIGIN).expect(404);
     const started = Date.now();
     const retry = await http()
-      .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
+      .post(`/api/orders/${order.number}/retry-payment?t=${order.token}`)
       .set('Origin', ORIGIN)
       .expect(201);
     const tx2 = txOf(retry);
@@ -509,10 +522,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(after.payments).toHaveLength(2);
     expect(await limitOf(few)).toBe(0);
     // A second retry while the new payment page is open is refused.
-    await http()
-      .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
-      .set('Origin', ORIGIN)
-      .expect(409);
+    await http().post(`/api/orders/${order.number}/retry-payment?t=${order.token}`).set('Origin', ORIGIN).expect(409);
 
     // A late failure of the first attempt does not touch the order that is waiting for the second.
     await signed({ transactionId: tx, status: 'cancelled', amount: order.total, installments: 1 }).expect(200);
@@ -575,9 +585,9 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     expect(await limitOf(few)).toBe(0);
 
     // The replaced order cannot be retried: the newer one is the one to pay.
-    expect((await viewOf(first.order.number, first.order.publicToken)).canRetryPayment).toBe(false);
+    expect((await viewOf(first.order.number, first.order.token)).canRetryPayment).toBe(false);
     const retry = await http()
-      .post(`/api/orders/${first.order.number}/retry-payment?t=${first.order.publicToken}`)
+      .post(`/api/orders/${first.order.number}/retry-payment?t=${first.order.token}`)
       .set('Origin', ORIGIN)
       .expect(409);
     expect(retry.body.code).toBe('superseded');
@@ -633,7 +643,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
     const paid = await prisma.order.findUniqueOrThrow({ where: { id: late.order.id } });
     expect(paid).toMatchObject({ status: OrderStatus.PAID, stockShortage: true });
     expect(await stockOf(oversell)).toBe(0);
-    expect((await viewOf(late.order.number, late.order.publicToken)).stockShortage).toBe(true);
+    expect((await viewOf(late.order.number, late.order.token)).stockShortage).toBe(true);
     expect((await prisma.order.findUniqueOrThrow({ where: { id: other.order.id } })).stockShortage).toBe(false);
   });
 
@@ -680,6 +690,95 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       expect(res.body).toMatchObject({ code: 'price_changed', total: 95_000 });
     } finally {
       await prisma.variant.update({ where: { id: plenty }, data: { price: 50_000 } });
+      await invalidateCatalog();
+    }
+  });
+
+  it('zero total refused on the website: a 100% coupon with free shipping → 422 zero_total, nothing left behind', async () => {
+    // Free shipping: a category whose delivery costs nothing (curbside, one unit, a locality in no zone).
+    const free = await prisma.category.create({
+      data: {
+        slug: 'zz-chk-free',
+        nameHe: 'בדיקת משלוח חינם',
+        shippingRate: { create: { deliveryPrice: 0, assemblyPrice: 0 } },
+      },
+    });
+    const product = await prisma.product.create({
+      data: {
+        slug: 'zz-chk-free-pouf',
+        modelName: 'ZZCHKFREE',
+        nameHe: 'פוף חינם',
+        categoryId: free.id,
+        variants: {
+          create: [
+            { sku: 'ZZCHK-FREE', price: 20_000, stock: 5, widthCm: 50, depthCm: 50, heightCm: 40, leadTimeDays: 7 },
+          ],
+        },
+      },
+      include: { variants: true },
+    });
+    const variant = product.variants[0].id;
+    const coupon = await prisma.promotion.create({
+      data: {
+        name: 'ZZ קופון מלא',
+        kind: PromotionKind.COUPON,
+        code: 'ZZFULL100',
+        discountType: DiscountType.PERCENT,
+        value: 100,
+        target: PromotionTarget.ORDER,
+      },
+    });
+    await invalidateCatalog();
+    try {
+      const b = browser();
+      await b.add(variant, 1);
+      await b.agent.post('/api/cart/coupon').set('Origin', ORIGIN).send({ code: 'ZZFULL100' }).expect(200);
+      const cart = await b.cart();
+      expect(cart.subtotal - (cart.discount?.amount ?? 0)).toBe(0);
+      const orders = await prisma.order.count();
+      const available = await limitOf(variant);
+
+      // The total the customer saw is 0 and matches: still refused, after the price check, before any write.
+      const res = await b.checkout({ ...checkoutBody(), expectedTotal: 0 }).expect(422);
+      expect(res.body).toEqual({ statusCode: 422, code: 'zero_total' });
+      // A wrong total still answers price_changed first (with the total, 0).
+      const wrong = await b.checkout({ ...checkoutBody(), expectedTotal: 1 }).expect(409);
+      expect(wrong.body).toMatchObject({ code: 'price_changed', total: 0 });
+      expect(await prisma.order.count()).toBe(orders);
+      expect(await limitOf(variant)).toBe(available);
+      expect(await prisma.promotion.findUniqueOrThrow({ where: { id: coupon.id } })).toMatchObject({ usedCount: 0 });
+      expect((await b.cart()).couponCode).toBe('ZZFULL100');
+
+      // One agora still goes through: shipping of 1 agora makes the total 1.
+      await prisma.shippingRate.update({ where: { categoryId: free.id }, data: { deliveryPrice: 1 } });
+      const { tx, order } = await placeOrder(b);
+      expect(order).toMatchObject({ total: 1, discount: 20_000, promotionId: coupon.id });
+
+      // Back to free shipping: a new checkout of the same cart is refused — and its rollback leaves the earlier
+      // pending order of this cart pending (the refused attempt expired nothing).
+      await prisma.shippingRate.update({ where: { categoryId: free.id }, data: { deliveryPrice: 0 } });
+      expect((await b.checkout({ ...checkoutBody(), expectedTotal: 0 }).expect(422)).body.code).toBe('zero_total');
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+        OrderStatus.PENDING_PAYMENT,
+      );
+
+      // A payment retry of the existing order (total 1) is not refused, although a new order would now be ₪0.
+      await complete(tx, 'failure').expect(200);
+      const retry = await http()
+        .post(`/api/orders/${order.number}/retry-payment?t=${order.token}`)
+        .set('Origin', ORIGIN)
+        .expect(201);
+      await complete(txOf(retry), 'success').expect(200);
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+        status: OrderStatus.PAID,
+        total: 1,
+      });
+    } finally {
+      await deleteOrders(prisma, { items: { some: { variantId: variant } } });
+      await prisma.cartItem.deleteMany({ where: { variantId: variant } });
+      await prisma.promotion.delete({ where: { id: coupon.id } });
+      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: free.id } });
       await invalidateCatalog();
     }
   });
@@ -763,7 +862,7 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       const { tx, order } = await placeOrder(b);
       await complete(tx, 'failure').expect(200);
       const [retry, again] = await Promise.all([
-        http().post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`).set('Origin', ORIGIN),
+        http().post(`/api/orders/${order.number}/retry-payment?t=${order.token}`).set('Origin', ORIGIN),
         b.checkout(checkoutBody()),
       ]);
       expect([retry.status, again.status]).not.toContain(500);
@@ -811,10 +910,87 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
 
   it('the confirmation needs the right token (404 otherwise)', async () => {
     const order = await prisma.order.findFirstOrThrow();
+    const token = await orderLinkToken(prisma, order.number);
+    await http().get(`/api/orders/${order.number}?t=${token}`).expect(200);
     await http().get(`/api/orders/${order.number}?t=wrong-token`).expect(404);
     await http().get(`/api/orders/${order.number}`).expect(404);
-    await http().get(`/api/orders/999999?t=${order.publicToken}`).expect(404);
-    await http().get(`/api/orders/abc?t=${order.publicToken}`).expect(404);
+    // The sealed value itself is not the token.
+    await http().get(`/api/orders/${order.number}`).query({ t: order.publicTokenSealed }).expect(404);
+    await http().get(`/api/orders/999999?t=${token}`).expect(404);
+    await http().get(`/api/orders/abc?t=${token}`).expect(404);
+  });
+
+  describe('order link token stored sealed (spec 9a.7, NFR-07)', () => {
+    const lookup = (number: number) =>
+      http()
+        .post('/api/orders/lookup')
+        .set('Origin', ORIGIN)
+        .send({ number: String(number), phone: '0501234567' });
+    const columns = async (id: string) =>
+      (
+        await prisma.$queryRaw<{ public_token: string | null; public_token_sealed: string | null }[]>`
+          SELECT public_token, public_token_sealed FROM orders WHERE id = ${id}::uuid`
+      )[0];
+
+    it('new order stores no plain token; its link opens the order, the lookup and the payment return', async () => {
+      const b = browser();
+      await b.add(plenty, 1);
+      const { tx, order } = await placeOrder(b);
+      const row = await columns(order.id);
+      expect(row.public_token).toBeNull();
+      expect(row.public_token_sealed).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+      expect(row.public_token_sealed).not.toContain(order.token);
+
+      expect((await viewOf(order.number, order.token)).number).toBe(order.number);
+      expect((await lookup(order.number).expect(200)).body).toEqual({ url: `/order/${order.number}?t=${order.token}` });
+      expect((await complete(tx, 'success').expect(200)).body).toEqual({
+        confirmationUrl: `/order/${order.number}?t=${order.token}`,
+      });
+    });
+
+    it('legacy plain token still works; sealed after the CLI, the same link works', async () => {
+      const b = browser();
+      await b.add(plenty, 1);
+      const { tx, order } = await placeOrder(b);
+      // An order placed before spec 9a.7: the plain column only.
+      const plain = `zz-legacy-${order.number}`;
+      await prisma.$executeRaw`UPDATE orders SET public_token = ${plain}, public_token_sealed = NULL
+        WHERE id = ${order.id}::uuid`;
+      const link = `/order/${order.number}?t=${plain}`;
+      expect((await viewOf(order.number, plain)).number).toBe(order.number);
+      await http().get(`/api/orders/${order.number}?t=${plain}x`).expect(404);
+      expect((await lookup(order.number).expect(200)).body).toEqual({ url: link });
+
+      // The CLI seals it: the plain column is cleared, the old link (e.g. in an e-mail already sent) still opens.
+      const before = await prisma.order.findUniqueOrThrow({ where: { id: order.id } });
+      expect(await sealOrderTokens(prisma, testOrderTokens())).toBeGreaterThanOrEqual(1);
+      const row = await columns(order.id);
+      expect(row.public_token).toBeNull();
+      expect(row.public_token_sealed).not.toContain(plain);
+      expect(testOrderTokens().reveal({ publicToken: null, publicTokenSealed: row.public_token_sealed })).toBe(plain);
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).updatedAt).toEqual(before.updatedAt);
+      expect((await viewOf(order.number, plain)).number).toBe(order.number);
+      await http().get(`/api/orders/${order.number}?t=${plain}x`).expect(404);
+      expect((await lookup(order.number).expect(200)).body).toEqual({ url: link });
+      // A payment page opened from the old link returns to it.
+      await complete(tx, 'failure').expect(200);
+      const retry = await http()
+        .post(`/api/orders/${order.number}/retry-payment?t=${plain}`)
+        .set('Origin', ORIGIN)
+        .expect(201);
+      expect((await complete(txOf(retry), 'success').expect(200)).body).toEqual({ confirmationUrl: link });
+
+      // Idempotent: nothing left to seal.
+      expect(await sealOrderTokens(prisma, testOrderTokens())).toBe(0);
+      expect(testOrderTokens().reveal(await prisma.order.findUniqueOrThrow({ where: { id: order.id } }))).toBe(plain);
+    });
+
+    it('the database refuses an order without any token', async () => {
+      const order = await prisma.order.findFirstOrThrow();
+      await expect(
+        prisma.$executeRaw`UPDATE orders SET public_token = NULL, public_token_sealed = NULL WHERE id = ${order.id}::uuid`,
+      ).rejects.toThrow(/orders_public_token_present/);
+    });
   });
 
   it('a product save and a checkout at once both finish (no deadlock)', async () => {

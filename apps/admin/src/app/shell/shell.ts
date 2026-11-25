@@ -1,5 +1,5 @@
 import { BreakpointObserver } from '@angular/cdk/layout';
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
@@ -42,6 +42,7 @@ import { BRAND } from '@hg/models';
 import type { Permission } from '@hg/models';
 import { ThemeToggle } from '@hg/ui';
 import { AuthService } from '../core/auth.service';
+import { IdleWatch } from '../core/idle-watch';
 import { SentMessagesApi } from '../core/sent-messages.api';
 import { NewCountBadge } from '../support/new-count-badge';
 import { ChangePasswordDialog } from './change-password.dialog';
@@ -108,6 +109,10 @@ export class Shell {
   protected readonly canSeeAudit = computed(() => this.can('audit.view'));
 
   constructor() {
+    // Warn before the idle logout (decision 53); a "remember this device" session has no limit and never warns.
+    const idle = inject(IdleWatch);
+    idle.start(this.auth.me()?.idleTimeoutMs ?? null);
+    inject(DestroyRef).onDestroy(() => idle.stop());
     // The sent-messages page exists only while both providers are mocks: ask once whether the endpoint answers.
     if (this.can('orders.manage')) void this.sentMessages.probe();
   }

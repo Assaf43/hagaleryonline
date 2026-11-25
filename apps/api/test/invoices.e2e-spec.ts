@@ -17,10 +17,12 @@ import {
 } from './../src/generated/prisma/client.js';
 import { InvoicingService } from './../src/invoicing/invoicing.service.js';
 import { israelDate } from './../src/invoicing/vat.js';
+import { sealOrderTokens } from './../src/orders/order-token.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
 import { resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import { sealedToken, testOrderTokens } from './order-token.js';
 import { deleteOrders, TEST_ORDERS } from './test-orders.js';
 
 const SECRET = process.env.PAYMENT_SANDBOX_SECRET ?? '';
@@ -67,10 +69,11 @@ describe('Invoices (e2e, CHK-08)', () => {
   const invoices = (orderId: string) =>
     prisma.invoice.findMany({ where: { orderId }, orderBy: [{ issuedAt: 'asc' }, { id: 'asc' }] });
 
-  const makeOrder = (key: string, status: OrderStatus, total = TOTAL) =>
-    prisma.order.create({
+  const makeOrder = async (key: string, status: OrderStatus, total = TOTAL) => ({
+    token: `zz-token-inv-${key}`,
+    ...(await prisma.order.create({
       data: {
-        publicToken: `zz-token-inv-${key}`,
+        ...sealedToken(`zz-token-inv-${key}`),
         status,
         contact: { fullName: `ZZ inv ${key} <b>`, phone: '0501234567', email: 'zz@example.test' },
         address: {
@@ -122,7 +125,8 @@ describe('Invoices (e2e, CHK-08)', () => {
           ],
         },
       },
-    });
+    })),
+  });
   const webhook = (transactionId: string, amount = TOTAL) => {
     const body = JSON.stringify({ transactionId, status: 'succeeded', amount, installments: 1 });
     return http()
@@ -387,7 +391,7 @@ describe('Invoices (e2e, CHK-08)', () => {
     await runJobs();
     const [invoice, note] = await invoices(order.id);
 
-    const view = (await http().get(`/api/orders/${order.number}`).query({ t: order.publicToken }).expect(200))
+    const view = (await http().get(`/api/orders/${order.number}`).query({ t: order.token }).expect(200))
       .body as OrderView;
     expect(view.invoices).toEqual([
       { id: invoice.id, type: 'tax_invoice_receipt', number: invoice.number, issuedAt: invoice.issuedAt.toISOString() },
@@ -395,7 +399,7 @@ describe('Invoices (e2e, CHK-08)', () => {
     ]);
 
     const url = `/api/orders/${order.number}/invoices/${invoice.id}`;
-    const res = await http().get(url).query({ t: order.publicToken }).expect(200);
+    const res = await http().get(url).query({ t: order.token }).expect(200);
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(res.headers['content-disposition']).toBe('inline');
     expect(res.headers['cache-control']).toBe('private, no-store');
@@ -411,16 +415,34 @@ describe('Invoices (e2e, CHK-08)', () => {
     // Another order's token, or this order's token with another order's invoice.
     const other = await paidOrder('doc-other');
     const otherInvoice = (await invoices(other.id))[0];
-    await http().get(url).query({ t: other.publicToken }).expect(404);
-    await http()
-      .get(`/api/orders/${order.number}/invoices/${otherInvoice.id}`)
-      .query({ t: order.publicToken })
-      .expect(404);
-    await http().get(`/api/orders/${order.number}/invoices/${NO_ID}`).query({ t: order.publicToken }).expect(404);
-    await http().get(`/api/orders/${order.number}/invoices/not-a-uuid`).query({ t: order.publicToken }).expect(404);
+    await http().get(url).query({ t: other.token }).expect(404);
+    await http().get(`/api/orders/${order.number}/invoices/${otherInvoice.id}`).query({ t: order.token }).expect(404);
+    await http().get(`/api/orders/${order.number}/invoices/${NO_ID}`).query({ t: order.token }).expect(404);
+    await http().get(`/api/orders/${order.number}/invoices/not-a-uuid`).query({ t: order.token }).expect(404);
     // The private folder is never served as media.
     await http().get(`/media/invoices/${invoice.number}.html`).expect(404);
     await http().get(`/media/private/invoices/${invoice.number}.html`).expect(404);
+  });
+
+  it('an order link from before the sealed token (plain column only) opens its document, also after seal-order-tokens', async () => {
+    const order = await paidOrder('legacy');
+    const [invoice] = await invoices(order.id);
+    await prisma.$executeRaw`UPDATE orders SET public_token = ${order.token}, public_token_sealed = NULL
+      WHERE id = ${order.id}::uuid`;
+    const url = `/api/orders/${order.number}/invoices/${invoice.id}`;
+    await http().get(url).query({ t: order.token }).expect(200);
+    await http()
+      .get(url)
+      .query({ t: `${order.token}x` })
+      .expect(404);
+
+    expect(await sealOrderTokens(prisma, testOrderTokens())).toBeGreaterThanOrEqual(1);
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ publicToken: null });
+    await http().get(url).query({ t: order.token }).expect(200);
+    await http()
+      .get(url)
+      .query({ t: `${order.token}x` })
+      .expect(404);
   });
 
   it('staff open a document with invoices.export only; the order detail lists the documents', async () => {

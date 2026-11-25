@@ -19,6 +19,7 @@ import {
 import { formatAmount, formatPrice } from '../catalog/catalog-format';
 import { AuthService } from '../core/auth.service';
 import { errorMessage } from '../core/errors';
+import { isoDayLabel } from '../core/israel-time';
 import { OrdersApi } from '../core/orders.api';
 import { CancelDialog, type CancelDialogData } from './cancel-dialog';
 import { ConfirmDialog, type ConfirmDialogData } from './confirm-dialog';
@@ -67,6 +68,7 @@ export class OrderDetailPage {
   protected readonly installmentsLabel = (n: number) => (n === 1 ? 'תשלום אחד' : `${n} תשלומים`);
   protected readonly statusLabels = ORDER_STATUS_LABELS_HE;
   protected readonly slotStateLabels = DELIVERY_SLOT_STATE_LABELS_HE;
+  protected readonly dayLabel = isoDayLabel;
   /** The customer's wording, so staff and customer name the method the same way. */
   protected readonly methodLabels = SHIPPING_METHOD_LABELS_HE;
   protected readonly paymentLabels = PAYMENT_LABELS;
@@ -97,24 +99,24 @@ export class OrderDetailPage {
   }
 
   /**
-   * Moving to `delivered` (final) or more than one step at once (`nextStatuses` is in flow order, so any target but
-   * the first skips a step) asks first; ordinary one-step moves stay one click.
+   * Every status move asks first (a move cannot be undone, and a skipped step is covered by the same question).
+   * `delivery_scheduled` is the exception: its slot dialog is already the confirmation. Moves to `shipped` or
+   * `delivered` also tell the admin that the customer gets an e-mail.
    */
   protected advance(o: AdminOrderDetail, to: OrderStatus) {
-    const go = () => {
-      if (to === 'delivery_scheduled') this.openSlot(o);
-      else void this.run(() => this.api.advance(o.number, { to }));
-    };
-    if (to !== 'delivered' && o.nextStatuses.indexOf(to) <= 0) return go();
+    if (to === 'delivery_scheduled') return this.openSlot(o);
+    const mailNote = to === 'shipped' || to === 'delivered' ? ' הלקוח יקבל על כך מייל.' : '';
     this.dialog
       .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
-        data: { message: `להעביר את ההזמנה לסטטוס "${this.statusLabels[to]}"? אי אפשר לחזור אחורה.` },
+        data: {
+          message: `להעביר את ההזמנה לסטטוס "${this.statusLabels[to]}"? אי אפשר לחזור אחורה.${mailNote}`,
+        },
         width: '28rem',
         maxWidth: '95vw',
       })
       .afterClosed()
       .subscribe((yes) => {
-        if (yes === true) go();
+        if (yes === true) void this.run(() => this.api.advance(o.number, { to }));
       });
   }
 

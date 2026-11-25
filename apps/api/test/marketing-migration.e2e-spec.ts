@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { AppModule } from './../src/app.module.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { deleteMarketingContacts } from './test-marketing.js';
 
 // Phase 7 §5.3: consent lives in `marketing_contacts` with an append-only history; the customer columns are gone.
 describe('Marketing tables (e2e, CLB-02, decision 95)', () => {
@@ -39,5 +40,35 @@ describe('Marketing tables (e2e, CLB-02, decision 95)', () => {
     expect(
       indexes.some((i) => i.tablename === 'marketing_consent_events' && i.indexdef.includes('(contact_id, at)')),
     ).toBe(true);
+  });
+  it('consent rows cannot be updated or deleted, except inside the erase flag', async () => {
+    const email = 'append-only@marketing-migration.example.test';
+    const contact = await prisma.marketingContact.create({
+      data: { email, status: 'PENDING', source: 'NEWSLETTER', unsubscribeTokenHash: 'append-only-test-hash' },
+    });
+    try {
+      const event = await prisma.marketingConsentEvent.create({
+        data: { contactId: contact.id, action: 'REQUESTED', source: 'NEWSLETTER' },
+      });
+      await expect(
+        prisma.$executeRaw`UPDATE marketing_consent_events SET action = 'withdrawn' WHERE id = ${event.id}`,
+      ).rejects.toThrow(/marketing_consent_events is append-only/);
+      await expect(prisma.$executeRaw`DELETE FROM marketing_consent_events WHERE id = ${event.id}`).rejects.toThrow(
+        /marketing_consent_events is append-only/,
+      );
+      expect(await prisma.marketingConsentEvent.count({ where: { id: event.id } })).toBe(1);
+
+      // INSERT still works.
+      await prisma.marketingConsentEvent.create({ data: { contactId: contact.id, action: 'CONFIRMED' } });
+
+      // Inside a transaction with the flag set, DELETE works.
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('hg.consent_erase', 'on', true)`;
+        await tx.marketingConsentEvent.deleteMany({ where: { contactId: contact.id } });
+      });
+      expect(await prisma.marketingConsentEvent.count({ where: { contactId: contact.id } })).toBe(0);
+    } finally {
+      await deleteMarketingContacts(prisma, { email });
+    }
   });
 });

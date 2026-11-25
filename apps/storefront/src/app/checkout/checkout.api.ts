@@ -130,6 +130,8 @@ export function checkoutErrorMessage(code: ApiErrorCode | null): string {
       return 'הסל השתנה בזמן ההזמנה. בדקו את הסיכום ונסו שוב.';
     case 'price_changed':
       return 'המחיר השתנה מאז שהצגנו אותו. בדקו את הסיכום ונסו שוב.';
+    case 'zero_total':
+      return 'לא ניתן להשלים הזמנה בסכום 0 ₪. לשאלות פנו לשירות הלקוחות.';
     case 'coupon_invalid':
       return 'הקופון כבר לא בתוקף. בדקו את הסיכום ונסו שוב.';
     case 'promotion_ended':
