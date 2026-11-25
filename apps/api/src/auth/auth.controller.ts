@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Res, UseGuards } from '@nestjs/common';
 import type { CookieOptions, Response } from 'express';
 import type { AdminMe, LoginResponse, RecoveryCodes, TotpSetup } from '@hg/models';
-import { ADMIN_API_PATH, AuthConfig, SESSION_COOKIE, TRUSTED_SESSION_MS } from './auth.config.js';
+import { AuthConfig, SESSION_COOKIE, adminCookieOptions } from './auth.config.js';
 import { AuthService, type RequestMeta } from './auth.service.js';
 import { bool, optionalStr, str } from './body.js';
 import {
@@ -114,14 +114,7 @@ export class AuthController {
   }
 
   private cookieOptions(remember: boolean): CookieOptions {
-    return {
-      httpOnly: true,
-      secure: this.config.cookieSecure,
-      sameSite: 'strict',
-      path: ADMIN_API_PATH,
-      // Without "remember", a browser-session cookie; the server still enforces the 8 h idle limit.
-      ...(remember ? { maxAge: TRUSTED_SESSION_MS } : {}),
-    };
+    return adminCookieOptions(this.config, remember);
   }
 }
 
