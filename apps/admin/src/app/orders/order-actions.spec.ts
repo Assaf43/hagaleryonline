@@ -384,9 +384,14 @@ describe('order detail actions', () => {
     }
   });
 
-  it('advances directly for an ordinary status and opens the slot form for delivery_scheduled', async () => {
+  it('asks before an ordinary move, then saves; delivery_scheduled opens only the slot form', async () => {
     const fixture = await mount(['orders.manage']);
+    const first = vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
     buttons(fixture, 'button.advance')[0].click();
+    expect(first.mock.calls[0][0]).toBe(ConfirmDialog);
+    expect(first.mock.calls[0][1]?.data).toEqual({
+      message: 'להעביר את ההזמנה לסטטוס "בהכנה"? אי אפשר לחזור אחורה.',
+    });
     http
       .expectOne('/api/admin/orders/100002/status')
       .flush({ ...DETAIL, status: 'processing', nextStatuses: ['shipped'] });
@@ -417,12 +422,21 @@ describe('order detail actions', () => {
     buttons(fixture, 'button.advance')[3].click(); // delivered
     expect(open).toHaveBeenCalledTimes(1);
     expect(open.mock.calls[0][0]).toBe(ConfirmDialog);
-    expect(open.mock.calls[0][1]?.data).toEqual({ message: 'להעביר את ההזמנה לסטטוס "סופקה"? אי אפשר לחזור אחורה.' });
+    expect(open.mock.calls[0][1]?.data).toEqual({
+      message: 'להעביר את ההזמנה לסטטוס "סופקה"? אי אפשר לחזור אחורה. הלקוח יקבל על כך מייל.',
+    });
     http.expectNone('/api/admin/orders/100002/status');
 
     buttons(fixture, 'button.advance')[2].click(); // shipped: skips two steps
-    expect(open.mock.calls[1][1]?.data).toEqual({ message: 'להעביר את ההזמנה לסטטוס "במשלוח"? אי אפשר לחזור אחורה.' });
+    expect(open.mock.calls[1][1]?.data).toEqual({
+      message: 'להעביר את ההזמנה לסטטוס "במשלוח"? אי אפשר לחזור אחורה. הלקוח יקבל על כך מייל.',
+    });
     http.expectNone('/api/admin/orders/100002/status');
+
+    buttons(fixture, 'button.advance')[0].click(); // processing: asks, nothing sent on cancel
+    expect(open.mock.calls[2][0]).toBe(ConfirmDialog);
+    http.expectNone('/api/admin/orders/100002/status');
+    open.mockClear();
 
     answer.value = true;
     buttons(fixture, 'button.advance')[3].click();
@@ -433,18 +447,19 @@ describe('order detail actions', () => {
     expect(buttons(fixture, 'button.advance')).toHaveLength(0);
   });
 
-  it('skipping to delivery_scheduled asks first, then opens the slot form', async () => {
+  it('skipping to delivery_scheduled opens only the slot form (it is the confirmation)', async () => {
     const fixture = await mount(['orders.manage']);
     const open = vi
       .spyOn(TestBed.inject(MatDialog), 'open')
-      .mockImplementation(() => ({ afterClosed: () => of(open.mock.calls.length === 1 ? true : undefined) }) as never);
+      .mockReturnValue({ afterClosed: () => of(undefined) } as never);
     buttons(fixture, 'button.advance')[1].click(); // paid → delivery_scheduled skips processing
-    expect(open.mock.calls.map((c) => c[0])).toEqual([ConfirmDialog, SlotDialog]);
+    expect(open.mock.calls.map((c) => c[0])).toEqual([SlotDialog]);
   });
 
   it('after 409 invalid_transition the order is reloaded so the buttons match its real status', async () => {
     const fixture = await mount(['orders.manage']);
-    buttons(fixture, 'button.advance')[0].click(); // processing: one step, no question
+    vi.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
+    buttons(fixture, 'button.advance')[0].click(); // processing: confirmed
     http
       .expectOne('/api/admin/orders/100002/status')
       .flush({ code: 'invalid_transition' }, { status: 409, statusText: 'Conflict' });
