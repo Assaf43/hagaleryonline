@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  AuditAction,
+  AuditEntityType,
   AdminAnnouncement,
   AdminAnnouncementInput,
   AdminFaqGroup,
@@ -290,8 +292,8 @@ export class ContentAdminService {
   private record(
     tx: Tx,
     meta: Meta,
-    action: string,
-    entityType: string,
+    action: AuditAction,
+    entityType: AuditEntityType,
     entityId: number,
     before: AuditView | null,
     after: AuditView | null,

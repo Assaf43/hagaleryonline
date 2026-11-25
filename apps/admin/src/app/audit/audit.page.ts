@@ -1,95 +1,15 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
-import type { AuditEntry, AuditPage } from '@hg/models';
+import {
+  AUDIT_ACTION_LABELS,
+  AUDIT_ENTITY_LABELS,
+  ORDER_STATUS_LABELS_HE,
+  type AuditEntry,
+  type AuditPage,
+} from '@hg/models';
 import { errorMessage } from '../core/errors';
 import { UsersApi } from '../core/users.api';
-
-const ACTIONS: Record<string, string> = {
-  'auth.login': 'התחברות',
-  'auth.2fa_enabled': 'הפעלת אימות דו-שלבי',
-  'auth.password_changed': 'החלפת סיסמה',
-  'auth.password_reset': 'בחירת סיסמה חדשה מקישור איפוס',
-  'auth.logout_all': 'יציאה מכל המכשירים',
-  'user.create': 'יצירת משתמש',
-  'user.create_super_admin': 'יצירת ה-Super Admin',
-  'user.update': 'עדכון משתמש',
-  'user.invite_accepted': 'הצטרפות מקישור הזמנה',
-  'user.invite_link': 'קישור הזמנה חדש',
-  'user.password_reset_link': 'קישור לאיפוס סיסמה',
-  'user.2fa_reset': 'איפוס אימות דו-שלבי',
-  'user.sessions_revoked': 'ניתוק כל ההתחברויות',
-  'product.create': 'יצירת מוצר',
-  'product.update': 'עדכון מוצר',
-  'product.delete': 'מחיקת מוצר לצמיתות',
-  'variant.create': 'הוספת וריאנט',
-  'variant.update': 'עדכון וריאנט',
-  'variant.delete': 'מחיקת וריאנט',
-  'image.create': 'העלאת תמונה',
-  'image.update': 'עדכון תמונה',
-  'image.reorder': 'שינוי סדר התמונות',
-  'image.delete': 'מחיקת תמונה',
-  'category.create': 'יצירת קטגוריה',
-  'category.update': 'עדכון קטגוריה',
-  'room.create': 'יצירת חדר',
-  'room.update': 'עדכון חדר',
-  'attribute.create': 'יצירת רשימת ערכים',
-  'attribute.update': 'עדכון רשימת ערכים',
-  'attribute_value.create': 'הוספת ערך לרשימה',
-  'attribute_value.update': 'עדכון ערך ברשימה',
-  'attribute_value.delete': 'מחיקת ערך מרשימה',
-  'synonym.create': 'הוספת מילים נרדפות',
-  'synonym.update': 'עדכון מילים נרדפות',
-  'synonym.delete': 'מחיקת מילים נרדפות',
-  'shipping.rates.update': 'עדכון מחירון המשלוחים',
-  'shipping_zone.create': 'יצירת אזור משלוח',
-  'shipping_zone.update': 'עדכון אזור משלוח',
-  'shipping_zone.delete': 'מחיקת אזור משלוח',
-  'promotion.create': 'יצירת מבצע',
-  'promotion.update': 'עדכון מבצע',
-  'promotion.deactivate': 'השבתת מבצע',
-  'content.site.update': 'עדכון פרטי האתר',
-  'content.announcement.create': 'יצירת הודעה',
-  'content.announcement.update': 'עדכון הודעה',
-  'content.announcement.delete': 'מחיקת הודעה',
-  'content.page.create': 'יצירת עמוד מידע',
-  'content.page.update': 'עדכון עמוד מידע',
-  'content.page.delete': 'מחיקת עמוד מידע',
-  'content.faq.create': 'יצירת קבוצת שאלות',
-  'content.faq.update': 'עדכון קבוצת שאלות',
-  'content.faq.delete': 'מחיקת קבוצת שאלות',
-  'content.image.create': 'העלאת תמונת תוכן',
-  'content.banner.create': 'יצירת באנר',
-  'content.banner.update': 'עדכון באנר',
-  'content.banner.delete': 'מחיקת באנר',
-  'content.home.update': 'עדכון דף הבית',
-  'content.landing.create': 'יצירת עמוד נחיתה',
-  'content.landing.update': 'עדכון עמוד נחיתה',
-  'content.landing.delete': 'מחיקת עמוד נחיתה',
-  'content.landing.preview': 'קישור לתצוגה מקדימה',
-};
-
-const ENTITIES: Record<string, string> = {
-  admin_user: 'משתמש',
-  product: 'מוצר',
-  variant: 'וריאנט',
-  category: 'קטגוריה',
-  room: 'חדר',
-  attribute: 'רשימה',
-  attribute_value: 'ערך',
-  synonym: 'מילים נרדפות',
-  shipping: 'מחירון משלוחים',
-  shipping_zone: 'אזור משלוח',
-  promotion: 'מבצע',
-  site_content: 'פרטי האתר',
-  announcement: 'הודעה',
-  info_page: 'עמוד מידע',
-  faq_group: 'קבוצת שאלות',
-  banner: 'באנר',
-  content_image: 'תמונת תוכן',
-  home_page: 'דף הבית',
-  landing_page: 'עמוד נחיתה',
-};
 
 /** Entries recorded readable as they are: Hebrew keys and display values (shipping price list, zones, promotions). */
 const READABLE = new Set([
@@ -163,6 +83,7 @@ const FIELDS: Record<string, string> = {
   kind: 'סוג תמונה',
   altHe: 'תיאור התמונה',
   order: 'סדר התמונות',
+  slot: 'חלון אספקה',
 };
 
 /** Who changed what and when (ADM-11, decision 54). */
@@ -184,7 +105,9 @@ const FIELDS: Record<string, string> = {
           <li class="audit-item">
             <p class="audit-head">
               <strong>{{ actionLabel(entry.action) }}</strong>
-              <span class="muted">{{ entry.createdAt | date: 'd.M.yyyy HH:mm' }}</span>
+              <span class="muted"
+                ><bdi>{{ entry.createdAt | date: 'd.M.yyyy HH:mm' }}</bdi></span
+              >
             </p>
             <p class="muted">
               {{ entry.actor ? 'על ידי ' + entry.actor.name : 'פעולת מערכת' }}
@@ -195,8 +118,14 @@ const FIELDS: Record<string, string> = {
             </p>
             @for (change of changes(entry); track change.field) {
               <p class="audit-change">
-                {{ change.label }}: <span class="before">{{ change.before }}</span> ←
-                <span class="after">{{ change.after }}</span>
+                {{ change.label }}:
+                <span class="before"
+                  ><bdi>{{ change.before }}</bdi></span
+                >
+                ←
+                <span class="after"
+                  ><bdi>{{ change.after }}</bdi></span
+                >
               </p>
             }
           </li>
@@ -281,11 +210,11 @@ export class AuditPageComponent implements OnInit {
   }
 
   entityLabel(type: string): string {
-    return ENTITIES[type] ?? type;
+    return (AUDIT_ENTITY_LABELS as Record<string, string>)[type] ?? type;
   }
 
   actionLabel(action: string): string {
-    return ACTIONS[action] ?? action;
+    return (AUDIT_ACTION_LABELS as Record<string, string>)[action] ?? action;
   }
 
   pages(d: AuditPage): number {
@@ -311,14 +240,19 @@ export class AuditPageComponent implements OnInit {
       .map((field) => ({
         field,
         label: FIELDS[field],
-        before: show(field, before[field]),
-        after: show(field, after[field]),
+        before: show(field, before[field], entry.entityType),
+        after: show(field, after[field], entry.entityType),
       }));
   }
 }
 
-function show(field: string, value: unknown): string {
+function show(field: string, value: unknown, entityType?: string): string {
   if (value == null || value === '') return '—';
+  // An order's status is recorded as its code; show the name the orders screen uses.
+  if (entityType === 'order' && field === 'status' && typeof value === 'string') {
+    return (ORDER_STATUS_LABELS_HE as Record<string, string>)[value] ?? value;
+  }
+  if (field === 'slot' && typeof value === 'object') return slotText(value as Record<string, unknown>);
   if (MONEY.has(field) && typeof value === 'number') return ILS.format(value / 100);
   // A description is HTML and can be long: say it changed rather than print it.
   if (field === 'descriptionHe' || field === 'תוכן' || field === 'טקסט משלוח' || /^תשובה \d+$/.test(field)) {
@@ -334,4 +268,10 @@ function show(field: string, value: unknown): string {
     );
   }
   return String(value);
+}
+
+/** "2026-11-17 09:00–13:00" (+ the note, when there is one). */
+function slotText(slot: Record<string, unknown>): string {
+  const text = `${slot['date'] ?? ''} ${slot['windowFrom'] ?? ''}–${slot['windowTo'] ?? ''}`.trim();
+  return slot['note'] ? `${text} (${String(slot['note'])})` : text;
 }

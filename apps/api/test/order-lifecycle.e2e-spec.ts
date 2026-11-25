@@ -225,6 +225,15 @@ describe('Order lifecycle (e2e, ADM-04, SRV-01)', () => {
     const slots = await prisma.deliverySlot.findMany({ where: { orderId: order.id }, orderBy: { id: 'asc' } });
     expect(slots.map((s) => s.state)).toEqual(['SUPERSEDED', 'PROPOSED']);
     expect(slots[1].note).toBe('נא להתקשר');
+    // The audit row of the slot-only change keeps the status on both sides and the new slot.
+    const audit = await prisma.auditLog.findMany({
+      where: { action: 'order.status', entityId: String(n) },
+      orderBy: { id: 'asc' },
+    });
+    expect(audit.at(-1)).toMatchObject({
+      before: { status: 'delivery_scheduled' },
+      after: { status: 'delivery_scheduled', slot: { windowFrom: '14:00', windowTo: '18:00', note: 'נא להתקשר' } },
+    });
     // The customer's view shows the live slot.
     expect((await view(n, order.token)).deliverySlot).toMatchObject({ date: israelDate(4), windowFrom: '14:00' });
     // A later status keeps the slot; only delivery_scheduled → delivery_scheduled with a slot is a slot change.

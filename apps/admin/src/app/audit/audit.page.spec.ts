@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { AuditEntry, AuditPage } from '@hg/models';
+import { AUDIT_ACTION_LABELS, AUDIT_ENTITY_LABELS, type AuditEntry, type AuditPage } from '@hg/models';
 import { UsersApi } from '../core/users.api';
 import { AuditPageComponent } from './audit.page';
 
@@ -74,5 +74,62 @@ describe('AuditPageComponent', () => {
     expect(el.textContent).toContain('עדכון עמוד מידע');
     expect(el.textContent).toContain('עמוד מידע');
     expect(changes(el)).toEqual(['כותרת: משלוחים ← משלוחים והחזרות', 'תוכן: (טקסט) ← (טקסט)']);
+  });
+
+  it('shows an order cancel in Hebrew and an unknown old action as it is', async () => {
+    const el = await render([
+      entry({ id: 1, action: 'order.cancel', entityType: 'order', entityId: '100008' }),
+      entry({ id: 2, action: 'legacy.thing', entityType: 'legacy_entity', entityId: '5' }),
+    ]);
+    expect(el.textContent).toContain('ביטול הזמנה');
+    expect(el.textContent).toContain('הזמנה: #100008');
+    expect(el.textContent).toContain('legacy.thing');
+    expect(el.textContent).toContain('legacy_entity');
+  });
+
+  it('shows an order status move before and after, with the Hebrew status names', async () => {
+    const el = await render([
+      entry({
+        action: 'order.status',
+        entityType: 'order',
+        entityId: '100008',
+        before: { status: 'paid' },
+        after: { status: 'processing' },
+      }),
+    ]);
+    expect(el.textContent).toContain('שינוי סטטוס הזמנה');
+    expect(changes(el)).toEqual(['מצב: שולמה ← בהכנה']);
+  });
+
+  it('shows the delivery slot of a move to delivery scheduled, and a slot-only change', async () => {
+    const el = await render([
+      entry({
+        id: 1,
+        action: 'order.status',
+        entityType: 'order',
+        entityId: '100008',
+        before: { status: 'processing' },
+        after: { status: 'delivery_scheduled', slot: { date: '2026-11-17', windowFrom: '09:00', windowTo: '13:00' } },
+      }),
+      entry({
+        id: 2,
+        action: 'order.status',
+        entityType: 'order',
+        entityId: '100008',
+        before: { status: 'delivery_scheduled' },
+        after: { status: 'delivery_scheduled', slot: { date: '2026-11-18', windowFrom: '10:00', windowTo: '12:00' } },
+      }),
+    ]);
+    expect(changes(el)).toEqual([
+      'מצב: בהכנה ← אספקה מתואמת',
+      'חלון אספקה: — ← 2026-11-17 09:00–13:00',
+      'חלון אספקה: — ← 2026-11-18 10:00–12:00',
+    ]);
+  });
+
+  it('has a Hebrew label for every audit action and entity type', () => {
+    for (const label of [...Object.values(AUDIT_ACTION_LABELS), ...Object.values(AUDIT_ENTITY_LABELS)]) {
+      expect(label).toMatch(/[א-ת]/);
+    }
   });
 });
