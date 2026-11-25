@@ -90,5 +90,6 @@ describe('ISO day helpers', () => {
     expect(toIsoDay(fromIsoDay('2026-12-03')!)).toBe('2026-12-03');
     expect(fromIsoDay('2026-02-31')).toBeNull();
     expect(fromIsoDay('')).toBeNull();
+    expect(toIsoDay(new Date(new Date(2000, 0, 5).setFullYear(5)))).toBe('0005-01-05');
   });
 });

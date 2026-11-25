@@ -27,7 +27,7 @@ const READABLE = new Set([
 ]);
 
 /** Prices are stored in agorot; show them in shekels. */
-const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice']);
+const MONEY = new Set(['price', 'compareAtPrice', 'memberPrice', 'refundAmount']);
 const ILS = new Intl.NumberFormat('he-IL', {
   style: 'currency',
   currency: 'ILS',
@@ -37,6 +37,9 @@ const ILS = new Intl.NumberFormat('he-IL', {
 
 const FIELDS: Record<string, string> = {
   name: 'שם',
+  reason: 'סיבת ביטול',
+  refund: 'החזר כספי',
+  refundAmount: 'סכום החזר',
   email: 'אימייל',
   status: 'מצב',
   template: 'תבנית',
@@ -251,6 +254,9 @@ function show(field: string, value: unknown, entityType?: string): string {
   // An order's status is recorded as its code; show the name the orders screen uses.
   if (entityType === 'order' && field === 'status' && typeof value === 'string') {
     return (ORDER_STATUS_LABELS_HE as Record<string, string>)[value] ?? value;
+  }
+  if (field === 'refund' && typeof value === 'string') {
+    return ({ full: 'מלא', partial: 'חלקי', none: 'ללא' } as Record<string, string>)[value] ?? value;
   }
   if (field === 'slot' && typeof value === 'object') return slotText(value as Record<string, unknown>);
   if (MONEY.has(field) && typeof value === 'number') return ILS.format(value / 100);

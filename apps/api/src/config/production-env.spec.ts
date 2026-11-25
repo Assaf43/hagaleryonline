@@ -137,6 +137,13 @@ describe('checkProductionEnv (spec 9a.3)', () => {
     ]);
   });
 
+  it('refuses a DATABASE_URL with the development password, never printing it', () => {
+    const env = { ...validEnv(), DATABASE_URL: 'postgresql://app:hagalery_dev@db:5432/nesto' };
+    const lines = checkProductionEnv(env);
+    expect(lines).toEqual(['DATABASE_URL: uses the development password']);
+    expect(lines.join()).not.toContain('hagalery_dev');
+  });
+
   it('refuses two secrets or keys with the same value', () => {
     const shared = key32();
     const env = { ...validEnv(), OTP_PEPPER: shared, TOTP_ENCRYPTION_KEY: shared, ORDER_TOKEN_KEY: shared };

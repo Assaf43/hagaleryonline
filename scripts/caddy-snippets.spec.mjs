@@ -37,7 +37,7 @@ describe('admin-headers.caddy', () => {
     expect(text).toContain("Content-Security-Policy \"default-src 'self'; script-src 'self';");
     expect(text).toContain("img-src 'self' data: blob:");
     expect(text).toContain("connect-src 'self'");
-    expect(text).toContain("base-uri 'none'");
+    expect(text).toContain("base-uri 'self'");
     expect(text).toContain("object-src 'none'");
     expect(text).toContain("form-action 'self'");
     expect(text).toMatch(/X-Content-Type-Options\s+nosniff/);

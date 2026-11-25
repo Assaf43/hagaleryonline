@@ -28,6 +28,7 @@ export class IsraelDateAdapter extends NativeDateAdapter {
     if (!m) return this.invalid();
     const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
     // Built directly: createDate throws for a day the month does not have, and typed text may be anything.
+    if (year < 1900) return this.invalid();
     const date = new Date(year, month - 1, day);
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
       ? date

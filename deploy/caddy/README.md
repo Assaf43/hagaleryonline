@@ -57,6 +57,9 @@ head -c 70000 /dev/zero | curl -s -o /dev/null -w '%{http_code}\n' -X POST --dat
 # no inline <script> and no on*= attributes, or script-src 'self' blocks them.
 # The admin production build sets inlineCritical to false for this reason.
 grep -cE '<script[^>]*>[^<]' index.html; grep -cE ' on[a-z]+=' index.html   # both 0
+
+# base-uri is 'self' (not 'none') so the index.html <base href="/"> still works: open a deep admin URL
+# (e.g. an invite link) in a real browser, not only curl -sI /. Every asset must load, the page must not be blank.
 ```
 
 Validate syntax with `caddy fmt --diff` and `caddy adapt` before deploying.

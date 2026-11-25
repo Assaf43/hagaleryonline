@@ -92,6 +92,10 @@ export function checkProductionEnv(env: Record<string, string | undefined>): str
       continue;
     }
     const problem = problemOf(rule, value);
+    if (rule.name === 'DATABASE_URL' && value.includes('hagalery_dev')) {
+      problems.push('DATABASE_URL: uses the development password');
+      continue;
+    }
     if (problem) {
       problems.push(`${rule.name}: ${problem}`);
       continue;

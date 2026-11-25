@@ -100,8 +100,10 @@ function listRoutes(app: NestExpressApplication): Route[] {
           });
     }
   }
-  return routes.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+  return routes.sort((a, b) => cmp(a.path, b.path) || cmp(a.method, b.method));
 }
+
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 const key = (route: Route) => `${route.method} ${route.path}`;
 

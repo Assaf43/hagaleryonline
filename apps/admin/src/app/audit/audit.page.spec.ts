@@ -87,6 +87,23 @@ describe('AuditPageComponent', () => {
     expect(el.textContent).toContain('legacy_entity');
   });
 
+  it('shows the cancel reason and refund of an order cancel in Hebrew', async () => {
+    const el = await render([
+      entry({
+        action: 'order.cancel',
+        entityType: 'order',
+        entityId: '100008',
+        before: { status: 'paid' },
+        after: { status: 'cancelled', reason: 'הלקוח ביקש', refund: 'partial', refundAmount: 12500 },
+      }),
+    ]);
+    const text = changes(el).join('|');
+    expect(text).toContain('סיבת ביטול: — ← הלקוח ביקש');
+    expect(text).toContain('החזר כספי: — ← חלקי');
+    expect(text).toContain('סכום החזר:');
+    expect(text).toContain('125');
+  });
+
   it('shows an order status move before and after, with the Hebrew status names', async () => {
     const el = await render([
       entry({

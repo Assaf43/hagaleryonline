@@ -40,6 +40,8 @@ describe('IsraelDateAdapter', () => {
   it('treats an empty text as no date, and starts the week on Sunday', () => {
     const a = adapter();
     expect(a.parse('  ', 'dateInput')).toBeNull();
+    expect(a.isValid(a.parse('1.1.1899', 'dateInput') as Date)).toBe(false);
+    expect(a.isValid(a.parse('1.1.1900', 'dateInput') as Date)).toBe(true);
     expect(a.getFirstDayOfWeek()).toBe(0);
   });
 });

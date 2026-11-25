@@ -26,7 +26,7 @@ const pad = (n: number) => String(n).padStart(2, '0');
 
 /** A calendar day as the "YYYY-MM-DD" text the API and the forms carry. */
 export function toIsoDay(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 /** "YYYY-MM-DD" → that day at local midnight; anything else → null. */
