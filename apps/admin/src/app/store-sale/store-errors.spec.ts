@@ -18,6 +18,11 @@ describe('store sale error messages', () => {
     expect(storeErrorMessage(invalid('address'))).toBe('משהו השתבש. נסו שוב.');
   });
 
+  it('says a ₪0 sale cannot be made (zero_total, decision 109)', () => {
+    const err = new HttpErrorResponse({ status: 422, error: { statusCode: 422, code: 'zero_total' } });
+    expect(storeErrorMessage(err)).toBe('לא ניתן לבצע מכירה בסכום 0 ₪.');
+  });
+
   it('keeps the other codes of the screen', () => {
     const err = new HttpErrorResponse({ status: 409, error: { code: 'customer_not_confirmed' } });
     expect(storeErrorMessage(err)).toContain('אישור הלקוח פג');

@@ -39,6 +39,7 @@ import {
   priceChanged,
   shippingUnavailable,
   shortage,
+  zeroTotal,
 } from './order-errors.js';
 import { reservedUntil } from './order-number.js';
 import { listAddresses } from '../customers/address-view.js';
@@ -91,7 +92,8 @@ export interface PlaceOrderOptions {
  *     and the cart's coupon (read under the cart lock, so it cannot change meanwhile): a coupon used up since the
  *     customer saw it → 409 `coupon_invalid`; any other change (a promotion that ended, a coupon that expired) shows
  *     in the total. When the total the customer saw (`expectedTotal`, required) differs from the recomputed one
- *     (subtotal − discount + shipping), nothing is created: 409 `price_changed` with the new total. Then create
+ *     (subtotal − discount + shipping), nothing is created: 409 `price_changed` with the new total; a total of 0
+ *     is refused too (422 `zero_total`, decision 109). Then create
  *     the order, its items, the discount snapshot and the reservation. A usage limit counts paid orders plus live
  *     pending orders of other carts (spec §6); the limited promotion rows are locked last, so two checkouts cannot both
  *     take a coupon's last use. A pending order whose reservation ran out no longer holds a use, but if it is paid
@@ -232,6 +234,12 @@ export class CheckoutService {
         const info = discountInfo(evaluated);
         const total = priced.total + option.total;
         if (input.expectedTotal !== total) throw priceChanged(total);
+        // Decision 109: a ₪0 order is never placed, on the website or in the store (this is the one path of both).
+        // Thrown before any write of this transaction lands, so the rollback leaves nothing: no order, no
+        // reservation, no coupon or personal-code use, and this cart's earlier pending orders stay as they were.
+        // A payment retry of an existing order does not come here (its total is fixed, and was > 0). Lifting the
+        // rule is removing this check, together with the payment provider's ₪0 handling (Phase 9f).
+        if (total === 0) throw zeroTotal();
         const order = await tx.order.create({
           data: {
             channel: store ? OrderChannel.STORE : OrderChannel.WEB,

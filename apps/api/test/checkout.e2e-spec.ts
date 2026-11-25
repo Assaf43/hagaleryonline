@@ -18,7 +18,14 @@ import { AppModule } from './../src/app.module.js';
 import { AdminUsersService } from './../src/auth/admin-users.service.js';
 import { CacheStore } from './../src/cache/cache-store.js';
 import { configureApp } from './../src/configure-app.js';
-import { FulfillmentMode, OrderStatus, PaymentStatus } from './../src/generated/prisma/client.js';
+import {
+  DiscountType,
+  FulfillmentMode,
+  OrderStatus,
+  PaymentStatus,
+  PromotionKind,
+  PromotionTarget,
+} from './../src/generated/prisma/client.js';
 import { sign } from './../src/payments/webhook-signature.js';
 import { WriteThrottle } from './../src/orders/write-throttle.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
@@ -680,6 +687,95 @@ describe('Checkout, orders and payment (e2e, CHK-01–04, CHK-06, CHK-09, CHK-10
       expect(res.body).toMatchObject({ code: 'price_changed', total: 95_000 });
     } finally {
       await prisma.variant.update({ where: { id: plenty }, data: { price: 50_000 } });
+      await invalidateCatalog();
+    }
+  });
+
+  it('zero total refused on the website: a 100% coupon with free shipping → 422 zero_total, nothing left behind', async () => {
+    // Free shipping: a category whose delivery costs nothing (curbside, one unit, a locality in no zone).
+    const free = await prisma.category.create({
+      data: {
+        slug: 'zz-chk-free',
+        nameHe: 'בדיקת משלוח חינם',
+        shippingRate: { create: { deliveryPrice: 0, assemblyPrice: 0 } },
+      },
+    });
+    const product = await prisma.product.create({
+      data: {
+        slug: 'zz-chk-free-pouf',
+        modelName: 'ZZCHKFREE',
+        nameHe: 'פוף חינם',
+        categoryId: free.id,
+        variants: {
+          create: [
+            { sku: 'ZZCHK-FREE', price: 20_000, stock: 5, widthCm: 50, depthCm: 50, heightCm: 40, leadTimeDays: 7 },
+          ],
+        },
+      },
+      include: { variants: true },
+    });
+    const variant = product.variants[0].id;
+    const coupon = await prisma.promotion.create({
+      data: {
+        name: 'ZZ קופון מלא',
+        kind: PromotionKind.COUPON,
+        code: 'ZZFULL100',
+        discountType: DiscountType.PERCENT,
+        value: 100,
+        target: PromotionTarget.ORDER,
+      },
+    });
+    await invalidateCatalog();
+    try {
+      const b = browser();
+      await b.add(variant, 1);
+      await b.agent.post('/api/cart/coupon').set('Origin', ORIGIN).send({ code: 'ZZFULL100' }).expect(200);
+      const cart = await b.cart();
+      expect(cart.subtotal - (cart.discount?.amount ?? 0)).toBe(0);
+      const orders = await prisma.order.count();
+      const available = await limitOf(variant);
+
+      // The total the customer saw is 0 and matches: still refused, after the price check, before any write.
+      const res = await b.checkout({ ...checkoutBody(), expectedTotal: 0 }).expect(422);
+      expect(res.body).toEqual({ statusCode: 422, code: 'zero_total' });
+      // A wrong total still answers price_changed first (with the total, 0).
+      const wrong = await b.checkout({ ...checkoutBody(), expectedTotal: 1 }).expect(409);
+      expect(wrong.body).toMatchObject({ code: 'price_changed', total: 0 });
+      expect(await prisma.order.count()).toBe(orders);
+      expect(await limitOf(variant)).toBe(available);
+      expect(await prisma.promotion.findUniqueOrThrow({ where: { id: coupon.id } })).toMatchObject({ usedCount: 0 });
+      expect((await b.cart()).couponCode).toBe('ZZFULL100');
+
+      // One agora still goes through: shipping of 1 agora makes the total 1.
+      await prisma.shippingRate.update({ where: { categoryId: free.id }, data: { deliveryPrice: 1 } });
+      const { tx, order } = await placeOrder(b);
+      expect(order).toMatchObject({ total: 1, discount: 20_000, promotionId: coupon.id });
+
+      // Back to free shipping: a new checkout of the same cart is refused — and its rollback leaves the earlier
+      // pending order of this cart pending (the refused attempt expired nothing).
+      await prisma.shippingRate.update({ where: { categoryId: free.id }, data: { deliveryPrice: 0 } });
+      expect((await b.checkout({ ...checkoutBody(), expectedTotal: 0 }).expect(422)).body.code).toBe('zero_total');
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+        OrderStatus.PENDING_PAYMENT,
+      );
+
+      // A payment retry of the existing order (total 1) is not refused, although a new order would now be ₪0.
+      await complete(tx, 'failure').expect(200);
+      const retry = await http()
+        .post(`/api/orders/${order.number}/retry-payment?t=${order.publicToken}`)
+        .set('Origin', ORIGIN)
+        .expect(201);
+      await complete(txOf(retry), 'success').expect(200);
+      expect(await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({
+        status: OrderStatus.PAID,
+        total: 1,
+      });
+    } finally {
+      await deleteOrders(prisma, { items: { some: { variantId: variant } } });
+      await prisma.cartItem.deleteMany({ where: { variantId: variant } });
+      await prisma.promotion.delete({ where: { id: coupon.id } });
+      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: free.id } });
       await invalidateCatalog();
     }
   });

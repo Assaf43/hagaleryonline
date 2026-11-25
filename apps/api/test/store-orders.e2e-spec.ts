@@ -729,6 +729,90 @@ describe('Store orders (e2e, ADM-18, CHK-11, decision 84)', () => {
     expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).toBe(secondCode);
   });
 
+  it('zero total refused in the store: a 100% coupon or a 100% welcome code with free shipping → 422 zero_total', async () => {
+    const free = await prisma.category.create({
+      data: {
+        slug: 'zz-sto-free',
+        nameHe: 'בדיקת משלוח חינם',
+        shippingRate: { create: { deliveryPrice: 0, assemblyPrice: 0 } },
+      },
+    });
+    const product = await prisma.product.create({
+      data: {
+        slug: 'zz-sto-free-pouf',
+        modelName: 'ZZSTOFREE',
+        nameHe: 'פוף חינם',
+        categoryId: free.id,
+        variants: {
+          create: [
+            { sku: 'ZZSTO-FREE', price: 20_000, stock: 5, widthCm: 50, depthCm: 50, heightCm: 40, leadTimeDays: 7 },
+          ],
+        },
+      },
+      include: { variants: true },
+    });
+    const variant = product.variants[0].id;
+    await app.get(CacheStore).invalidate('catalog:');
+    try {
+      // A 100% coupon the seller enters.
+      const coupon = await prisma.promotion.create({
+        data: {
+          name: 'ZZ קופון מלא',
+          kind: PromotionKind.COUPON,
+          code: 'ZZSTOFULL',
+          discountType: DiscountType.PERCENT,
+          value: 100,
+          target: PromotionTarget.ORDER,
+        },
+      });
+      await newSale(sellerA, [[variant, 1]]);
+      await sellerA.post('/store-cart/coupon', { code: 'ZZSTOFULL' }).expect(201);
+      await confirm(sellerA, (await existingAccount()).phone);
+      const res = await placeStore(sellerA);
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body).toEqual({ statusCode: 422, code: 'zero_total' });
+      expect(await prisma.order.count({ where: { sellerId: sellerAId } })).toBe(0);
+      expect((await sellerA.get('/store-orders/pending').expect(200)).body).toEqual([]);
+      expect(await prisma.promotion.findUniqueOrThrow({ where: { id: coupon.id } })).toMatchObject({ usedCount: 0 });
+      // No reservation: a website shopper may still put all 5 units in the cart.
+      const web = request.agent(app.getHttpServer() as App);
+      const added = await web
+        .post('/api/cart/items')
+        .set('Origin', STOREFRONT)
+        .send({ variantId: variant, quantity: 1 })
+        .expect(200);
+      expect((added.body as CartView).lines[0].maxQuantity).toBe(5);
+
+      // A 100% welcome code a quick account gets on the store cart (a personal code): refused, the code unused.
+      await prisma.promotion.create({
+        data: {
+          name: 'ZZ הטבת הצטרפות מלאה',
+          kind: PromotionKind.PERSONAL_TEMPLATE,
+          discountType: DiscountType.PERCENT,
+          value: 100,
+          target: PromotionTarget.ORDER,
+          validityDays: 30,
+          isWelcome: true,
+        },
+      });
+      await newSale(sellerA, [[variant, 1]]);
+      const customer = await quickAccount(sellerA);
+      expect(((await sellerA.get('/store-cart').expect(200)).body as StoreCartView).couponCode).not.toBeNull();
+      const welcome = await placeStore(sellerA);
+      expect(welcome.status, JSON.stringify(welcome.body)).toBe(422);
+      expect(welcome.body).toMatchObject({ code: 'zero_total' });
+      expect(await prisma.order.count({ where: { sellerId: sellerAId } })).toBe(0);
+      expect(await prisma.personalCode.findFirstOrThrow({ where: { customerId: customer.id } })).toMatchObject({
+        orderId: null,
+      });
+    } finally {
+      await cleanData();
+      await prisma.product.delete({ where: { id: product.id } });
+      await prisma.category.delete({ where: { id: free.id } });
+      await app.get(CacheStore).invalidate('catalog:');
+    }
+  });
+
   it('a website order still has channel web and the tokened confirmation path', async () => {
     const guest = request.agent(app.getHttpServer() as App);
     await guest.post('/api/cart/items').set('Origin', STOREFRONT).send({ variantId: plenty, quantity: 1 }).expect(200);
