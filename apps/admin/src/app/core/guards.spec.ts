@@ -101,6 +101,16 @@ describe('sessionExpiredInterceptor', () => {
     expect(noteActivity).toHaveBeenCalledTimes(1);
   });
 
+  it('stamps the activity with the time the request started', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    client.get('/api/admin/orders').subscribe();
+    vi.setSystemTime(1_009_000);
+    http.expectOne('/api/admin/orders').flush({});
+    vi.useRealTimers();
+    expect(noteActivity).toHaveBeenCalledWith(1_000_000);
+  });
+
   it('does not count logging out, failures or other APIs as activity', () => {
     client.post('/api/admin/auth/logout', {}).subscribe();
     http.expectOne('/api/admin/auth/logout').flush(null, { status: 204, statusText: 'No Content' });

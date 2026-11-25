@@ -41,11 +41,12 @@ export const sessionExpiredInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
   const idle = inject(IdleWatch);
+  const startedAt = Date.now(); // the server touches the session when it gets the request
   const isLogout = req.url.startsWith('/api/admin/auth/logout');
   return next(req).pipe(
     // Any answered admin call is activity (it touches the server session); logging out is not.
     tap((event) => {
-      if (req.url.startsWith('/api/admin/') && !isLogout && event instanceof HttpResponse) idle.noteActivity();
+      if (req.url.startsWith('/api/admin/') && !isLogout && event instanceof HttpResponse) idle.noteActivity(startedAt);
     }),
     catchError((error: unknown) => {
       const code = error instanceof HttpErrorResponse ? (error.error as { code?: string } | null)?.code : undefined;

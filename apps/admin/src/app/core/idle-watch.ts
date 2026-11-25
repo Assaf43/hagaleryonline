@@ -24,6 +24,7 @@ export class IdleWatch {
   private readonly router = inject(Router);
 
   private idleMs: number | null = null;
+  private endedByIdle = false;
   private last = Date.now();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private dialogRef: MatDialogRef<IdleWarningDialog> | null = null;
@@ -39,6 +40,7 @@ export class IdleWatch {
   /** Called by the shell once the user is known. `null` = no idle limit, so nothing to watch. */
   start(idleTimeoutMs: number | null) {
     this.stop();
+    this.endedByIdle = false;
     if (idleTimeoutMs === null) return;
     this.idleMs = idleTimeoutMs;
     this.last = Math.max(this.last, this.storedActivity());
@@ -54,9 +56,9 @@ export class IdleWatch {
     this.idleMs = null;
   }
 
-  /** True once the time to log out has passed (tells an idle 401 from any other). */
+  /** True once the time to log out has passed, until the next `start()` (tells an idle 401 from any other). */
   get expired(): boolean {
-    return this.idleMs !== null && Date.now() >= this.expiresAt();
+    return this.endedByIdle || (this.idleMs !== null && Date.now() >= this.expiresAt());
   }
 
   noteActivity(at = Date.now()) {
@@ -89,6 +91,8 @@ export class IdleWatch {
   /** One timer, always aimed at the next moment that matters; re-evaluated whenever the activity changes. */
   private evaluate() {
     clearTimeout(this.timer);
+    // Another tab may have been active while this one was frozen, before its storage event arrived.
+    this.last = Math.max(this.last, this.storedActivity());
     const now = Date.now();
     if (now >= this.expiresAt()) {
       void this.expire();
@@ -96,7 +100,7 @@ export class IdleWatch {
     }
     if (now >= this.warnAt()) {
       if (!this.dialogRef) {
-        const ref = this.dialog.open(IdleWarningDialog, { width: '440px', maxWidth: '95vw' });
+        const ref = this.dialog.open(IdleWarningDialog, { width: '440px', maxWidth: '95vw', disableClose: true });
         ref.afterClosed().subscribe(() => {
           if (this.dialogRef === ref) this.dialogRef = null;
         });
@@ -117,6 +121,7 @@ export class IdleWatch {
 
   private async expire() {
     this.stop();
+    this.endedByIdle = true;
     // Best effort: end the server session too, even if its clock differs from ours.
     await this.auth.logout().catch(() => this.auth.clear());
     await this.router.navigateByUrl('/login?reason=idle');

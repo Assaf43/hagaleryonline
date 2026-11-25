@@ -108,6 +108,38 @@ describe('IdleWatch', () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 
+  it('a tab waking before the storage event does not log out a session another tab is using', async () => {
+    watch.noteActivity(T0);
+    watch.start(IDLE);
+    await vi.advanceTimersByTimeAsync(WARNING);
+    expect(open).toHaveBeenCalledTimes(1);
+
+    localStorage.setItem(ACTIVITY_KEY, String(Date.now())); // written by another tab; no event delivered
+    await vi.advanceTimersByTimeAsync(IDLE_WARNING_MS);
+    expect(logout).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(WARNING - IDLE_WARNING_MS);
+    expect(open).toHaveBeenCalledTimes(2); // re-armed from the newer activity
+  });
+
+  it('keeps reporting an idle end after stopping, until the next start', async () => {
+    watch.noteActivity(T0);
+    watch.start(IDLE);
+    await vi.advanceTimersByTimeAsync(EXPIRY);
+    expect(logout).toHaveBeenCalled();
+    expect(watch.expired).toBe(true);
+    watch.noteActivity(); // signed in again
+    watch.start(IDLE);
+    expect(watch.expired).toBe(false);
+  });
+
+  it('opens the warning so Esc and the backdrop cannot dismiss it', async () => {
+    watch.noteActivity(T0);
+    watch.start(IDLE);
+    await vi.advanceTimersByTimeAsync(WARNING);
+    expect(open.mock.calls[0][1]).toMatchObject({ disableClose: true });
+  });
+
   it('a trusted session (no idle limit) never warns or expires', async () => {
     watch.noteActivity(T0);
     watch.start(null);
