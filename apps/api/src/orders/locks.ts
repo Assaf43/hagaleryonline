@@ -41,6 +41,11 @@ import { Prisma } from '../generated/prisma/client.js';
  *  - marketing (Phase 7): a transaction-scoped advisory lock per e-mail (MarketingService), always the LAST lock of
  *    its transaction — checkout and store checkout take it after the order insert, sign-up after the customer insert,
  *    the e-mail change after the customer update. While holding it only marketing rows and outbox jobs are written.
+ *  - marketing sync (Phase 9a): a transaction-scoped advisory lock per contact (`lockMarketingSync`, key
+ *    `marketing-sync:<contactId>`, a namespace apart from the per-e-mail `marketing:<email>` consent lock), taken FIRST
+ *    by the `marketing.sync` outbox job, then its job row (OutboxService.holdsClaim), then the contact row at the end.
+ *    It is held across the provider call, so two syncs of one contact run one after the other; nothing else takes it,
+ *    and consent writes never wait for it (they take the e-mail lock, which the sync never takes).
  */
 
 /** Serializes checkouts of one cart. NO KEY UPDATE leaves cart line inserts and deletes (FK KEY SHARE) unblocked. */
@@ -88,4 +93,9 @@ export async function lockVariants(tx: Prisma.TransactionClient, variantIds: num
   const ids = [...new Set(variantIds)].sort((a, b) => a - b);
   if (ids.length === 0) return;
   await tx.$queryRaw(Prisma.sql`SELECT id FROM variants WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`);
+}
+
+/** One marketing contact's sync lock (see "marketing sync" above); released at commit or rollback. */
+export async function lockMarketingSync(tx: Prisma.TransactionClient, contactId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'marketing-sync:' + contactId}::text))`;
 }

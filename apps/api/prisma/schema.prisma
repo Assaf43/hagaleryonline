@@ -822,20 +822,23 @@ enum OutboxJobState {
 /// the API's worker (apps/api/src/outbox/). `dedupeKey` makes enqueueing idempotent; a failure retries with backoff,
 /// after 8 attempts the job is FAILED (admin "משימות שנכשלו", and the order needs attention).
 model OutboxJob {
-  id        String         @id @default(uuid()) @db.Uuid
+  id         String         @id @default(uuid()) @db.Uuid
   /// `OutboxJobType` of @hg/models (`email.order_paid`, `invoice.issue`…).
-  type      String
-  dedupeKey String         @unique @map("dedupe_key")
-  payload   Json
-  state     OutboxJobState @default(PENDING)
-  attempts  Int            @default(0)
-  runAfter  DateTime       @default(now()) @map("run_after")
-  lastError String?        @map("last_error")
+  type       String
+  dedupeKey  String         @unique @map("dedupe_key")
+  payload    Json
+  state      OutboxJobState @default(PENDING)
+  attempts   Int            @default(0)
+  runAfter   DateTime       @default(now()) @map("run_after")
+  lastError  String?        @map("last_error")
   /// The order the job belongs to (its failed jobs flag it); null for jobs of no order.
-  orderId   String?        @map("order_id") @db.Uuid
-  createdAt DateTime       @default(now()) @map("created_at")
+  orderId    String?        @map("order_id") @db.Uuid
+  createdAt  DateTime       @default(now()) @map("created_at")
   /// Also the claim time of a RUNNING job (a RUNNING job older than 10 minutes is reclaimed).
-  updatedAt DateTime       @default(now()) @updatedAt @map("updated_at")
+  updatedAt  DateTime       @default(now()) @updatedAt @map("updated_at")
+  /// The claim of the current run: set by each claim, null otherwise. A run records its result only while it still
+  /// holds it, so a run that lost the job to a reclaim cannot overwrite the later run's result (spec 9a.4).
+  claimToken String?        @map("claim_token") @db.Uuid
 
   order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
