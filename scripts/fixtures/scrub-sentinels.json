@@ -83,5 +83,30 @@
     "name": "personal code",
     "input": "code NST-ABCD2345 already used",
     "mustNotContain": ["NST-ABCD2345", "ABCD2345"]
+  },
+  {
+    "name": "secret names as JSON keys",
+    "input": "{\"code\":\"123456\",\"token\":\"abcXYZ\",\"password\":\"hunter2pass\"}",
+    "mustNotContain": ["123456", "abcXYZ", "hunter2pass"]
+  },
+  {
+    "name": "more secret JSON keys",
+    "input": "{\"otp\":\"654321\",\"key\":\"sentKeyJ\",\"signature\":\"sentSigJ\",\"preview\":\"sentPrevJ\",\"t\":\"sentTJ\"}",
+    "mustNotContain": ["654321", "sentKeyJ", "sentSigJ", "sentPrevJ", "sentTJ"]
+  },
+  {
+    "name": "secret names in a Node object print",
+    "input": "{ code: '246810', token: 'sentNodeTok', password: 'sentNodePass', otp: 135790 }",
+    "mustNotContain": ["246810", "sentNodeTok", "sentNodePass", "135790"]
+  },
+  {
+    "name": "secret names as key=value",
+    "input": "verify failed code=975310 password=sentEqPass",
+    "mustNotContain": ["975310", "sentEqPass"]
+  },
+  {
+    "name": "secret names in another case",
+    "input": "{\"Password\":\"sentCasePass\",\"TOKEN\":\"sentCaseTok\"}",
+    "mustNotContain": ["sentCasePass", "sentCaseTok"]
   }
 ]

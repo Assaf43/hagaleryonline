@@ -37,6 +37,31 @@ describe('scrub', () => {
     expect(scrub('code NST-ABCD2345 used')).toBe('code [code] used');
   });
 
+  it('redacts secret names as JSON keys, object prints and key=value', () => {
+    expect(scrub('{"code":"123456","token":"abcXYZ","password":"hunter2pass"}')).toBe(
+      '{"code":"[redacted]","token":"[redacted]","password":"[redacted]"}',
+    );
+    expect(scrub("{ code: '123456', otp: 654321, key: 'k' }")).toBe(
+      "{ code: '[redacted]', otp: [redacted], key: '[redacted]' }",
+    );
+    expect(scrub('failed code=123456 password = abc')).toBe('failed code=[redacted] password = [redacted]');
+    // Values another step owns keep their own marker.
+    expect(scrub('{"code":"NST-ABCD2345"}')).toBe('{"code":"[code]"}');
+    expect(scrub(`{"token":"${'ab'.repeat(20)}"}`)).toBe('{"token":"[secret]"}');
+  });
+
+  it('keeps error codes and look-alike names', () => {
+    expect(scrub("{ code: 'P2002', name: 'PrismaClientKnownRequestError' }")).toBe(
+      "{ code: 'P2002', name: 'PrismaClientKnownRequestError' }",
+    );
+    expect(scrub("code: 'ECONNREFUSED'")).toBe("code: 'ECONNREFUSED'");
+    expect(scrub('{"code":"price_changed"}')).toBe('{"code":"price_changed"}');
+    expect(scrub("{ zipcode: '12345', hg_token: 'x', apiKey: 'y', tokens: 3 }")).toBe(
+      "{ zipcode: '12345', hg_token: 'x', apiKey: 'y', tokens: 3 }",
+    );
+    expect(scrub("don't: worry")).toBe("don't: worry");
+  });
+
   it('redacts only whole query parameter names', () => {
     expect(scrub('/x?at=1&count=3&tokens=2&keyword=sofa')).toBe('/x?at=1&count=3&tokens=2&keyword=sofa');
   });
@@ -66,7 +91,9 @@ describe('scrub', () => {
 
   it('stays linear on long input', () => {
     const started = performance.now();
-    for (const s of ['a'.repeat(200_000), 'a.'.repeat(100_000), '0'.repeat(200_000), '05 '.repeat(60_000)]) scrub(s);
+    const inputs = ['a'.repeat(200_000), 'a.'.repeat(100_000), '0'.repeat(200_000), '05 '.repeat(60_000)];
+    inputs.push('code:'.repeat(40_000), '"token":"'.repeat(20_000), "{ otp: '".repeat(25_000), 'key= '.repeat(40_000));
+    for (const s of inputs) scrub(s);
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
