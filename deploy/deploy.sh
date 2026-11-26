@@ -49,6 +49,8 @@ fi
 # 3. migrate gate
 if ! dc "$tag" --profile deploy run --rm migrate; then
   echo "Migration failed; still running $running" >&2
+  # Prisma records a failed migration and refuses every later migrate (P3009) until it is resolved (rehearsal 9b).
+  echo "Before the next deploy, fix the migration and mark the failed one: IMAGE_TAG=$tag docker compose ... --profile deploy run --rm --entrypoint sh migrate -c 'npx prisma migrate resolve --rolled-back <name> --config apps/api/prisma.config.ts'" >&2
   exit 1
 fi
 
