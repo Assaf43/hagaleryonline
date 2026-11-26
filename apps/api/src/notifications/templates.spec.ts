@@ -236,6 +236,15 @@ describe('system_alert e-mail (spec 9b.6)', () => {
     }
   });
 
+  it('error_storm says how many groups were not sent separately', () => {
+    const m = renderEmail('system_alert', { reason: 'error_storm', ...base, summary: '45' });
+    expect(m.subject).toBe('NESTO: תקלות רבות במערכת');
+    expect(m.html).toContain('ועוד');
+    expect(m.html).toContain('45');
+    expect(m.text).toContain('ועוד 45 תקלות חדשות לא נשלחו בנפרד.');
+    expect(m.html).toContain(link);
+  });
+
   it('has no query string and no e-mail address in its body, and escapes the summary', () => {
     const m = renderEmail('system_alert', { reason: 'new_error', ...base, summary: '<b>x</b>' });
     expect(m.html).not.toContain('<b>x</b>');

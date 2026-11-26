@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ErrorEventsService, type ErrorGroupChange } from './error-events.service.js';
 import { scrub } from './scrub.js';
 
-export type SystemAlertReason = 'new_error' | 'reopened_error' | 'backup_failed' | 'backup_missing';
+export type SystemAlertReason = 'new_error' | 'reopened_error' | 'backup_failed' | 'backup_missing' | 'error_storm';
 
 /** The `email.system_alert` job payload. No recipient: the handler reads `ALERT_EMAIL` when it sends. */
 export interface SystemAlertPayload {
@@ -22,6 +22,9 @@ export const CHECK_BACKUPS_EVERY_MS = 5 * 60_000;
 export const BACKUP_MAX_AGE_MS = 26 * 60 * 60_000;
 export const SUMMARY_MAX_LENGTH = 300;
 const FAILED_RUNS_PER_CHECK = 20;
+/** Alert budget (in memory, one API process): beyond it one storm summary replaces the single alerts. */
+export const MAX_GROUP_ALERTS_PER_FLUSH = 5;
+export const MAX_GROUP_ALERTS_PER_HOUR = 20;
 
 /** Alert failures print one plain line and never go through `AppLogger`: they must not create a new error group. */
 function printFailure(what: string, error: unknown): void {
@@ -44,6 +47,8 @@ function printFailure(what: string, error: unknown): void {
 @Injectable()
 export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
   private timer: NodeJS.Timeout | undefined;
+  private budgetHour = '';
+  private budgetUsed = 0;
   /** Overridable in tests. */
   now: () => Date = () => new Date();
   /** When this process started: "no backup yet" counts from here. */
@@ -70,13 +75,29 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
     return Boolean(this.config.get<string>('ALERT_EMAIL')?.trim());
   }
 
-  /** One alert per new or reopened `error` group of a flush (`warn` never). Never rejects. */
+  /**
+   * One alert per new or reopened `error` group of a flush (`warn` never), within the budget of 5 per flush and 20 per
+   * UTC hour. Past it the groups keep `alertedAt` null and one `error_storm` alert (once per UTC hour) says how many
+   * were not sent separately. Never rejects.
+   */
   async afterFlush(changes: ErrorGroupChange[]): Promise<void> {
     if (!this.enabled()) return;
     const now = this.now();
     const hour = now.toISOString().slice(0, 13);
+    if (this.budgetHour !== hour) {
+      this.budgetHour = hour;
+      this.budgetUsed = 0;
+    }
+    let sentInFlush = 0;
+    let skipped = 0;
     for (const change of changes) {
       if (change.kind !== 'error' || !(change.isNew || change.reopened)) continue;
+      if (sentInFlush >= MAX_GROUP_ALERTS_PER_FLUSH || this.budgetUsed >= MAX_GROUP_ALERTS_PER_HOUR) {
+        skipped += 1;
+        continue;
+      }
+      sentInFlush += 1;
+      this.budgetUsed += 1;
       try {
         const payload: SystemAlertPayload = {
           reason: change.isNew ? 'new_error' : 'reopened_error',
@@ -94,6 +115,15 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
       } catch (error) {
         printFailure('error alert', error);
       }
+    }
+    if (skipped === 0) return;
+    try {
+      const payload: SystemAlertPayload = { reason: 'error_storm', summary: String(skipped), at: now.toISOString() };
+      await this.prisma.$transaction((tx) =>
+        this.outbox.enqueue(tx, { type: 'email.system_alert', dedupeKey: `system_alert:storm:${hour}`, payload }),
+      );
+    } catch (error) {
+      printFailure('storm alert', error);
     }
   }
 

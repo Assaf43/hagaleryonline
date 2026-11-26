@@ -104,6 +104,30 @@ describe('SystemAlertsService', () => {
     expect([...jobs.values()][1].payload.summary).toBe('mail [email]');
   });
 
+  it('a storm of 50 distinct groups gives at most 5 alerts plus one storm summary, skipped groups stay unalerted', async () => {
+    const { service, jobs, alerted } = setup(ON);
+    const groups = Array.from({ length: 50 }, (_, i) => group({ id: i + 1, fingerprint: `fp-${i}` }));
+    await service.afterFlush(groups);
+    expect(jobs.size).toBe(6);
+    expect(alerted).toHaveLength(5);
+    expect(jobs.get('system_alert:storm:2026-11-26T10')?.payload).toMatchObject({
+      reason: 'error_storm',
+      summary: '45',
+    });
+    // The next flush in the same hour: 5 more, then the hourly 20 are used; the storm key stays one job.
+    for (let i = 0; i < 5; i++)
+      await service.afterFlush(
+        Array.from({ length: 50 }, (_, j) => group({ id: 100 + i * 50 + j, fingerprint: `fp-${i}-${j}` })),
+      );
+    expect(alerted).toHaveLength(20);
+    expect([...jobs.keys()].filter((k) => k.startsWith('system_alert:storm:'))).toHaveLength(1);
+    expect(jobs.size).toBe(21);
+    // A new hour starts a new budget.
+    service.now = () => new Date('2026-11-26T11:00:00.000Z');
+    await service.afterFlush([group({ id: 900, fingerprint: 'fp-late' })]);
+    expect(jobs.size).toBe(22);
+  });
+
   it('a reopened group says so', async () => {
     const { service, jobs } = setup(ON);
     await service.afterFlush([group({ isNew: false, reopened: true })]);
