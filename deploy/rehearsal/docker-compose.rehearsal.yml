@@ -1,7 +1,9 @@
 # Local rehearsal overlay (spec 9b.7): the production services plus MinIO as the S3 store, on this machine only.
 #
-#   IMAGE_TAG=<tag> docker compose -p nesto-rehearsal -f docker-compose.prod.yml \
-#     -f deploy/rehearsal/docker-compose.rehearsal.yml --env-file deploy/rehearsal/.env.rehearsal up -d
+#   DEPLOY_COMPOSE_ARGS="-p nesto-rehearsal -f docker-compose.prod.yml -f deploy/rehearsal/docker-compose.rehearsal.yml --env-file deploy/rehearsal/.env.rehearsal" \
+#   DEPLOY_INFRA_SERVICES="postgres minio" DEPLOY_SETUP_SERVICES=minio-setup deploy/deploy.sh <tag>
+#
+# See deploy/README.md for the deploy, rollback and CLI commands.
 #
 # The env file is generated (and git-ignored) by: node deploy/rehearsal/make-env.mjs --age-recipient age1...
 # It sets CADDY_GLOBAL_OPTIONS=local_certs, S3_PUBLIC_UPSTREAM=http://minio:9000 and S3_ENDPOINT=http://minio:9000.

@@ -106,6 +106,15 @@ address (set `trusted_proxies`), or every caller shares one bucket.
 
 ## 9b check
 
+Done in the 9b-2 local rehearsal (production images, `local_certs`, MinIO as the S3 test double):
+`caddy adapt` gives JSON with no warnings and `caddy fmt --diff` is clean; the admin host answers
+with every header from the snippet, HSTS and no `Server` header; `?t=` / `?preview=` sentinels,
+`Cookie` and `Referer` never reach the Caddy log; 130 webhook POSTs in a minute gave 120 x 401
+then 429, a 70 KB body gave 413, the webhooks answer 404 on the admin host; `/api/internal/*` and
+`/api/admin/dev/*` are 404 on both hosts; `/media/..%2f<private bucket>/...`, `/media/%2e%2e/...`,
+`/media/<bucket>/...` and the like never return the private object; a deep admin URL (an invite
+link) loads every asset. To repeat it:
+
 ```sh
 # admin: every header from the snippet is present, no Server header
 curl -sI https://admin.example.test/

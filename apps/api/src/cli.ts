@@ -16,6 +16,11 @@
  *     DB_APP_ROLE / DB_BACKUP_ROLE their privileges, skips a role that does not exist; safe to run again. It does not
  *     start the application, so it needs only DATABASE_URL)
  *
+ * Inside the production image `npm run admin` does not work (`nest` is a dev dependency). Use:
+ *   IMAGE_TAG=<tag> docker compose -f docker-compose.prod.yml --env-file <file> run --rm --no-deps api \
+ *     node apps/api/dist/cli.js <command> [options]
+ * (see deploy/README.md).
+ *
  * Prints a one-time invite link for the new Super Admin. Run it on the server (or locally);
  * the e-mail is passed at runtime and never stored in the repository.
  */

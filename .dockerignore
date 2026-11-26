@@ -14,4 +14,5 @@ coverage
 HANDOFF.md
 .claude
 deploy/rehearsal/.env.rehearsal
+deploy/state
 apps/api/src/generated

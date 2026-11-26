@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { PRODUCTION_ENV_RULES } from '../apps/api/src/config/production-env.ts';
 
 // Spec 9b.2 / 9b.3: text checks of the production compose file and the rehearsal overlay (no YAML parser in the
 // repo's dependencies; the files keep two-space indentation, which Prettier enforces).
@@ -46,6 +47,18 @@ const PINNED_MINIO = [
 describe('docker-compose.prod.yml', () => {
   it('has the six services', () => {
     expect(Object.keys(prod).sort()).toEqual(['api', 'backup', 'caddy', 'migrate', 'postgres', 'web']);
+  });
+
+  it('postgres keeps personal data out of its server log', () => {
+    expect(prod.postgres).toMatch(
+      /^ {4}command: \[.postgres.*log_error_verbosity=terse.*log_min_error_statement=panic.\]$/m,
+    );
+  });
+
+  it('the api service passes every variable the production env check requires', () => {
+    const env = /^ {4}environment:[\r\n]+((?: {6}.*[\r\n]+)+)/m.exec(prod.api)?.[1] ?? '';
+    const keys = new Set([...env.matchAll(/^ {6}([A-Z0-9_]+):/gm)].map((m) => m[1]));
+    for (const rule of PRODUCTION_ENV_RULES) expect(keys.has(rule.name), rule.name).toBe(true);
   });
 
   it('postgres publishes no port, and only caddy publishes any', () => {
