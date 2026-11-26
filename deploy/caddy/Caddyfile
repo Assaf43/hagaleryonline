@@ -1,0 +1,11 @@
+# Placeholder so the caddy image builds and `caddy adapt` runs (spec 9b.1).
+# Task 15 (9b-2) replaces this file with the real site blocks, which import the
+# snippets in this folder (admin-headers.caddy, api-limits.caddy).
+{
+	# rate_limit comes from the caddy-ratelimit plugin and has no default position.
+	order rate_limit before basicauth
+}
+
+{$SITE_HOST} {
+	respond "NESTO placeholder" 503
+}
