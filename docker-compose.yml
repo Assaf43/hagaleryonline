@@ -1,4 +1,6 @@
-# Local development services. Production compose (app + postgres + caddy) is added in Phase 9.
+# Local development database only (npm run db:up). Never used on a server.
+# Production and staging: docker-compose.prod.yml (+ deploy/rehearsal/docker-compose.rehearsal.yml for the local
+# rehearsal), with the variable names in deploy/env.prod.example.
 services:
   postgres:
     image: postgres:18-alpine

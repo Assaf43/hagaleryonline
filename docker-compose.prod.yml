@@ -1,0 +1,240 @@
+# Production services (spec 9b.2, 9b.3; NFR-12). One image, nesto-app:<tag>, runs as two services: `api` (exactly one
+# process: in-memory throttles, the outbox worker and the alert budget assume it) and `web` (the storefront SSR). Plus
+# postgres, caddy (TLS, the admin static files, /media from the public bucket), backup and the one-shot migrate step.
+#
+#   IMAGE_TAG=<tag> docker compose -f docker-compose.prod.yml --env-file <env file> ...
+#
+# The env file holds the names in deploy/env.prod.example (no values in the repo). Each service receives only the
+# variables it reads (explicit `environment:` mappings, no shared env_file): the cluster superuser password reaches
+# only postgres, the backup keys only backup, and caddy only its five settings. A missing required value stops
+# Compose before anything runs (`${NAME:?}`); the API then checks the values themselves at startup.
+# The local rehearsal adds deploy/rehearsal/docker-compose.rehearsal.yml (MinIO) on top of this file.
+# The dev database is docker-compose.yml, never this file.
+
+name: nesto
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
+# The Node services run as the image's `node` user, with no Linux capabilities and no privilege gain.
+x-node-hardening: &node-hardening
+  init: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+
+networks:
+  # postgres, api, web, backup, migrate. Not `internal: true`: the API and backup reach the S3 endpoint (and, from
+  # 9f, the real providers) over the internet. No service on it publishes a port.
+  internal: {}
+  # caddy, api, web. Fixed subnet so the API trusts only this network's X-Forwarded-For (TRUST_PROXY). The subnet
+  # includes the bridge gateway (172.31.240.1, the host itself), so the extra trust is host-local only: nothing outside
+  # the host can send from an address in it.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.240.0/24
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}
+
+services:
+  postgres:
+    image: postgres:18.7-bookworm@sha256:e742a2668255221388004f3a42b6150a2103f5054ab3a4a93ae9e4f01e551c35
+    restart: unless-stopped
+    logging: *logging
+    security_opt: ['no-new-privileges:true']
+    stop_grace_period: 60s
+    # POSTGRES_DB stays `postgres`: 01-roles.sh creates database `nesto` (owner nesto_owner) and the three roles.
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      NESTO_OWNER_PASSWORD: ${NESTO_OWNER_PASSWORD:?NESTO_OWNER_PASSWORD is required}
+      NESTO_APP_PASSWORD: ${NESTO_APP_PASSWORD:?NESTO_APP_PASSWORD is required}
+      NESTO_BACKUP_PASSWORD: ${NESTO_BACKUP_PASSWORD:?NESTO_BACKUP_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    # Over TCP: the first-run init server listens only on the socket, so this stays unhealthy until init is done.
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres', '-d', 'postgres']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 60s
+
+  # Run only by deploy/deploy.sh (`--profile deploy run --rm migrate`). The command can be overridden, e.g. the
+  # rehearsal seed: `run --rm -e NODE_ENV=development migrate npx prisma db seed --config apps/api/prisma.config.ts`.
+  migrate:
+    image: nesto-app:${IMAGE_TAG:?IMAGE_TAG is required}
+    profiles: [deploy]
+    restart: 'no'
+    logging: *logging
+    <<: *node-hardening
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy --config apps/api/prisma.config.ts && node apps/api/dist/cli.js apply-db-grants
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${MIGRATE_DATABASE_URL:?MIGRATE_DATABASE_URL is required}
+      DB_APP_ROLE: ${DB_APP_ROLE:-nesto_app}
+      DB_BACKUP_ROLE: ${DB_BACKUP_ROLE:-nesto_backup}
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: nesto-app:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    logging: *logging
+    <<: *node-hardening
+    environment:
+      NODE_ENV: production
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      TRUST_PROXY: ${TRUST_PROXY:?TRUST_PROXY is required}
+      SITE_URL: ${SITE_URL:?SITE_URL is required}
+      STOREFRONT_URL: ${STOREFRONT_URL:?STOREFRONT_URL is required}
+      ADMIN_URL: ${ADMIN_URL:?ADMIN_URL is required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
+      ORDER_TOKEN_KEY: ${ORDER_TOKEN_KEY:?ORDER_TOKEN_KEY is required}
+      OTP_PEPPER: ${OTP_PEPPER:?OTP_PEPPER is required}
+      MARKETING_TOKEN_SECRET: ${MARKETING_TOKEN_SECRET:?MARKETING_TOKEN_SECRET is required}
+      CONTENT_PREVIEW_SECRET: ${CONTENT_PREVIEW_SECRET:?CONTENT_PREVIEW_SECRET is required}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:?STORAGE_PROVIDER is required}
+      S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:?S3_PUBLIC_BUCKET is required}
+      S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:?S3_PRIVATE_BUCKET is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:?PAYMENT_PROVIDER is required}
+      PAYMENT_SANDBOX_SECRET: ${PAYMENT_SANDBOX_SECRET:-}
+      PAYMENT_SANDBOX_ALLOW_REMOTE: ${PAYMENT_SANDBOX_ALLOW_REMOTE:-}
+      SHIPPING_PROVIDER: ${SHIPPING_PROVIDER:?SHIPPING_PROVIDER is required}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:?EMAIL_PROVIDER is required}
+      SMS_PROVIDER: ${SMS_PROVIDER:?SMS_PROVIDER is required}
+      INVOICE_PROVIDER: ${INVOICE_PROVIDER:?INVOICE_PROVIDER is required}
+      MARKETING_PROVIDER: ${MARKETING_PROVIDER:?MARKETING_PROVIDER is required}
+      MARKETING_MOCK_SECRET: ${MARKETING_MOCK_SECRET:-}
+      EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM is required}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:?SUPPORT_EMAIL is required}
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
+      BACKUP_EXPECTED: ${BACKUP_EXPECTED:-false}
+    networks: [internal, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  web:
+    image: nesto-app:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    logging: *logging
+    <<: *node-hardening
+    command: ['node', 'apps/storefront/dist/storefront/server/server.mjs']
+    environment:
+      NODE_ENV: production
+      PORT: '4000'
+      API_URL: http://api:3000
+      SITE_URL: ${SITE_URL:?SITE_URL is required}
+      NG_ALLOWED_HOSTS: ${NG_ALLOWED_HOSTS:?NG_ALLOWED_HOSTS is required}
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN is required}
+      STOREFRONT_CSP: ${STOREFRONT_CSP:-enforce}
+      SEO_INDEXING: ${SEO_INDEXING:-false}
+    networks: [internal, edge]
+    depends_on:
+      api:
+        condition: service_healthy
+    # The home page, rendered for the first allowed host (any other Host header gets 400 from Angular).
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - require('http').get({host:'localhost',port:4000,path:'/',headers:{host:process.env.NG_ALLOWED_HOSTS.split(',')[0].trim()}},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  caddy:
+    image: nesto-caddy:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    logging: *logging
+    security_opt: ['no-new-privileges:true']
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      SITE_HOST: ${SITE_HOST:?SITE_HOST is required}
+      ADMIN_HOST: ${ADMIN_HOST:?ADMIN_HOST is required}
+      # Empty would make /media fail open, so both are required.
+      S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:?S3_PUBLIC_BUCKET is required}
+      S3_PUBLIC_UPSTREAM: ${S3_PUBLIC_UPSTREAM:?S3_PUBLIC_UPSTREAM is required}
+      CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    # The admin API listens on localhost only (Caddy's default) and is never published.
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:2019/config/ >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # Nightly encrypted DB dump and photo copy (NFR-09). Write-only keys on the backup bucket plus read on the media
+  # buckets; it can never delete a backup (expiry is a bucket rule). Restore keys are given only at restore time.
+  backup:
+    image: nesto-backup:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    logging: *logging
+    <<: *node-hardening
+    environment:
+      NODE_ENV: production
+      BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL is required}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?BACKUP_AGE_RECIPIENT is required}
+      # Israel time.
+      BACKUP_AT: ${BACKUP_AT:-02:30}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:?BACKUP_S3_ENDPOINT is required}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:?BACKUP_S3_REGION is required}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:?BACKUP_S3_BUCKET is required}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?BACKUP_S3_ACCESS_KEY_ID is required}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?BACKUP_S3_SECRET_ACCESS_KEY is required}
+      # The media buckets it copies (read with the backup keys above, never the API's keys).
+      S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT is required}
+      S3_REGION: ${S3_REGION:?S3_REGION is required}
+      S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:?S3_PUBLIC_BUCKET is required}
+      S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:?S3_PRIVATE_BUCKET is required}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy

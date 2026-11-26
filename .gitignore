@@ -13,3 +13,6 @@ Thumbs.db
 /storage/
 .superpowers/
 /HANDOFF.md
+# Production rehearsal and deploy state (Phase 9b)
+/deploy/rehearsal/.env.rehearsal
+/deploy/state/
