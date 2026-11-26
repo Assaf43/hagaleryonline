@@ -21,12 +21,14 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { ShippingModule } from './shipping/shipping.module.js';
 import { SupportModule } from './support/support.module.js';
 import { StoreOrdersModule } from './store-orders/store-orders.module.js';
+import { SystemModule } from './system/system.module.js';
 
 @Module({
   imports: [
     // One .env at the monorepo root serves every app.
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../../.env', '.env'] }),
     PrismaModule,
+    SystemModule,
     CacheModule,
     MediaModule,
     AuditModule,

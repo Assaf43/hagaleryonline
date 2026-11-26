@@ -63,6 +63,8 @@ export default defineConfig({
       PAYMENT_SANDBOX_SECRET: 'e2e-sandbox-secret-not-for-production',
       // Outbox (Phase 5b): no background worker; the tests call OutboxService.runDue() themselves.
       OUTBOX_WORKER: 'off',
+      // Error events (Phase 9b): no flush or cleanup timer; the tests call flush() and cleanup() themselves.
+      ERROR_EVENTS_WORKER: 'off',
     },
   },
 });
