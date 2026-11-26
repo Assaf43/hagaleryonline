@@ -20,6 +20,11 @@ describe('MockMarketingProvider', () => {
     );
   });
 
+  it('runs under NODE_ENV=production with APP_ENV=staging', () => {
+    const staging = config({ NODE_ENV: 'production', APP_ENV: 'staging', MARKETING_MOCK_SECRET: SECRET });
+    expect(new MockMarketingProvider(staging).code).toBe('mock');
+  });
+
   it('keeps the synced list in memory: upsert replaces, remove deletes, unknown remove is fine', async () => {
     const p = new MockMarketingProvider(config({ MARKETING_MOCK_SECRET: SECRET }));
     expect(p.code).toBe('mock');

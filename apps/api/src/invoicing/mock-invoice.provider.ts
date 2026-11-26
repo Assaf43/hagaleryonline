@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { allowsMockProviders } from '../config/app-env.js';
 import { BRAND, INVOICE_TYPE_LABELS_HE, type InvoiceType } from '@hg/models';
 import { esc } from '../notifications/templates/layout.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
@@ -18,7 +19,7 @@ const SERIES: Record<InvoiceType, { sequence: string; prefix: string }> = {
  * Postgres sequence per type, and a simple self-contained Hebrew HTML document. Like a real provider it remembers each
  * idempotency key (`mock_invoice_documents`), so the same key always returns the same number (and, with the same
  * input, the same file). Refuses
- * to load in production: it issues no real tax document.
+ * to load in production (unless `APP_ENV=staging`, `allowsMockProviders`): it issues no real tax document.
  */
 export class MockInvoiceProvider implements InvoiceProvider {
   readonly code = MOCK_INVOICE_CODE;
@@ -27,7 +28,7 @@ export class MockInvoiceProvider implements InvoiceProvider {
     config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    if (config.get<string>('NODE_ENV') === 'production')
+    if (!allowsMockProviders(config))
       throw new Error('INVOICE_PROVIDER = mock cannot run in production: choose a real invoicing provider.');
   }
 

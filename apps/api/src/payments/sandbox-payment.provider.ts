@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { allowsMockProviders } from '../config/app-env.js';
 import {
   WebhookPayloadError,
   WebhookSignatureError,
@@ -29,7 +30,8 @@ const OUTCOMES: readonly PaymentOutcome[] = ['succeeded', 'failed', 'cancelled']
 /**
  * `sandbox` adapter (development only, CHK-10, spec §5.3): the "payment page" is the storefront's
  * /pay/sandbox/:transactionId, and the result comes back as a webhook signed with HMAC-SHA256
- * (`PAYMENT_SANDBOX_SECRET`). It refuses to load when NODE_ENV=production, and on a public site address unless
+ * (`PAYMENT_SANDBOX_SECRET`). It refuses to load when NODE_ENV=production (unless `APP_ENV=staging`,
+ * `allowsMockProviders`), and on a public site address unless
  * `PAYMENT_SANDBOX_ALLOW_REMOTE=true` (a test environment such as staging).
  */
 export class SandboxPaymentProvider implements PaymentProvider {
@@ -46,7 +48,7 @@ export class SandboxPaymentProvider implements PaymentProvider {
   private readonly returnPaths = new Map<string, string>();
 
   constructor(config: ConfigService) {
-    if (config.get<string>('NODE_ENV') === 'production')
+    if (!allowsMockProviders(config))
       throw new Error('PAYMENT_PROVIDER=sandbox cannot run in production: choose a real payment provider.');
     const site = config.get<string>('SITE_URL') || config.get<string>('STOREFRONT_URL') || 'http://localhost:4200';
     // Anyone can mark a sandbox payment paid, so on a public address (a production box without NODE_ENV) it would

@@ -7,6 +7,13 @@ const config = (env: Record<string, string>) => ({ get: (key: string) => env[key
 describe('MockNotificationProvider', () => {
   it('refuses NODE_ENV=production', () => {
     expect(() => new MockNotificationProvider(config({ NODE_ENV: 'production' }))).toThrow(/production/);
+    expect(() => new MockNotificationProvider(config({ NODE_ENV: 'production', APP_ENV: 'production' }))).toThrow(
+      /production/,
+    );
+  });
+
+  it('runs under NODE_ENV=production with APP_ENV=staging', () => {
+    expect(new MockNotificationProvider(config({ NODE_ENV: 'production', APP_ENV: 'staging' })).code).toBe('mock');
   });
 
   it('returns a mock_ message id and sends nothing', async () => {

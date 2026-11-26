@@ -24,7 +24,7 @@ const secret = () => randomBytes(32).toString('hex');
 function validEnv(): Record<string, string | undefined> {
   return {
     NODE_ENV: 'production',
-    DATABASE_URL: 'postgresql://app:pw@postgres:5432/nesto',
+    DATABASE_URL: 'postgresql://app:a-long-database-password@postgres:5432/nesto',
     PAYMENT_PROVIDER: 'real',
     SHIPPING_PROVIDER: 'manual',
     EMAIL_PROVIDER: 'real',
@@ -44,6 +44,13 @@ function validEnv(): Record<string, string | undefined> {
     ORDER_TOKEN_KEY: key32(),
     TRUST_PROXY: 'loopback, 172.18.0.0/16',
     ALERT_EMAIL: 'alerts@example.test',
+    STORAGE_PROVIDER: 's3',
+    S3_ENDPOINT: 'https://s3.example.test',
+    S3_REGION: 'il-central-1',
+    S3_ACCESS_KEY_ID: 'access-key-id',
+    S3_SECRET_ACCESS_KEY: secret(),
+    S3_PUBLIC_BUCKET: 'nesto-public',
+    S3_PRIVATE_BUCKET: 'nesto-private',
   };
 }
 
@@ -174,11 +181,97 @@ describe('checkProductionEnv (spec 9a.3)', () => {
     }
   });
 
+  it('refuses a TRUST_PROXY with a catch-all subnet, alone or in a list', () => {
+    for (const value of ['0.0.0.0/0', '::/0', 'loopback, 0.0.0.0/0', ' ::/0 ']) {
+      expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: value })).toEqual([
+        'TRUST_PROXY: must name the proxy, not trust everyone',
+      ]);
+    }
+  });
+
+  it('wants a DATABASE_URL password of at least 20 characters, never printing it', () => {
+    for (const url of [
+      'postgresql://app:SENTINEL-short@db:5432/nesto',
+      'postgresql://app@db:5432/nesto',
+      'SENTINEL-not-a-url',
+    ]) {
+      const lines = checkProductionEnv({ ...validEnv(), DATABASE_URL: url });
+      expect(lines).toEqual(['DATABASE_URL: password too short (at least 20 characters)']);
+      expect(lines.join()).not.toContain('SENTINEL');
+    }
+    // Percent-encoded characters count once.
+    const encoded = `postgresql://app:${'%40'.repeat(19)}@db:5432/nesto`;
+    expect(checkProductionEnv({ ...validEnv(), DATABASE_URL: encoded })).toEqual([
+      'DATABASE_URL: password too short (at least 20 characters)',
+    ]);
+    expect(checkProductionEnv({ ...validEnv(), DATABASE_URL: `postgresql://app:${'x'.repeat(20)}@db/n` })).toEqual([]);
+  });
+
+  it('wants STORAGE_PROVIDER=s3 and every S3 variable', () => {
+    expect(checkProductionEnv({ ...validEnv(), STORAGE_PROVIDER: 'local' })).toEqual(['STORAGE_PROVIDER: must be s3']);
+    const env = validEnv();
+    for (const name of [
+      'STORAGE_PROVIDER',
+      'S3_ENDPOINT',
+      'S3_REGION',
+      'S3_ACCESS_KEY_ID',
+      'S3_SECRET_ACCESS_KEY',
+      'S3_PUBLIC_BUCKET',
+      'S3_PRIVATE_BUCKET',
+    ])
+      delete env[name];
+    expect(checkProductionEnv(env)).toEqual([
+      'STORAGE_PROVIDER: missing',
+      'S3_ENDPOINT: missing',
+      'S3_REGION: missing',
+      'S3_ACCESS_KEY_ID: missing',
+      'S3_SECRET_ACCESS_KEY: missing',
+      'S3_PUBLIC_BUCKET: missing',
+      'S3_PRIVATE_BUCKET: missing',
+    ]);
+  });
+
+  it('wants an https S3_ENDPOINT in production', () => {
+    for (const value of ['http://minio:9000', 'http://minio.localhost:9000', 'http://s3.example.com', 'not a url'])
+      expect(checkProductionEnv({ ...validEnv(), S3_ENDPOINT: value })).toEqual([
+        'S3_ENDPOINT: must be an https URL (http only for a local host in staging)',
+      ]);
+    expect(checkProductionEnv({ ...validEnv(), S3_ENDPOINT: 'https://s3.il-central-1.example.com' })).toEqual([]);
+  });
+
+  it('allows an http S3_ENDPOINT on a local host with APP_ENV=staging only', () => {
+    const staging = { ...validEnv(), APP_ENV: 'staging' };
+    for (const value of ['http://minio:9000', 'http://minio.localhost:9000', 'https://s3.example.com'])
+      expect(checkProductionEnv({ ...staging, S3_ENDPOINT: value })).toEqual([]);
+    for (const value of ['http://s3.example.com', 'http://10.0.0.5:9000', 'ftp://minio'])
+      expect(checkProductionEnv({ ...staging, S3_ENDPOINT: value })).toEqual([
+        'S3_ENDPOINT: must be an https URL (http only for a local host in staging)',
+      ]);
+  });
+
+  it('accepts APP_ENV production or staging, refuses anything else', () => {
+    expect(checkProductionEnv({ ...validEnv(), APP_ENV: 'production' })).toEqual([]);
+    expect(checkProductionEnv({ ...validEnv(), APP_ENV: 'staging' })).toEqual([]);
+    for (const value of ['SENTINEL-dev', 'Staging', 'test'])
+      expect(checkProductionEnv({ ...validEnv(), APP_ENV: value })).toEqual(['APP_ENV: must be production or staging']);
+  });
+
+  it('APP_ENV=staging still needs every secret', () => {
+    const lines = checkProductionEnv({ NODE_ENV: 'production', APP_ENV: 'staging' });
+    for (const rule of PRODUCTION_ENV_RULES) expect(lines).toContain(`${rule.name}: missing`);
+    const env = { ...validEnv(), APP_ENV: 'staging', SITE_URL: 'http://shop.example.test', OTP_PEPPER: 'short' };
+    expect(checkProductionEnv(env)).toEqual([
+      'SITE_URL: must be an https URL',
+      'OTP_PEPPER: too short (at least 32 characters)',
+    ]);
+  });
+
   it('never prints a value', () => {
     const sentinel = 'SENTINEL-VALUE-must-never-be-printed';
     const env: Record<string, string> = {};
     for (const rule of PRODUCTION_ENV_RULES) env[rule.name] = sentinel;
     env.NODE_ENV = 'production';
+    env.APP_ENV = sentinel;
     const lines = checkProductionEnv(env);
     expect(lines.length).toBeGreaterThan(0);
     for (const line of lines) expect(line).not.toContain('SENTINEL');
@@ -196,6 +289,13 @@ describe('productionEnvWarnings', () => {
 
   it('is empty without overrides', () => {
     expect(productionEnvWarnings(validEnv())).toEqual([]);
+  });
+
+  it('warns once in staging mode', () => {
+    expect(productionEnvWarnings({ ...validEnv(), APP_ENV: 'staging' })).toEqual([
+      'Staging mode: mock providers allowed',
+    ]);
+    expect(productionEnvWarnings({ ...validEnv(), APP_ENV: 'production' })).toEqual([]);
   });
 
   it('warns, but does not refuse, when ALERT_EMAIL is unset', () => {
@@ -242,6 +342,14 @@ describe('assertProductionEnv', () => {
     assertProductionEnv({ ...validEnv(), THROTTLE_CHECKOUT_LIMIT: '40' }, exit);
     expect(exit).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith('THROTTLE_CHECKOUT_LIMIT=40 overrides the production limit (20)');
+  });
+
+  it('starts a complete staging environment with one staging warning', () => {
+    const exit = exitSpy();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    assertProductionEnv({ ...validEnv(), APP_ENV: 'staging' }, exit);
+    expect(exit).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([['Staging mode: mock providers allowed']]);
   });
 });
 
