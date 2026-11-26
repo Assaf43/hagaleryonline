@@ -22,6 +22,16 @@ describe('SandboxPaymentProvider (spec §5.3, CHK-10)', () => {
     ).toThrow(/cannot run in production/);
   });
 
+  it('runs under NODE_ENV=production with APP_ENV=staging, still refusing a public address without the opt-in', () => {
+    const staging = { NODE_ENV: 'production', APP_ENV: 'staging', PAYMENT_SANDBOX_SECRET: SECRET };
+    expect(new SandboxPaymentProvider(config({ ...staging, SITE_URL: 'http://localhost:4200' })).code).toBe('sandbox');
+    expect(() => new SandboxPaymentProvider(config({ ...staging, SITE_URL: 'https://staging.example.com' }))).toThrow(
+      /PAYMENT_SANDBOX_ALLOW_REMOTE/,
+    );
+    const remote = { ...staging, SITE_URL: 'https://staging.example.com', PAYMENT_SANDBOX_ALLOW_REMOTE: 'true' };
+    expect(new SandboxPaymentProvider(config(remote)).code).toBe('sandbox');
+  });
+
   it('refuses a public site address unless a test environment allows it explicitly (NODE_ENV may be missing)', () => {
     for (const site of ['https://hagaleryonline.co.il', 'https://www.example.com/', 'http://10.0.0.5:4200']) {
       expect(() => new SandboxPaymentProvider(config({ SITE_URL: site, PAYMENT_SANDBOX_SECRET: SECRET }))).toThrow(

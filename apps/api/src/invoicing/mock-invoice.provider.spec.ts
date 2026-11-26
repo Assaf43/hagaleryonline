@@ -8,6 +8,11 @@ describe('MockInvoiceProvider', () => {
     expect(() => new MockInvoiceProvider(config({ NODE_ENV: 'production' }), {} as never)).toThrow(/production/);
     expect(new MockInvoiceProvider(config({ NODE_ENV: 'development' }), {} as never).code).toBe('mock');
   });
+
+  it('runs under NODE_ENV=production with APP_ENV=staging', () => {
+    const staging = config({ NODE_ENV: 'production', APP_ENV: 'staging' });
+    expect(new MockInvoiceProvider(staging, {} as never).code).toBe('mock');
+  });
 });
 
 describe('renderMockDocument', () => {

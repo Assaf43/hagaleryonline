@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { allowsMockProviders } from '../config/app-env.js';
 import { maskEmail } from '../notifications/masking.js';
 import { sign, verify } from '../payments/webhook-signature.js';
 import {
@@ -21,7 +22,8 @@ const EMAIL_MAX = 254;
 /**
  * `mock` adapter (development and e2e only, spec §5.4): keeps the synced list in this process's memory (lost on
  * restart) and logs each call with a masked address. Its webhook is a JSON body `{ events: [...] }` signed with
- * HMAC-SHA256 under `MARKETING_MOCK_SECRET` (a random secret per process when empty). Refuses NODE_ENV=production.
+ * HMAC-SHA256 under `MARKETING_MOCK_SECRET` (a random secret per process when empty). Refuses NODE_ENV=production
+ * unless `APP_ENV=staging` (`allowsMockProviders`).
  */
 export class MockMarketingProvider implements MarketingProvider {
   readonly code = MOCK_MARKETING_CODE;
@@ -30,7 +32,7 @@ export class MockMarketingProvider implements MarketingProvider {
   private readonly secret: string;
 
   constructor(config: ConfigService) {
-    if (config.get<string>('NODE_ENV') === 'production')
+    if (!allowsMockProviders(config))
       throw new Error('MARKETING_PROVIDER = mock cannot run in production: choose a real e-mail marketing tool.');
     const secret = config.get<string>('MARKETING_MOCK_SECRET')?.trim();
     if (!secret) this.logger.warn('MARKETING_MOCK_SECRET is not set: using a random secret for this process only');

@@ -1,18 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import type { ConfigService } from '@nestjs/config';
+import { allowsMockProviders } from '../config/app-env.js';
 import type { EmailMessage, EmailProvider, SmsMessage, SmsProvider } from './notification-provider.js';
 
 export const MOCK_CODE = 'mock';
 
 /**
  * `mock` adapter (development and tests, spec §5.2): sends nothing anywhere. `NotificationsService` logs every
- * message with its full body while this provider is active (the dev viewer). Refuses to load in production.
+ * message with its full body while this provider is active (the dev viewer). Refuses to load in production unless
+ * `APP_ENV=staging` (`allowsMockProviders`).
  */
 export class MockNotificationProvider implements EmailProvider, SmsProvider {
   readonly code = MOCK_CODE;
 
   constructor(config: ConfigService) {
-    if (config.get<string>('NODE_ENV') === 'production')
+    if (!allowsMockProviders(config))
       throw new Error('EMAIL_PROVIDER / SMS_PROVIDER = mock cannot run in production: choose a real provider.');
   }
 

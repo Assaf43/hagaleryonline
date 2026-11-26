@@ -1,0 +1,18 @@
+# Build context for the Dockerfile (spec 9b.1): sources only, never secrets or local state.
+.git
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.env*
+**/.env*
+storage/
+.angular
+**/.angular
+coverage
+**/coverage
+.superpowers
+HANDOFF.md
+.claude
+deploy/rehearsal/.env.rehearsal
+deploy/state
+apps/api/src/generated

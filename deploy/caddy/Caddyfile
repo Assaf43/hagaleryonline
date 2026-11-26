@@ -1,0 +1,172 @@
+# Production Caddyfile (spec 9b.2). Two hosts:
+#   {$SITE_HOST}  - the storefront: /api -> api:3000, /media -> the public S3 bucket, the rest -> web:4000
+#   {$ADMIN_HOST} - the admin: /api -> api:3000, /media -> the public S3 bucket, the rest -> /srv/admin
+# Env: SITE_HOST, ADMIN_HOST, S3_PUBLIC_BUCKET, S3_PUBLIC_UPSTREAM (path-style S3 endpoint),
+# CADDY_GLOBAL_OPTIONS (the rehearsal sets local_certs; 9c sets its ACME / Cloudflare options).
+# The snippets admin_headers and webhook_limits come from the *.caddy files next to this one.
+{
+	# rate_limit comes from the caddy-ratelimit plugin and has no default position.
+	order rate_limit before basic_auth
+
+	# Every non-access log (errors such as "upstream down", TLS, startup) goes through the same filter
+	# as the access log: the http.log.error entries carry the request, and its query (?t=, ?preview=),
+	# Referer, Cookie and Authorization must never be printed. The error message itself stays, so a
+	# dead upstream is still visible ("dial tcp: lookup web ...", status 502, path without the query).
+	# uri: the rewrite handler's own (debug) entries print the rewritten URI next to the request.
+	log default {
+		output stderr
+		format filter {
+			uri regexp \?.* ""
+			request>uri regexp \?.* ""
+			request>headers>Referer delete
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+		}
+	}
+
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+import *.caddy
+
+# Compression, HSTS (no includeSubDomains / preload until 9c decides), no Server header, and an
+# access log without query strings (tokens, preview links) or credentials.
+(common) {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	log {
+		output stdout
+		format filter {
+			request>uri regexp \?.* ""
+			request>headers>Referer delete
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			resp_headers>Set-Cookie delete
+			error_message regexp \?\S* ""
+		}
+	}
+
+	# Keep this block. Caddy's own error answers (502 while an upstream is down, a missing file, a
+	# handler error) do not run the deferred header block above, so without it they would go out with
+	# "Server: Caddy" and without HSTS. The body stays empty.
+	# Because handle_errors handles the error, Caddy logs the error itself only at debug level; the
+	# access line keeps it visible instead (status 502 plus e.g. "dial tcp: lookup web ... no such
+	# host"), with any query cut off by the filter above.
+	handle_errors {
+		log_append error_message {err.message}
+		header {
+			Strict-Transport-Security "max-age=31536000"
+			-Server
+		}
+	}
+}
+
+# Routes that must never be reachable from the internet (the API guards them too).
+(blocked) {
+	@blocked path /api/internal /api/internal/* /api/admin/dev /api/admin/dev/*
+	handle @blocked {
+		respond 404
+	}
+}
+
+# Product and content photos: /media/<key> -> <upstream>/<public bucket>/<key>.
+# Only GET / HEAD, only plain keys (no percent escapes, backslashes, "..", "//"), no query string and
+# no client credentials reach S3, so Caddy can never be used to read another bucket or as an S3 proxy.
+(media) {
+	handle /media/* {
+		route {
+			@media_unsafe expression `!{http.request.orig_uri}.matches("^/media/[A-Za-z0-9_-][A-Za-z0-9._/-]*(\\?.*)?$") || {http.request.orig_uri.path}.contains("..") || {http.request.orig_uri.path}.contains("//")`
+			respond @media_unsafe 404
+
+			@media_method not method GET HEAD
+			header @media_method Allow "GET, HEAD"
+			respond @media_method 405
+
+			uri strip_prefix /media
+			rewrite * /{$S3_PUBLIC_BUCKET}{path}?
+
+			# Deferred, so they replace whatever S3 sends instead of adding a second value.
+			header {
+				X-Content-Type-Options nosniff
+				defer
+			}
+			header {
+				Cache-Control "public, max-age=31536000, immutable"
+				match {
+					status 200 206 304
+				}
+			}
+
+			reverse_proxy {$S3_PUBLIC_UPSTREAM} {
+				header_up Host {upstream_hostport}
+				header_up -Authorization
+				header_up -Cookie
+				header_down -X-Amz-*
+				header_down -X-Ratelimit-*
+				header_down -X-Xss-Protection
+				header_down -Cache-Control
+			}
+		}
+	}
+}
+
+{$SITE_HOST} {
+	import common
+	import blocked
+	import webhook_limits
+	import media
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# The storefront sets its own security headers and CSP (per-request nonce).
+	handle {
+		reverse_proxy web:4000
+	}
+}
+
+{$ADMIN_HOST} {
+	import common
+	import blocked
+	import admin_headers
+	import media
+
+	# The signed webhooks live only on the site host.
+	@webhooks path /api/payments/webhook /api/marketing/webhook
+	handle @webhooks {
+		respond 404
+	}
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		root * /srv/admin
+
+		# Content-hashed build files never change: cache them for a year. A missing one is a 404, never index.html.
+		@hashed path_regexp ^/(static-media/[^/]+|[a-z]+-[A-Za-z0-9_-]{8}\.(js|css))$
+		handle @hashed {
+			header {
+				Cache-Control "public, max-age=31536000, immutable"
+				match {
+					status 200 304
+				}
+			}
+			file_server
+		}
+
+		# index.html and the app routes it serves: always revalidate, so a deploy shows up at once.
+		handle {
+			header Cache-Control no-cache
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}
