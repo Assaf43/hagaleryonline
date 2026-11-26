@@ -1,6 +1,7 @@
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   NoSuchKey,
   PutObjectCommand,
   S3Client,
@@ -81,6 +82,20 @@ export class S3Storage extends StorageProvider {
     } catch (error) {
       if (error instanceof NoSuchKey || (error instanceof S3ServiceException && error.name === 'NoSuchKey'))
         return null;
+      throw error;
+    }
+  }
+
+  /** True when the object exists; any error other than "not found" is rethrown. */
+  async exists(key: string, visibility: 'public' | 'private'): Promise<boolean> {
+    checkKey(key);
+    try {
+      await this.send(new HeadObjectCommand({ Bucket: this.bucket(visibility), Key: key }));
+      return true;
+    } catch (error) {
+      const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status === 404 || (error instanceof S3ServiceException && ['NotFound', 'NoSuchKey'].includes(error.name)))
+        return false;
       throw error;
     }
   }

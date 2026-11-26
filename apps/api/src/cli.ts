@@ -8,19 +8,30 @@
  *   npm run admin -w @hg/api -- seal-order-tokens
  *     (seals the plain link tokens of orders placed before spec 9a.7 with ORDER_TOKEN_KEY; their links keep working;
  *     safe to run again; prints only a count)
+ *   npm run admin -w @hg/api -- copy-media-to-s3 [--dry-run]
+ *     (one-time copy of MEDIA_DIR/public and /private into the S3_* buckets; skips objects that exist, never
+ *     deletes; prints counts and the keys that failed)
  *
  * Prints a one-time invite link for the new Super Admin. Run it on the server (or locally);
  * the e-mail is passed at runtime and never stored in the repository.
  */
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { AppModule } from './app.module.js';
 import { AdminUsersService } from './auth/admin-users.service.js';
+import { copyMediaToS3 } from './media/copy-media.js';
+import { createStorage } from './media/media.module.js';
+import { S3Storage } from './media/s3-storage.js';
 import { OrderTokens, sealOrderTokens } from './orders/order-token.js';
 import { PrismaService } from './prisma/prisma.service.js';
 
 const [command, ...rest] = process.argv.slice(2);
-const { values } = parseArgs({ args: rest, options: { email: { type: 'string' }, name: { type: 'string' } } });
+const { values } = parseArgs({
+  args: rest,
+  options: { email: { type: 'string' }, name: { type: 'string' }, 'dry-run': { type: 'boolean' } },
+});
 
 // The CLI never runs outbox jobs: that is the API's worker.
 process.env.OUTBOX_WORKER = 'off';
@@ -39,6 +50,18 @@ try {
   } else if (command === 'seal-order-tokens') {
     const sealed = await sealOrderTokens(app.get(PrismaService), app.get(OrderTokens));
     console.log(`Sealed ${sealed} order token(s)`);
+  } else if (command === 'copy-media-to-s3') {
+    const config = app.get(ConfigService);
+    const target = createStorage({
+      get: ((key: string) => (key === 'STORAGE_PROVIDER' ? 's3' : config.get(key))) as never,
+    });
+    if (!(target instanceof S3Storage)) throw new Error('S3 storage is not configured');
+    const dryRun = values['dry-run'] === true;
+    const root = resolve(config.get<string>('MEDIA_DIR') || '../../storage');
+    const { copied, skipped, failed } = await copyMediaToS3(root, target, { dryRun });
+    console.log(`${dryRun ? 'Dry run: would copy' : 'Copied'} ${copied}, skipped ${skipped}, failed ${failed.length}`);
+    for (const key of failed) console.log(`FAILED ${key}`);
+    if (failed.length) process.exitCode = 1;
   } else {
     console.error(
       'Usage:\n  create-super-admin --email <e-mail> --name "<name>"\n  replace-super-admin --email <e-mail> --name "<name>"\n  reset-2fa --email <e-mail>\n  seal-order-tokens',

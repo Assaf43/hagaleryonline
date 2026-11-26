@@ -8,6 +8,10 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { randomBytes } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { copyMediaToS3 } from '../src/media/copy-media.js';
 import { S3Storage } from '../src/media/s3-storage.js';
 
 /** S3Storage against a real S3-compatible server (MinIO). Skipped unless S3_TEST_ENDPOINT is set. */
@@ -107,6 +111,13 @@ describe.skipIf(!endpoint)('S3Storage (e2e, MinIO)', () => {
     for (const k of real) expect(await storage.read(k.key, 'private')).toBeNull();
   });
 
+  it('exists is true for a stored key and false for a missing one', async () => {
+    await storage.put('ex/a.webp', Buffer.from('x'), 'public');
+    expect(await storage.exists('ex/a.webp', 'public')).toBe(true);
+    expect(await storage.exists('ex/a.webp', 'private')).toBe(false);
+    expect(await storage.exists('ex/none.webp', 'public')).toBe(false);
+  });
+
   it('missing key reads null', async () => {
     expect(await storage.read('nope/missing.webp', 'public')).toBeNull();
     expect(await storage.read('nope/missing.webp', 'private')).toBeNull();
@@ -137,5 +148,48 @@ describe.skipIf(!endpoint)('S3Storage (e2e, MinIO)', () => {
     expect(open.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(await open.text()).toBe('pic');
     expect((await fetch(`${endpoint}/${privateBucket}/anon/b.webp`)).status).toBe(403);
+  });
+  describe('copyMediaToS3', () => {
+    let root: string;
+    const files: [string, string, string][] = [
+      ['public', 'products/1/a-960.webp', 'pub-a'],
+      ['public', 'content/b.avif', 'pub-b'],
+      ['private', 'products/1/original.jpg', 'priv-a'],
+      ['private', 'support/9/p.webp', 'priv-b'],
+    ];
+
+    beforeAll(async () => {
+      root = await mkdtemp(join(tmpdir(), 'nesto-copy-'));
+      for (const [vis, key, body] of files) {
+        const path = join(root, vis, ...key.split('/'));
+        await mkdir(join(path, '..'), { recursive: true });
+        await writeFile(path, body);
+      }
+    });
+    afterAll(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('dry run writes nothing', async () => {
+      const result = await copyMediaToS3(root, storage, { dryRun: true });
+      expect(result).toEqual({ copied: 4, skipped: 0, failed: [] });
+      expect(await exists(publicBucket, 'content/b.avif')).toBe(false);
+      expect(await exists(privateBucket, 'support/9/p.webp')).toBe(false);
+    });
+
+    it('copies public and private to the right buckets', async () => {
+      const result = await copyMediaToS3(root, storage, { dryRun: false });
+      expect(result).toEqual({ copied: 4, skipped: 0, failed: [] });
+      expect(await exists(publicBucket, 'products/1/a-960.webp')).toBe(true);
+      expect(await exists(publicBucket, 'products/1/original.jpg')).toBe(false);
+      expect(await exists(privateBucket, 'products/1/original.jpg')).toBe(true);
+      expect((await storage.read('support/9/p.webp', 'private'))?.toString()).toBe('priv-b');
+      expect((await storage.read('content/b.avif', 'public'))?.toString()).toBe('pub-b');
+    });
+
+    it('second run copies nothing', async () => {
+      const result = await copyMediaToS3(root, storage, { dryRun: false });
+      expect(result).toEqual({ copied: 0, skipped: 4, failed: [] });
+    });
   });
 });
