@@ -233,4 +233,72 @@ describe('SystemPage ("תקלות ומצב המערכת")', () => {
     await vi.advanceTimersByTimeAsync(120_000);
     http.expectNone('/api/admin/system/status');
   });
+
+  it('stops auto-refresh after 30 minutes without input; input or "רענון" resumes it (decision 53)', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const fixture = TestBed.createComponent(SystemPage);
+    const el = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+    /** Answers every pending status and list request; returns how many status polls there were. */
+    const answer = () => {
+      const polls = http.match('/api/admin/system/status');
+      for (const r of polls) r.flush(STATUS);
+      for (const r of http.match((r) => r.url === '/api/admin/system/errors')) r.flush(PAGE([]));
+      return polls.length;
+    };
+    /** Polls during the next `minutes` minutes, one minute at a time. */
+    const pollsIn = async (minutes: number) => {
+      let polls = 0;
+      for (let i = 0; i < minutes; i++) {
+        await vi.advanceTimersByTimeAsync(60_000);
+        polls += answer();
+      }
+      return polls;
+    };
+    expect(answer()).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // A poll every minute while the last input is under 30 minutes old, then none.
+    expect(await pollsIn(29)).toBe(29);
+    expect(await pollsIn(15)).toBe(0);
+    fixture.detectChanges();
+    expect(el.querySelector('.paused')?.textContent).toContain('הרענון האוטומטי הופסק כי לא הייתה פעילות.');
+
+    // Input: the next tick polls again and the line goes.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    expect(await pollsIn(1)).toBe(1);
+    fixture.detectChanges();
+    expect(el.querySelector('.paused')).toBeNull();
+
+    // Idle again 30 minutes after the input; "רענון" refreshes at once and auto-refresh goes on.
+    expect(await pollsIn(28)).toBe(28);
+    expect(await pollsIn(5)).toBe(0);
+    fixture.detectChanges();
+    const button = [...el.querySelectorAll<HTMLButtonElement>('.paused button')].find(
+      (b) => b.textContent?.trim() === 'רענון',
+    )!;
+    button.click();
+    expect(answer()).toBe(1);
+    fixture.detectChanges();
+    expect(el.querySelector('.paused')).toBeNull();
+    expect(await pollsIn(2)).toBe(2);
+    fixture.destroy();
+  });
+
+  it('warns about the disk from the rounded percent it shows', async () => {
+    const at = async (freeShare: number) => {
+      const { fixture, el } = await open({ ...STATUS, diskFreeBytes: freeShare * 100 * 1024 ** 3 });
+      const disk = card(el, 'מקום פנוי בדיסק');
+      const result = { text: disk.textContent ?? '', warn: disk.classList.contains('warn') };
+      fixture.destroy();
+      return result;
+    };
+    const near = await at(0.096);
+    expect(near.text).toContain('10%');
+    expect(near.warn).toBe(false);
+    const low = await at(0.094);
+    expect(low.text).toContain('9%');
+    expect(low.warn).toBe(true);
+  });
 });

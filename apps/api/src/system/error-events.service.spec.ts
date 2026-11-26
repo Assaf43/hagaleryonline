@@ -222,4 +222,75 @@ describe('ErrorEventsService', () => {
       vi.useRealTimers();
     }
   });
+
+  it('skips a timer tick while a flush is still waiting on the database', async () => {
+    vi.useFakeTimers();
+    try {
+      const { prisma, calls, $queryRaw } = fakePrisma();
+      $queryRaw.mockImplementationOnce((_strings: TemplateStringsArray, ...values: unknown[]) => {
+        calls.push(values);
+        return new Promise(() => {});
+      });
+      const service = new ErrorEventsService(prisma, config());
+      service.onModuleInit();
+      service.capture({ kind: 'error', source: 'api', message: 'one' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(calls).toHaveLength(1);
+      service.capture({ kind: 'error', source: 'api', message: 'two' });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(calls).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shutdown waits for the flush in flight, flushes once more, gives up after 3 s with one line', async () => {
+    vi.useFakeTimers();
+    const lines: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      // A slow flush in flight: shutdown waits for it, then writes what came after it.
+      const slow = fakePrisma();
+      let release: (rows: unknown[]) => void = () => {};
+      slow.$queryRaw.mockImplementationOnce((_strings: TemplateStringsArray, ...values: unknown[]) => {
+        slow.calls.push(values);
+        return new Promise((resolve) => (release = resolve));
+      });
+      const service = new ErrorEventsService(slow.prisma, config());
+      service.onModuleInit();
+      service.capture({ kind: 'error', source: 'api', message: 'one' });
+      await vi.advanceTimersByTimeAsync(5_000);
+      service.capture({ kind: 'error', source: 'api', message: 'two' });
+      let closed = false;
+      void service.onModuleDestroy().then(() => (closed = true));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(slow.calls).toHaveLength(1);
+      expect(closed).toBe(false);
+      release([{ inserted: true, reopened: false }]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(slow.calls).toHaveLength(2);
+      expect(slow.calls[1]).toContain('two');
+      expect(closed).toBe(true);
+      expect(lines).toHaveLength(0);
+
+      // A database that never answers: shutdown still ends after 3 s.
+      const hung = fakePrisma();
+      hung.$queryRaw.mockImplementation(() => new Promise(() => {}));
+      const stuck = new ErrorEventsService(hung.prisma, config());
+      stuck.capture({ kind: 'error', source: 'api', message: 'three' });
+      let ended = false;
+      void stuck.onModuleDestroy().then(() => (ended = true));
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(ended).toBe(true);
+      expect(lines).toEqual(['error_events: shutdown flush timed out after 3 s\n']);
+    } finally {
+      stderr.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

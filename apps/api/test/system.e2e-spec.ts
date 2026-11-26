@@ -10,6 +10,7 @@ import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } fr
 import type { ErrorGroupDetail, ErrorGroupPage, SystemStatus } from '@hg/models';
 import { AppLogger } from './../src/system/app-logger.js';
 import { ErrorEventsService } from './../src/system/error-events.service.js';
+import { fingerprint } from './../src/system/fingerprint.js';
 import { SystemAlertsService } from './../src/system/system-alerts.service.js';
 import { OutboxService } from './../src/outbox/outbox.service.js';
 
@@ -18,6 +19,17 @@ const DAY = 24 * 60 * 60_000;
 /** Test-only routes: production code has no route that throws on purpose. */
 @Controller('e2e-system')
 class ThrowingController {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** A Prisma validation error whose argument tree holds a name and a street. */
+  @Get('prisma')
+  async prismaInvalid(): Promise<never> {
+    await this.prisma.customerAddress.create({
+      data: { street: 'Sentinel Street 5', houseNumber: '5', floor: 1, hasElevator: false, notes: 'Sentinel Person' },
+    } as never);
+    throw new Error('unreachable');
+  }
+
   @Get('boom')
   boom(): never {
     throw new Error('System e2e boom for sentinel.user@example.test');
@@ -106,6 +118,34 @@ describe('System error events (e2e, spec 9b.6)', () => {
     await http().get('/api/e2e-system/boom').expect(500);
     expect(await events.flush()).toEqual([]);
     expect((await prisma.errorEvent.findUniqueOrThrow({ where: { id: before.id } })).count).toBe(before.count + 2);
+  });
+
+  it('a Prisma validation error is stored without the values of its arguments', async () => {
+    await http().get('/api/e2e-system/prisma').expect(500);
+    await events.flush();
+    const [row, ...more] = await rows('prisma.customerAddress.create()');
+    expect(more).toEqual([]);
+    expect(row.message).toContain('[arguments]');
+    expect(row.message).toContain('Argument `customer` is missing.');
+    expect(JSON.stringify(row)).not.toContain('Sentinel');
+  });
+
+  it('caps the count at the largest int instead of failing the upsert', async () => {
+    const message = 'System e2e count cap';
+    const created = await prisma.errorEvent.create({
+      data: {
+        fingerprint: fingerprint({ kind: 'error', source: 'api', message }),
+        kind: 'ERROR',
+        source: 'API',
+        message,
+        count: 2_147_483_000,
+        firstSeen: new Date(),
+        lastSeen: new Date(),
+      },
+    });
+    for (let i = 0; i < 1_000; i++) events.capture({ kind: 'error', source: 'api', message });
+    await events.flush();
+    expect((await prisma.errorEvent.findUniqueOrThrow({ where: { id: created.id } })).count).toBe(2_147_483_647);
   });
 
   it('cleanup deletes a group 31 days old and keeps one 29 days old', async () => {

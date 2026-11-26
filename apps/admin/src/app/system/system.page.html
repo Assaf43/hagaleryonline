@@ -1,5 +1,12 @@
 <h1>תקלות ומצב המערכת</h1>
 
+@if (paused()) {
+  <div class="paused" role="status">
+    <p>הרענון האוטומטי הופסק כי לא הייתה פעילות.</p>
+    <button matButton="outlined" type="button" (click)="resume()">רענון</button>
+  </div>
+}
+
 @if (statusError()) {
   <div class="form-error" role="alert">
     <p>{{ statusError() }}</p>

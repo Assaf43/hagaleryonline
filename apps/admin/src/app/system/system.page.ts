@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DOCUMENT, DestroyRef, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
@@ -17,8 +17,16 @@ import { ConfirmDialog, type ConfirmDialogData } from '../orders/confirm-dialog'
 import { SystemApi } from './system.api';
 
 const REFRESH_MS = 60_000;
+/**
+ * Auto-refresh stops after this long without a real input: every answered admin call counts as activity, so a
+ * page left open would otherwise keep the session alive past the 8-hour idle logout (decision 53).
+ */
+export const IDLE_STOP_MS = 30 * 60_000;
+/** What a person does on the page; a poll's own answer is none of these. */
+const INPUT_EVENTS = ['pointerdown', 'keydown', 'touchstart', 'focusin', 'wheel'] as const;
 const GB = 1024 ** 3;
-const LOW_DISK_SHARE = 0.1;
+/** Below this percent free (as shown, rounded) the disk card warns. */
+const LOW_DISK_PERCENT = 10;
 
 const FILTERS: { value: ErrorGroupState; label: string }[] = [
   { value: 'open', label: 'פתוחות' },
@@ -99,7 +107,8 @@ export function formatUptime(seconds: number): string {
 
 /**
  * "תקלות ומצב המערכת" (spec 9b.6, permission system.view): status cards and the error groups the API and the
- * storefront server collected. Refreshes itself every minute while the tab is visible. A row opens in place to its
+ * storefront server collected. Refreshes itself every minute while the tab is visible, and stops after 30 minutes
+ * without input (pointer, keyboard, touch, focus) until the next input or "רענון". A row opens in place to its
  * stack; "סימון כטופל" asks first, and a group that comes back opens again by itself.
  */
 @Component({
@@ -127,6 +136,8 @@ export class SystemPage {
   protected readonly detail = signal<ErrorGroupDetail | null>(null);
   protected readonly detailError = signal('');
   protected readonly marking = signal(false);
+  /** Auto-refresh stopped for lack of input. */
+  protected readonly paused = signal(false);
 
   protected readonly canOpenJobs = computed(() => this.auth.can('orders.manage'));
   protected readonly emptyText = computed(() => EMPTY[this.state()]);
@@ -138,12 +149,12 @@ export class SystemPage {
   protected readonly disk = computed(() => {
     const s = this.status();
     if (!s || s.diskFreeBytes === null || s.diskTotalBytes === null || s.diskTotalBytes <= 0) return null;
-    const share = s.diskFreeBytes / s.diskTotalBytes;
+    const percent = Math.round((s.diskFreeBytes / s.diskTotalBytes) * 100);
     return {
       free: (s.diskFreeBytes / GB).toFixed(1),
       total: (s.diskTotalBytes / GB).toFixed(1),
-      percent: Math.round(share * 100),
-      low: share < LOW_DISK_SHARE,
+      percent,
+      low: percent < LOW_DISK_PERCENT,
     };
   });
   protected readonly backups = computed<RunLine[]>(() => {
@@ -161,14 +172,20 @@ export class SystemPage {
 
   /** Increases with every list request; an older, slower answer is dropped. */
   private seq = 0;
+  /** When the person last used the page (not when a poll answered). */
+  private lastInput = Date.now();
 
   constructor() {
     void this.loadStatus();
     void this.loadGroups();
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') this.refresh();
-    }, REFRESH_MS);
-    inject(DestroyRef).onDestroy(() => clearInterval(timer));
+    const doc = inject(DOCUMENT);
+    const onInput = () => this.noteInput();
+    for (const type of INPUT_EVENTS) doc.addEventListener(type, onInput, { capture: true, passive: true });
+    const timer = setInterval(() => this.tick(doc), REFRESH_MS);
+    inject(DestroyRef).onDestroy(() => {
+      clearInterval(timer);
+      for (const type of INPUT_EVENTS) doc.removeEventListener(type, onInput, { capture: true });
+    });
   }
 
   protected when(iso: string): string {
@@ -177,6 +194,28 @@ export class SystemPage {
 
   protected reload() {
     this.refresh();
+  }
+
+  /** "רענון" after the pause: one refresh now, and auto-refresh again. */
+  protected resume() {
+    this.noteInput();
+    this.paused.set(false);
+    this.refresh();
+  }
+
+  /**
+   * Only remembers the time: the next tick resumes. Hiding the pause line here would remove the "רענון" button
+   * between its pointerdown and its click.
+   */
+  private noteInput() {
+    this.lastInput = Date.now();
+  }
+
+  private tick(doc: Document) {
+    if (doc.visibilityState !== 'visible') return;
+    const idle = Date.now() - this.lastInput >= IDLE_STOP_MS;
+    this.paused.set(idle);
+    if (!idle) this.refresh();
   }
 
   protected choose(state: ErrorGroupState) {

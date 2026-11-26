@@ -10,7 +10,8 @@ p {
   margin: 0;
 }
 
-.form-error {
+.form-error,
+.paused {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

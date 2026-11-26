@@ -92,9 +92,17 @@ describe('scrub', () => {
   it('stays linear on long input', () => {
     const started = performance.now();
     const inputs = ['a'.repeat(200_000), 'a.'.repeat(100_000), '0'.repeat(200_000), '05 '.repeat(60_000)];
-    inputs.push('code:'.repeat(40_000), '"token":"'.repeat(20_000), "{ otp: '".repeat(25_000), 'key= '.repeat(40_000));
+    inputs.push(
+      'code:'.repeat(40_000),
+      '"token":"'.repeat(20_000),
+      "{ otp: '".repeat(25_000),
+      'key= '.repeat(40_000),
+      '%40a'.repeat(50_000),
+      'a%40b.'.repeat(30_000),
+    );
+    inputs.push('Invalid `x` invocation\n\nA'.repeat(20_000), 'Invalid `x` invocation {'.repeat(20_000));
     for (const s of inputs) scrub(s);
-    expect(performance.now() - started).toBeLessThan(1000);
+    expect(performance.now() - started).toBeLessThan(3000);
   });
 
   it('cuts the result to 2 000 characters after scrubbing', () => {

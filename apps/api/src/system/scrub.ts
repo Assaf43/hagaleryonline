@@ -15,8 +15,11 @@ const BEARER = /\bBearer\s+[^\s"',;]+/gi;
 /** Whole parameter names only: `?at=` or `&count=` are not touched. */
 const SECRET_QUERY = new RegExp(`([?&](?:${SECRET_QUERY_NAMES.join('|')})=)[^&#\\s"'<>]*`, 'gi');
 const PERSONAL_CODE = /\bNST-[A-Z0-9]{8}\b/gi;
-/** Starts only at the beginning of a local-part run, so a long run without `@` is scanned once, not n² times. */
-const EMAIL = /(?<![\w.%+-])[\w.%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+/**
+ * Starts only at the beginning of a local-part run, so a long run without `@` is scanned once, not n² times.
+ * `%40` counts as `@` (an address URL-encoded in a query, `?q=user%40example.test`).
+ */
+const EMAIL = /(?<![\w.%+-])[\w.%+-]+(?:@|%40)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 /** Runs of base64url / hex characters; see `looksSecret` for which runs count. */
 const TOKEN_RUN = /[A-Za-z0-9_-]{24,}/g;
 /** Israeli mobile, local form: 05x and seven more digits, dashes or spaces allowed between digits. */
@@ -35,6 +38,30 @@ const SECRET_KEY = new RegExp(
   String.raw`(?<![\w$.'"-])(["']?)(${SECRET_KEY_NAMES.join('|')})\1(\s*[:=]\s*)("[^"\r\n]*"|'[^'\r\n]*'|(?!\[)[^\s,;&}\])]+)`,
   'gi',
 );
+/**
+ * The header of a Prisma validation error. Prisma prints the whole query argument tree after it, values included
+ * (names, streets), whatever `errorFormat` says; `errorFormat: 'minimal'` only drops the source code frame.
+ */
+const PRISMA_INVOCATION = /Invalid `[^`\r\n]{1,200}` invocation[^\r\n]*/g;
+/** Where the reason starts after the tree: a blank line, then a letter (tree lines start with a space, `{`, `}`). */
+const PRISMA_REASON = /\n\n(?=[A-Za-z])/g;
+
+/** Replaces each Prisma argument tree with `[arguments]`, keeping the header and the reason; to the end without one. */
+function dropPrismaArguments(text: string): string {
+  let out = '';
+  let from = 0;
+  PRISMA_INVOCATION.lastIndex = 0;
+  for (let m = PRISMA_INVOCATION.exec(text); m; m = PRISMA_INVOCATION.exec(text)) {
+    const headerEnd = m.index + m[0].length;
+    PRISMA_REASON.lastIndex = headerEnd;
+    const reason = PRISMA_REASON.exec(text);
+    out += `${text.slice(from, headerEnd)}\n\n[arguments]`;
+    from = reason ? reason.index : text.length;
+    PRISMA_INVOCATION.lastIndex = from;
+  }
+  return from === 0 ? text : out + text.slice(from);
+}
+
 /** A marker an earlier step wrote (`[code]`, `[secret]`, …). */
 const MARKER = /^\[[a-z]+\]$/;
 /** Error codes are not secrets: `P2002`, `ECONNREFUSED`, `ERR_X`, the API's own `price_changed`. */
@@ -57,14 +84,14 @@ function looksSecret(run: string): boolean {
 }
 
 /**
- * Replaces e-mails, phones, secret query values, bearer tokens, cookies, long tokens and personal
- * codes with fixed markers, then cuts the result to {@link SCRUB_MAX_LENGTH} characters.
+ * Replaces Prisma argument trees, e-mails, phones, secret query values, bearer tokens, cookies, long tokens and
+ * personal codes with fixed markers, then cuts the result to {@link SCRUB_MAX_LENGTH} characters.
  * The order matters: whole values (cookie, bearer, query) go first so a long token inside them is
  * redacted as one; e-mails go before token runs so no domain is left behind; secret keys go last, so a
  * value another step owns keeps its marker (`{"code":"[code]"}`).
  */
 export function scrub(text: string): string {
-  const out = text
+  const out = dropPrismaArguments(text)
     .replace(COOKIE, (_m, name: string, sep: string, value: string) =>
       value.startsWith('"') ? `${name}${sep}"[redacted]"` : `${name}${sep}[redacted]`,
     )

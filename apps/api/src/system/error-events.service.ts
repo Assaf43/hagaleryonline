@@ -59,6 +59,8 @@ interface UpsertRow {
 /** New keys beyond this many in one flush window go to the overflow group. */
 export const MAX_PENDING_GROUPS = 500;
 export const FLUSH_EVERY_MS = 5_000;
+/** The flush on shutdown (with the one in flight before it) gives up after this long. */
+export const SHUTDOWN_FLUSH_MS = 3_000;
 const CLEANUP_EVERY_MS = 24 * 60 * 60_000;
 /** Groups not seen for this long are deleted (spec 9b.6). */
 export const ERROR_EVENT_RETENTION_MS = 30 * 24 * 60 * 60_000;
@@ -103,6 +105,8 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
   private flushTimer: NodeJS.Timeout | undefined;
   private cleanupTimer: NodeJS.Timeout | undefined;
   private readonly flushListeners: ((changes: ErrorGroupChange[]) => Promise<void> | void)[] = [];
+  /** The latest flush still running (a timer tick is skipped while one is, so slow writes never pile up). */
+  private inFlight: Promise<unknown> | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -111,16 +115,36 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (this.config.get<string>('ERROR_EVENTS_WORKER') === 'off') return;
-    this.flushTimer = setInterval(() => void this.flush(), FLUSH_EVERY_MS).unref();
+    this.flushTimer = setInterval(() => {
+      if (!this.inFlight) void this.flush();
+    }, FLUSH_EVERY_MS).unref();
     const cleanup = () => this.cleanup().catch((error: unknown) => printFailure('cleanup', error));
     void cleanup();
     this.cleanupTimer = setInterval(() => void cleanup(), CLEANUP_EVERY_MS).unref();
   }
 
+  /**
+   * Waits for the flush in flight, then flushes once more; all of it raced against {@link SHUTDOWN_FLUSH_MS}, so a
+   * database that never answers cannot hold the shutdown until the process is killed. Never rejects.
+   */
   async onModuleDestroy(): Promise<void> {
     clearInterval(this.flushTimer);
     clearInterval(this.cleanupTimer);
-    await this.flush();
+    let timer: NodeJS.Timeout | undefined;
+    const finished = (async () => {
+      await this.inFlight;
+      await this.flush();
+      return true;
+    })();
+    const timedOut = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), SHUTDOWN_FLUSH_MS)));
+    const done = await Promise.race([finished, timedOut]);
+    clearTimeout(timer);
+    if (!done)
+      try {
+        process.stderr.write(`error_events: shutdown flush timed out after ${SHUTDOWN_FLUSH_MS / 1000} s\n`);
+      } catch {
+        // Nothing left to tell.
+      }
   }
 
   /**
@@ -191,7 +215,16 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
    * group seen again). On a database error the rest of the batch is dropped after one stderr line; the groups
    * written before it are still returned. Never rejects.
    */
-  async flush(): Promise<ErrorGroupChange[]> {
+  flush(): Promise<ErrorGroupChange[]> {
+    const run = this.write();
+    this.inFlight = run;
+    void run.finally(() => {
+      if (this.inFlight === run) this.inFlight = undefined;
+    });
+    return run;
+  }
+
+  private async write(): Promise<ErrorGroupChange[]> {
     const batch = [...this.pending.values()];
     if (this.overflow) batch.push(this.overflow);
     this.pending = new Map();
@@ -235,9 +268,10 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Adds the count, keeps the latest sample, and reopens a handled group (`reopened_at` now, `handled_at` cleared).
-   * `old` in RETURNING (PostgreSQL 18) tells a new row and a reopened one apart exactly. Timestamps are UTC like
-   * every Prisma `DateTime` column (`timestamp` without time zone).
+   * Adds the count (capped at the largest `int`, so a long storm never fails the write), keeps the latest sample,
+   * and reopens a handled group (`reopened_at` now, `handled_at` cleared). `old` in RETURNING
+   * (PostgreSQL 18) tells a new row and a reopened one apart exactly. Timestamps are UTC like every Prisma `DateTime`
+   * column (`timestamp` without time zone).
    */
   private upsert(g: PendingGroup): Promise<UpsertRow[]> {
     return this.prisma.$queryRaw<UpsertRow[]>`
@@ -245,7 +279,7 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
       VALUES (${g.fingerprint}, ${g.kind}::error_event_kind, ${g.source}::error_event_source, ${g.message},
               ${g.stack}, ${g.path}, ${g.count}, ${g.firstSeen}, ${g.lastSeen})
       ON CONFLICT (fingerprint) DO UPDATE SET
-        count = e.count + EXCLUDED.count,
+        count = LEAST(e.count::bigint + EXCLUDED.count, 2147483647),
         last_seen = GREATEST(e.last_seen, EXCLUDED.last_seen),
         message = EXCLUDED.message,
         stack = COALESCE(EXCLUDED.stack, e.stack),

@@ -10,6 +10,16 @@
     "mustNotContain": ["Sentinel.Two", "mail.example.test"]
   },
   {
+    "name": "URL-encoded e-mail in a query",
+    "input": "GET /search?q=sentinel.enc%40example.test&page=2",
+    "mustNotContain": ["sentinel.enc", "example.test", "%40"]
+  },
+  {
+    "name": "Prisma validation error argument tree",
+    "input": "PrismaClientValidationError: \nInvalid `prisma.customerAddress.create()` invocation:\n\n{\n  data: {\n    street: \"Sentinel Street 5\",\n    notes: \"Sentinel Person\"\n  }\n}\n\nArgument `customer` is missing.\n    at Object.create (apps/api/src/x.ts:1:1)",
+    "mustNotContain": ["Sentinel Street", "Sentinel Person", "street:"]
+  },
+  {
     "name": "mobile phone with a dash",
     "input": "SMS to 054-1234567 failed",
     "mustNotContain": ["1234567", "054"]
