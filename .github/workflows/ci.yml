@@ -38,5 +38,16 @@ jobs:
       - run: npm run build
       - run: npm run lint
       - run: npm test
+      # S3 storage test double: a frozen legacy build of real MinIO (the official images are gone). Test double only,
+      # never used in production. The e2e creates and removes its own buckets.
+      - run: |
+          docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin-ci-test-only \
+            --entrypoint minio bitnamilegacy/minio:2025.7.23-debian-12-r5@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20 server /tmp/data
+          for i in $(seq 1 30); do curl -fs http://localhost:9000/minio/health/live && break; sleep 1; done
+          curl -fsS http://localhost:9000/minio/health/live
       # e2e creates, migrates and seeds its own <db>_test database (apps/api/test/e2e-global-setup.ts)
       - run: npm run test:e2e
+        env:
+          S3_TEST_ENDPOINT: http://localhost:9000
+          S3_TEST_ACCESS_KEY_ID: minioadmin
+          S3_TEST_SECRET_ACCESS_KEY: minioadmin-ci-test-only
