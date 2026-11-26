@@ -20,6 +20,16 @@
     "mustNotContain": ["Sentinel Street", "Sentinel Person", "street:"]
   },
   {
+    "name": "Prisma argument tree escaped in JSON",
+    "input": "{\"m\":\"PrismaClientValidationError: \\nInvalid `prisma.customerAddress.create()` invocation:\\n\\n{\\n  data: {\\n    street: \\\"Sentinel Escaped Street 7\\\",\\n    notes: \\\"Sentinel Escaped Person\\\"\\n  }\\n}\\n\\nArgument `customer` is missing.\"}",
+    "mustNotContain": ["Sentinel Escaped Street", "Sentinel Escaped Person", "street:"]
+  },
+  {
+    "name": "Prisma argument tree escaped by inspect",
+    "input": "Wrap { m: 'PrismaClientValidationError: \\nInvalid `prisma.customerAddress.create()` invocation:\\n\\n{\\n  data: {\\n    street: \"Sentinel Escaped Street 7\",\\n    notes: \"Sentinel Escaped Person\"\\n  }\\n}\\n\\nArgument `customer` is missing.' }",
+    "mustNotContain": ["Sentinel Escaped Street", "Sentinel Escaped Person", "street:"]
+  },
+  {
     "name": "mobile phone with a dash",
     "input": "SMS to 054-1234567 failed",
     "mustNotContain": ["1234567", "054"]

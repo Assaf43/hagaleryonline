@@ -39,8 +39,10 @@ const SECRET_KEY = new RegExp(
 /**
  * The header of a Prisma validation error. Prisma prints the whole query argument tree after it, values included
  * (names, streets), whatever `errorFormat` says; `errorFormat: 'minimal'` only drops the source code frame.
+ * The header ends at the word: text escaped onto one line (`\n` as two characters, JSON or `inspect`) has no
+ * real line end, so it falls back to removing everything after the header.
  */
-const PRISMA_INVOCATION = /Invalid `[^`\r\n]{1,200}` invocation[^\r\n]*/g;
+const PRISMA_INVOCATION = /Invalid `[^`\r\n]{1,200}` invocation(?::| in)?/g;
 /** Where the reason starts after the tree: a blank line, then a letter (tree lines start with a space, `{`, `}`). */
 const PRISMA_REASON = /\n\n(?=[A-Za-z])/g;
 
