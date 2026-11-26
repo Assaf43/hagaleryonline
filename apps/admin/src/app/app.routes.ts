@@ -245,6 +245,12 @@ export const routes: Routes = [
         title: 'הודעות שנשלחו (בדיקה)',
       },
       {
+        path: 'system',
+        canMatch: [hasPermission('system.view')],
+        loadComponent: () => import('./system/system.page').then((m) => m.SystemPage),
+        title: 'תקלות ומצב המערכת',
+      },
+      {
         path: 'audit',
         canMatch: [hasPermission('audit.view')],
         loadComponent: () => import('./audit/audit.page').then((m) => m.AuditPageComponent),

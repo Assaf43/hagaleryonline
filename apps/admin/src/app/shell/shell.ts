@@ -9,6 +9,7 @@ import { MatSidenavModule } from '@angular/material/sidenav';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { map } from 'rxjs';
 import {
+  LucideActivity,
   LucideBadgePercent,
   LucideBookOpen,
   LucideCircleQuestionMark,
@@ -72,6 +73,7 @@ import { ChangePasswordDialog } from './change-password.dialog';
     LucideInbox,
     LucideKeyRound,
     LucideLayoutDashboard,
+    LucideActivity,
     LucideListX,
     LucideLogOut,
     LucideMailCheck,

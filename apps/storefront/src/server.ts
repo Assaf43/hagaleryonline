@@ -9,13 +9,17 @@ import { join } from 'node:path';
 import { previewNoStore } from './preview-no-store';
 import { registerSeoRoutes } from './seo-routes';
 import { securityHeaders } from './security-headers';
-import { readServerEnv } from './server-env';
+import { serverErrorHandler } from './server-error';
+import { readServerEnv, warnUnknownCsp } from './server-env';
+import { configureReporting, logJson } from './server-log';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+warnUnknownCsp();
 const env = readServerEnv();
+configureReporting({ apiUrl: env.apiUrl, internalToken: env.internalToken });
 
 /** CSP with a per-request nonce, Permissions-Policy, nosniff, X-Frame-Options, Referrer-Policy (NFR-07). */
 app.use(securityHeaders(env.csp));
@@ -49,6 +53,9 @@ app.use((req, res, next) => {
     .catch(next);
 });
 
+/** Render errors: JSON log line, report to the API's error screen, generic 500 page (spec 9b.6). */
+app.use(serverErrorHandler);
+
 /**
  * Start the server if this module is the main entry point, or it is ran via PM2.
  * The server listens on the port defined by the `PORT` environment variable, or defaults to 4000.
@@ -60,7 +67,7 @@ if (isMainModule(import.meta.url) || process.env['pm_id']) {
       throw error;
     }
 
-    console.log(`Node Express server listening on http://localhost:${port}`);
+    logJson('info', `Node Express server listening on port ${port}`);
   });
 }
 

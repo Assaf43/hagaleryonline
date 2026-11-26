@@ -88,6 +88,11 @@ export class OutboxService {
       ON CONFLICT (dedupe_key) DO NOTHING`;
   }
 
+  /** How many jobs are FAILED now (the system status screen and the "משימות שנכשלו" link). */
+  countFailed(): Promise<number> {
+    return this.prisma.outboxJob.count({ where: { state: OutboxJobState.FAILED } });
+  }
+
   /**
    * Returns stuck RUNNING jobs to PENDING, then claims up to `limit` due PENDING jobs that have a handler (oldest due
    * first) and runs them one after another. Success → DONE; an error → PENDING again after `backoff(attempts)`, or

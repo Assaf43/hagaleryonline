@@ -356,6 +356,7 @@ model AdminUser {
   sellerOrders     Order[]
   createdCustomers Customer[]
   issuedCodes      PersonalCode[]
+  handledErrors    ErrorEvent[]
 
   @@map("admin_users")
 }
@@ -1593,4 +1594,77 @@ model LandingPage {
   @@index([imageId])
   @@index([mobileImageId])
   @@map("landing_pages")
+}
+
+// ---------- Monitoring (Phase 9b, spec 9b.6, NFR-11) ----------
+
+enum ErrorEventKind {
+  ERROR @map("error")
+  WARN  @map("warn")
+
+  @@map("error_event_kind")
+}
+
+enum ErrorEventSource {
+  API @map("api")
+  SSR @map("ssr")
+
+  @@map("error_event_source")
+}
+
+/// One group of logged errors or warnings (apps/api/src/system/): the API's `AppLogger` and the storefront SSR feed
+/// `ErrorEventsService.capture`, which groups them in memory by `fingerprint` (kind + source + message without numbers
+/// + first stack frame) and upserts every 5 s. Message and stack are scrubbed (no e-mails, phones, tokens, cookies).
+/// "Handled" groups reopen when the error comes back. Groups not seen for 30 days are deleted by the daily cleanup.
+model ErrorEvent {
+  id          Int              @id @default(autoincrement())
+  /// SHA-256 hex (`system/fingerprint.ts`).
+  fingerprint String           @unique
+  kind        ErrorEventKind
+  source      ErrorEventSource
+  /// The latest sample, scrubbed.
+  message     String
+  /// Scrubbed, top 10 frames.
+  stack       String?
+  /// The request path of the latest sample, without the query string.
+  path        String?
+  count       Int              @default(0)
+  firstSeen   DateTime         @map("first_seen")
+  lastSeen    DateTime         @map("last_seen")
+  handledAt   DateTime?        @map("handled_at")
+  handledById Int?             @map("handled_by_id")
+  /// Set when a handled group came back (and `handledAt` is cleared).
+  reopenedAt  DateTime?        @map("reopened_at")
+  /// When the last alert for this group was sent (at most one per hour, Phase 9b alerts).
+  alertedAt   DateTime?        @map("alerted_at")
+
+  handledBy AdminUser? @relation(fields: [handledById], references: [id], onDelete: SetNull)
+
+  @@index([handledAt, lastSeen(sort: Desc)])
+  @@index([handledById])
+  @@map("error_events")
+}
+
+enum BackupKind {
+  DB           @map("db")
+  MEDIA        @map("media")
+  RESTORE_TEST @map("restore_test")
+
+  @@map("backup_kind")
+}
+
+/// One backup or restore-test run (Phase 9b): `ok` is null while it runs. `detail` is scrubbed, at most 500 characters.
+model BackupRun {
+  id         Int        @id @default(autoincrement())
+  kind       BackupKind
+  startedAt  DateTime   @map("started_at")
+  finishedAt DateTime?  @map("finished_at")
+  ok         Boolean?
+  bytes      BigInt?
+  objects    Int?
+  detail     String?
+  alertedAt  DateTime?  @map("alerted_at")
+
+  @@index([kind, startedAt(sort: Desc)])
+  @@map("backup_runs")
 }

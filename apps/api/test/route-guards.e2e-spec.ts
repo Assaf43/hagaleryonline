@@ -28,6 +28,8 @@ const SIGNED_IN_ONLY: Record<string, string> = {
 const CROSS_SITE_WRITES: Record<string, string> = {
   'POST /api/payments/webhook': 'the payment provider calls it; HMAC signature over the raw body',
   'POST /api/marketing/webhook': 'the e-mail marketing tool calls it; signed webhook',
+  'POST /api/internal/error-events':
+    'the storefront server calls it; shared INTERNAL_API_TOKEN (constant-time), 404 for anyone else',
 };
 
 /** `/api/account/` routes reached before there is a session. */

@@ -1,5 +1,6 @@
 import type { SitemapData } from '@hg/models';
 import type { Express } from 'express';
+import { logJson } from './server-log';
 
 /** How long a built sitemap.xml is reused before the catalog is asked again. */
 const SITEMAP_TTL_MS = 60 * 60 * 1000;
@@ -57,7 +58,11 @@ export function registerSeoRoutes(app: Express, env: { apiUrl: string; siteUrl: 
         cached = { xml: buildSitemapXml(data, env.siteUrl), expires: Date.now() + SITEMAP_TTL_MS };
       } catch (error) {
         // Never an empty sitemap: search engines retry a 503 later. The failure is not cached.
-        console.error('sitemap.xml: catalog API unavailable', error);
+        // Logged only: the API logs and records its own failures, and cannot take a report while it is down.
+        logJson('error', 'sitemap.xml: catalog API unavailable', {
+          path: '/sitemap.xml',
+          error: error instanceof Error ? error.message : String(error),
+        });
         res.status(503).type('text/plain').send('Sitemap temporarily unavailable');
         return;
       }

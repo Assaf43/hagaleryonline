@@ -22,6 +22,7 @@ export const OUTBOX_JOB_TYPES = [
   'sms.welcome_code',
   'email.personal_code',
   'sms.personal_code',
+  'email.system_alert',
 ] as const;
 
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPES)[number];
@@ -46,6 +47,7 @@ export const OUTBOX_JOB_LABELS_HE: Record<OutboxJobType, string> = {
   'sms.welcome_code': 'SMS קוד הצטרפות',
   'email.personal_code': 'מייל קוד הטבה אישי',
   'sms.personal_code': 'SMS קוד הטבה אישי',
+  'email.system_alert': 'מייל התראת מערכת',
 };
 
 /** One row of GET /api/admin/jobs/failed (permission orders.manage). */

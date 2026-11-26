@@ -95,6 +95,7 @@ describe('registerSeoRoutes /sitemap.xml', () => {
 
   let handlers: Record<string, Handler>;
   let fetchMock: ReturnType<typeof vi.fn>;
+  let logged: string[];
   const request = async (path: string): Promise<FakeRes> => {
     const res = newRes();
     await handlers[path]({}, res);
@@ -105,7 +106,11 @@ describe('registerSeoRoutes /sitemap.xml', () => {
     handlers = {};
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    logged = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      logged.push(String(chunk));
+      return true;
+    });
     const app = { get: (path: string, h: Handler) => void (handlers[path] = h) } as unknown as Express;
     registerSeoRoutes(app, { apiUrl: 'http://api', siteUrl: 'https://example.co.il', indexing: true });
   });
@@ -126,6 +131,13 @@ describe('registerSeoRoutes /sitemap.xml', () => {
     const res = await request('/sitemap.xml');
     expect(res.statusCode).toBe(503);
     expect(res.contentType).toBe('text/plain');
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0])).toMatchObject({
+      level: 'error',
+      msg: 'sitemap.xml: catalog API unavailable',
+      path: '/sitemap.xml',
+      error: 'down',
+    });
   });
 
   it('answers 503 text/plain when the API answers non-OK', async () => {

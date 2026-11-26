@@ -11,6 +11,7 @@ import { NotificationsService } from './notifications.service.js';
 import { DeliverySlotSmsJob } from './delivery-slot-sms.job.js';
 import { OrderMessagesJob } from './order-messages.job.js';
 import { PersonalCodeMessagesJob } from './personal-code-messages.job.js';
+import { SystemAlertMessageJob } from './system-alert-message.job.js';
 
 /**
  * E-mail and SMS (spec §5.2). The active adapters come from `EMAIL_PROVIDER` and `SMS_PROVIDER` (both required, no
@@ -26,6 +27,7 @@ import { PersonalCodeMessagesJob } from './personal-code-messages.job.js';
     OrderMessagesJob,
     DeliverySlotSmsJob,
     PersonalCodeMessagesJob,
+    SystemAlertMessageJob,
     {
       provide: EMAIL_PROVIDER,
       inject: [ConfigService],

@@ -196,6 +196,12 @@
           </a>
         }
       }
+      @if (can('system.view')) {
+        <a class="nav-link" routerLink="/system" routerLinkActive="active" (click)="isPhone() && drawer.close()">
+          <svg lucideActivity></svg>
+          תקלות ומצב המערכת
+        </a>
+      }
       @if (auth.isSuperAdmin()) {
         <a class="nav-link" routerLink="/users" routerLinkActive="active" (click)="isPhone() && drawer.close()">
           <svg lucideUsers></svg>

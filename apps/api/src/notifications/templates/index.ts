@@ -24,6 +24,7 @@ import {
   type RefundData,
 } from './order-messages.js';
 import { otpEmail, otpText, type OtpData } from './otp.js';
+import { systemAlert, type SystemAlertData } from './system-alert.js';
 import { ticketAlert, ticketReceived, type TicketAlertData, type TicketReceivedData } from './support.js';
 import type { RenderedEmail } from './layout.js';
 
@@ -34,6 +35,7 @@ export type { NewsletterConfirmData, StoreConsentSmsData } from './marketing.js'
 export type { OrderLinkData, OrderPaidData, OrderPaidLine, RefundData } from './order-messages.js';
 export type { OtpData } from './otp.js';
 export type { DeliverySlotSmsData } from './sms.js';
+export type { SystemAlertData, SystemAlertReason } from './system-alert.js';
 export type { TicketAlertData, TicketReceivedData } from './support.js';
 
 /** The data each e-mail template needs. All Hebrew strings live in this folder (GEN-04). */
@@ -50,6 +52,7 @@ export interface EmailTemplateData {
   newsletter_confirm: NewsletterConfirmData;
   welcome_code: PersonalCodeMessageData;
   personal_code: PersonalCodeMessageData;
+  system_alert: SystemAlertData;
 }
 export type EmailTemplate = keyof EmailTemplateData;
 
@@ -75,6 +78,7 @@ const EMAIL: { [T in EmailTemplate]: (data: EmailTemplateData[T]) => RenderedEma
   newsletter_confirm: newsletterConfirm,
   welcome_code: welcomeCodeEmail,
   personal_code: personalCodeEmail,
+  system_alert: systemAlert,
 };
 
 const SMS: { [T in SmsTemplate]: (data: SmsTemplateData[T]) => string } = {

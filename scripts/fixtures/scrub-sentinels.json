@@ -1,0 +1,132 @@
+[
+  {
+    "name": "e-mail address",
+    "input": "Sign-up failed for sentinel.user@example.test (duplicate)",
+    "mustNotContain": ["sentinel.user", "example.test", "@"]
+  },
+  {
+    "name": "e-mail with plus and subdomain",
+    "input": "to=Sentinel.Two+tag@mail.example.test;",
+    "mustNotContain": ["Sentinel.Two", "mail.example.test"]
+  },
+  {
+    "name": "URL-encoded e-mail in a query",
+    "input": "GET /search?q=sentinel.enc%40example.test&page=2",
+    "mustNotContain": ["sentinel.enc", "example.test", "%40"]
+  },
+  {
+    "name": "Prisma validation error argument tree",
+    "input": "PrismaClientValidationError: \nInvalid `prisma.customerAddress.create()` invocation:\n\n{\n  data: {\n    street: \"Sentinel Street 5\",\n    notes: \"Sentinel Person\"\n  }\n}\n\nArgument `customer` is missing.\n    at Object.create (apps/api/src/x.ts:1:1)",
+    "mustNotContain": ["Sentinel Street", "Sentinel Person", "street:"]
+  },
+  {
+    "name": "Prisma argument tree escaped in JSON",
+    "input": "{\"m\":\"PrismaClientValidationError: \\nInvalid `prisma.customerAddress.create()` invocation:\\n\\n{\\n  data: {\\n    street: \\\"Sentinel Escaped Street 7\\\",\\n    notes: \\\"Sentinel Escaped Person\\\"\\n  }\\n}\\n\\nArgument `customer` is missing.\"}",
+    "mustNotContain": ["Sentinel Escaped Street", "Sentinel Escaped Person", "street:"]
+  },
+  {
+    "name": "Prisma argument tree escaped by inspect",
+    "input": "Wrap { m: 'PrismaClientValidationError: \\nInvalid `prisma.customerAddress.create()` invocation:\\n\\n{\\n  data: {\\n    street: \"Sentinel Escaped Street 7\",\\n    notes: \"Sentinel Escaped Person\"\\n  }\\n}\\n\\nArgument `customer` is missing.' }",
+    "mustNotContain": ["Sentinel Escaped Street", "Sentinel Escaped Person", "street:"]
+  },
+  {
+    "name": "mobile phone with a dash",
+    "input": "SMS to 054-1234567 failed",
+    "mustNotContain": ["1234567", "054"]
+  },
+  {
+    "name": "mobile phone without separators",
+    "input": "phone=0527654321 rejected",
+    "mustNotContain": ["0527654321", "7654321"]
+  },
+  {
+    "name": "international phone with spaces",
+    "input": "SMS to +972 54 765 4321 failed",
+    "mustNotContain": ["765 4321", "+972"]
+  },
+  {
+    "name": "international phone with dashes",
+    "input": "call +972-50-123-4567 now",
+    "mustNotContain": ["123-4567", "+972"]
+  },
+  {
+    "name": "order token query",
+    "input": "GET /order/100013?t=sentinelOrderTok&x=1",
+    "mustNotContain": ["sentinelOrderTok"]
+  },
+  {
+    "name": "token, preview, code, key and signature queries",
+    "input": "/a?token=sentTokA&preview=sentPrevB&code=sentCodeC&key=sentKeyD&signature=sentSigE",
+    "mustNotContain": ["sentTokA", "sentPrevB", "sentCodeC", "sentKeyD", "sentSigE"]
+  },
+  {
+    "name": "query names in another case",
+    "input": "/b?TOKEN=sentUpperTok&Signature=sentMixedSig",
+    "mustNotContain": ["sentUpperTok", "sentMixedSig"]
+  },
+  {
+    "name": "long hex token inside a query value",
+    "input": "/delivery?t=0123456789abcdef0123456789abcdef0123456789abcdef",
+    "mustNotContain": ["0123456789abcdef"]
+  },
+  {
+    "name": "bearer token",
+    "input": "Authorization: Bearer sentinelBearerValue.abc",
+    "mustNotContain": ["sentinelBearerValue"]
+  },
+  {
+    "name": "cookie header",
+    "input": "Cookie: hg_customer=sentinelSessionA; hg_cart=sentinelCartB\nnext line stays",
+    "mustNotContain": ["sentinelSessionA", "sentinelCartB", "hg_customer="]
+  },
+  {
+    "name": "set-cookie header",
+    "input": "Set-Cookie: hg_admin=sentinelAdminC; Path=/; HttpOnly",
+    "mustNotContain": ["sentinelAdminC", "hg_admin="]
+  },
+  {
+    "name": "cookie in JSON",
+    "input": "{\"cookie\":\"hg_cart=sentinelJsonCookie\",\"status\":500}",
+    "mustNotContain": ["sentinelJsonCookie"]
+  },
+  {
+    "name": "hex secret",
+    "input": "hash 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 mismatch",
+    "mustNotContain": ["9f86d081884c7d65", "a3bf4f1b2b0b822c"]
+  },
+  {
+    "name": "base64url secret",
+    "input": "session q8Zx_Lm3-Ty7Rp2Vb9Nc4Kd6Hf1Js5Wg0Ae8Uo2Ii4Yy expired",
+    "mustNotContain": ["q8Zx_Lm3", "Hf1Js5Wg0Ae8"]
+  },
+  {
+    "name": "personal code",
+    "input": "code NST-ABCD2345 already used",
+    "mustNotContain": ["NST-ABCD2345", "ABCD2345"]
+  },
+  {
+    "name": "secret names as JSON keys",
+    "input": "{\"code\":\"123456\",\"token\":\"abcXYZ\",\"password\":\"hunter2pass\"}",
+    "mustNotContain": ["123456", "abcXYZ", "hunter2pass"]
+  },
+  {
+    "name": "more secret JSON keys",
+    "input": "{\"otp\":\"654321\",\"key\":\"sentKeyJ\",\"signature\":\"sentSigJ\",\"preview\":\"sentPrevJ\",\"t\":\"sentTJ\"}",
+    "mustNotContain": ["654321", "sentKeyJ", "sentSigJ", "sentPrevJ", "sentTJ"]
+  },
+  {
+    "name": "secret names in a Node object print",
+    "input": "{ code: '246810', token: 'sentNodeTok', password: 'sentNodePass', otp: 135790 }",
+    "mustNotContain": ["246810", "sentNodeTok", "sentNodePass", "135790"]
+  },
+  {
+    "name": "secret names as key=value",
+    "input": "verify failed code=975310 password=sentEqPass",
+    "mustNotContain": ["975310", "sentEqPass"]
+  },
+  {
+    "name": "secret names in another case",
+    "input": "{\"Password\":\"sentCasePass\",\"TOKEN\":\"sentCaseTok\"}",
+    "mustNotContain": ["sentCasePass", "sentCaseTok"]
+  }
+]

@@ -6,12 +6,15 @@ import { BodyParseErrorFilter } from './common/body-parse-error.filter.js';
 import { apiSecurityHeaders } from './common/security-headers.js';
 import { LocalDiskStorage } from './media/local-disk-storage.js';
 import { StorageProvider } from './media/storage.js';
+import { requestContextMiddleware } from './system/request-context.js';
 import { trustProxySetting } from './trust-proxy.js';
 
 /** Shared by main.ts and the e2e tests, so tests run the same HTTP pipeline as production. */
 export function configureApp(app: NestExpressApplication): NestExpressApplication {
   // Behind Caddy in production: take the client IP from the proxy (rate limiting, audit log). TRUST_PROXY names it.
   app.set('trust proxy', trustProxySetting(app.get(ConfigService).get<string>('TRUST_PROXY')));
+  // Before everything else: the error events of any later step carry the request path (spec 9b.6).
+  app.use(requestContextMiddleware);
   // First, so 404s, errors and /media get the headers too.
   app.use(apiSecurityHeaders);
   app.useGlobalFilters(new BodyParseErrorFilter(app.get(HttpAdapterHost).httpAdapter));

@@ -34,6 +34,7 @@ export const PRODUCTION_ENV_RULES: readonly EnvRule[] = [
   { name: 'OTP_PEPPER', kind: 'secret' },
   { name: 'MARKETING_TOKEN_SECRET', kind: 'secret' },
   { name: 'CONTENT_PREVIEW_SECRET', kind: 'secret' },
+  { name: 'INTERNAL_API_TOKEN', kind: 'secret' },
   { name: 'TOTP_ENCRYPTION_KEY', kind: 'key32' },
   { name: 'ORDER_TOKEN_KEY', kind: 'key32' },
   { name: 'TRUST_PROXY', kind: 'trust-proxy' },
@@ -120,9 +121,11 @@ export function productionEnvWarnings(env: Record<string, string | undefined>): 
     ]),
     ['AUTH_IP_ATTEMPT_LIMIT', AUTH_IP_ATTEMPT_DEFAULT],
   ];
-  return limits
+  const warnings = limits
     .filter(([name]) => env[name]?.trim())
     .map(([name, limit]) => `${name}=${Number(env[name])} overrides the production limit (${limit})`);
+  if (!env.ALERT_EMAIL?.trim()) warnings.push('ALERT_EMAIL is not set: no alert e-mails for errors or failed backups');
+  return warnings;
 }
 
 /**
