@@ -2,6 +2,7 @@ import {
   ageDecryptArgs,
   ageEncryptArgs,
   checkRecipient,
+  checkRoleName,
   childEnv,
   dumpKeys,
   failureDetail,
@@ -25,6 +26,7 @@ describe('spawn arguments never hold a secret (they come from the environment)',
     ...ageEncryptArgs(RECIPIENT),
     ...ageDecryptArgs('/run/identity.txt'),
     ...pgRestoreArgs('nesto_restore_check', '/tmp/x/dump'),
+    ...pgRestoreArgs('nesto_restore_check', '/tmp/x/dump', 'nesto_owner'),
   ];
 
   it('no password, user or URL in any argument', () => {
@@ -63,6 +65,30 @@ describe('spawn arguments never hold a secret (they come from the environment)',
       '/tmp/x/dump',
     ]);
     expect(() => pgRestoreArgs('host=evil dbname=x', '/tmp/x/dump')).toThrow();
+  });
+
+  it('pg_restore with an owner: --role=<owner>, still no owner and no ACL from the dump', () => {
+    expect(pgRestoreArgs('nesto_restored', '/tmp/x/dump', 'nesto_owner')).toEqual([
+      '--no-owner',
+      '--no-acl',
+      '--role=nesto_owner',
+      '--exit-on-error',
+      '--dbname=nesto_restored',
+      '/tmp/x/dump',
+    ]);
+    expect(pgRestoreArgs('nesto_restored', '/tmp/x/dump', null)).not.toContainEqual(expect.stringMatching(/^--role/));
+    for (const bad of ['Nesto', 'x y', 'a;DROP', '--superuser', '"q"', '', 'a'.repeat(64)])
+      expect(() => pgRestoreArgs('nesto_restored', '/tmp/x/dump', bad), bad).toThrow('role name must match');
+  });
+});
+
+describe('checkRoleName', () => {
+  it('accepts lower-case identifiers up to 63 characters, the rule of db-grants.ts', () => {
+    expect(checkRoleName('nesto_owner')).toBe('nesto_owner');
+    expect(checkRoleName('_r2')).toBe('_r2');
+    expect(checkRoleName('a'.repeat(63))).toBe('a'.repeat(63));
+    for (const bad of ['1abc', 'Owner', 'own-er', 'a'.repeat(64), 'x"y'])
+      expect(() => checkRoleName(bad), bad).toThrow('role name must match');
   });
 });
 

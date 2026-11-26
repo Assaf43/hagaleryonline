@@ -11,6 +11,7 @@ import {
   BackupRuns,
   backupReader,
   checkDbName,
+  checkRoleName,
   childEnv,
   decrypt,
   DETAIL_MAX,
@@ -31,6 +32,12 @@ import { compareCounts, quoteIdent, tableCounts } from './table-counts.js';
  * a temp directory (mode 0700) that is removed in `finally`.
  */
 
+interface ForeignOwned {
+  kind: string;
+  name: string;
+  owner: string;
+}
+
 const DUMP_KEY = /^db\/\d{4}-\d{2}-\d{2}\/nesto-[0-9TZ:.-]+\.dump\.age$/;
 
 export interface RestoreDbOptions {
@@ -38,6 +45,8 @@ export interface RestoreDbOptions {
   identity: string;
   targetDb: string;
   keep?: boolean;
+  /** `--owner`: a role name, or `none`; omitted = `DB_OWNER_ROLE`, else `nesto_owner` (see `restoreOwner`). */
+  owner?: string;
 }
 
 export interface RestoreDbResult {
@@ -46,6 +55,8 @@ export interface RestoreDbResult {
   mismatches: string[];
   tables: number;
   detail: string | null;
+  /** The role that owns the restored objects (null: `--owner none`, the restore admin owns them). */
+  owner: string | null;
 }
 
 async function readableFile(path: string): Promise<void> {
@@ -65,6 +76,68 @@ function withDatabase(url: string, database: string): string {
   out.pathname = `/${database}`;
   return out.toString();
 }
+
+/**
+ * The role that owns the restored database (spec 9b.5, the rehearsal's disaster drill): the same owner as the live
+ * database (deploy/postgres/init/01-roles.sh), so the migrate service (`prisma migrate deploy && apply-db-grants`, as
+ * that owner) can grant the app and backup roles on the restored database with no manual `ALTER … OWNER`. `none`
+ * keeps everything owned by the admin role (a pure check against a cluster without the role).
+ */
+export function restoreOwner(env: Env, option?: string): string | null {
+  const value = option ?? (env.DB_OWNER_ROLE || 'nesto_owner');
+  if (value === 'none') return null;
+  return checkRoleName(value);
+}
+
+/** `CREATE DATABASE "<target>" [OWNER "<owner>"]`; both names checked, then quoted. */
+export function createDatabaseSql(target: string, owner: string | null): string {
+  const create = `CREATE DATABASE ${quoteIdent(checkDbName(target))}`;
+  return owner ? `${create} OWNER ${quoteIdent(checkRoleName(owner))}` : create;
+}
+
+/**
+ * Run by the admin before pg_restore when there is an owner: the same privileges as a fresh database from
+ * 01-roles.sh (nothing for PUBLIC; the app and backup roles get theirs from apply-db-grants). `cluster` runs on the
+ * admin's own connection, `inTarget` inside the new database.
+ */
+export function ownerSetupSql(target: string, owner: string): { cluster: string[]; inTarget: string[] } {
+  const role = quoteIdent(checkRoleName(owner));
+  return {
+    cluster: [`REVOKE ALL ON DATABASE ${quoteIdent(checkDbName(target))} FROM PUBLIC`],
+    inTarget: [`ALTER SCHEMA public OWNER TO ${role}`, 'REVOKE ALL ON SCHEMA public FROM PUBLIC'],
+  };
+}
+
+/** Whether the role exists, is a superuser, and whether the admin may `SET ROLE` to it (what `pg_restore --role` does). */
+export const OWNER_ROLE_SQL = `SELECT r.rolsuper AS "super", pg_has_role(current_user, r.oid, 'SET') AS "canSet"
+  FROM pg_catalog.pg_roles r WHERE r.rolname = $1`;
+
+/**
+ * Objects in `public` (and the database and schema themselves) not owned by $1 after the restore: tables, sequences,
+ * views, functions, enums and domains. Members of an extension are left out: a trusted extension such as pg_trgm is
+ * owned by the role that created it, but the functions and types inside it belong to the bootstrap superuser.
+ */
+export const FOREIGN_OWNED_SQL = `SELECT o.kind, o.name, pg_catalog.pg_get_userbyid(o.owner) AS owner FROM (
+    SELECT 'database' AS kind, d.datname::text AS name, d.datdba AS owner, 'pg_database'::regclass AS cls, d.oid
+      FROM pg_catalog.pg_database d WHERE d.datname = current_database()
+    UNION ALL
+    SELECT 'schema', n.nspname::text, n.nspowner, 'pg_namespace'::regclass, n.oid
+      FROM pg_catalog.pg_namespace n WHERE n.nspname = 'public'
+    UNION ALL
+    SELECT CASE c.relkind WHEN 'S' THEN 'sequence' WHEN 'v' THEN 'view' WHEN 'm' THEN 'view' ELSE 'table' END,
+           c.relname::text, c.relowner, 'pg_class'::regclass, c.oid
+      FROM pg_catalog.pg_class c
+     WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+    UNION ALL
+    SELECT 'function', p.proname::text, p.proowner, 'pg_proc'::regclass, p.oid
+      FROM pg_catalog.pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+    UNION ALL
+    SELECT 'type', t.typname::text, t.typowner, 'pg_type'::regclass, t.oid
+      FROM pg_catalog.pg_type t WHERE t.typnamespace = 'public'::regnamespace AND t.typtype IN ('e', 'd')
+  ) o
+  WHERE o.owner <> (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = $1)
+    AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend e WHERE e.classid = o.cls AND e.objid = o.oid AND e.deptype = 'e')
+  ORDER BY o.kind, o.name`;
 
 async function getBody(s3: S3Client, bucket: string, key: string, signal: AbortSignal): Promise<Readable> {
   const out = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal });
@@ -107,10 +180,16 @@ async function decryptToBuffer(
  * of every table with the counts taken in the dump's snapshot: an exact match per table, otherwise every mismatch is
  * listed and the result is not ok. The target is dropped afterwards unless `keep`. With `RESTORE_RECORD_DATABASE_URL`
  * the outcome is written as a `backup_runs` row (kind restore_test).
+ *
+ * With an owner (the default, `restoreOwner`) the target is created `OWNER <owner>`, its schema `public` is given to
+ * the owner, and pg_restore runs with `--role=<owner>`, so every restored object is the owner's; afterwards any
+ * object in `public` owned by someone else fails the restore. The admin must be able to `SET ROLE` to the owner
+ * (the superuser can); a missing role, one it cannot become, or a superuser owner is refused before anything starts.
  */
 export async function restoreDb(env: Env, o: RestoreDbOptions): Promise<RestoreDbResult> {
   if (!DUMP_KEY.test(o.object)) throw new Error('--object must be a key like db/<date>/nesto-<ISO>.dump.age');
   const target = checkDbName(o.targetDb);
+  const owner = restoreOwner(env, o.owner);
   await readableFile(o.identity);
   const adminUrl = need(env, 'RESTORE_ADMIN_DATABASE_URL');
   const recordUrl = env.RESTORE_RECORD_DATABASE_URL || undefined;
@@ -126,11 +205,19 @@ export async function restoreDb(env: Env, o: RestoreDbOptions): Promise<RestoreD
   let runId: number | null = null;
   let dir: string | null = null;
   const controller = new AbortController();
-  let result: RestoreDbResult = { ok: false, mismatches: [], tables: 0, detail: null };
+  let result: RestoreDbResult = { ok: false, mismatches: [], tables: 0, detail: null, owner };
   try {
     await admin.connect();
     const exists = (await admin.query('SELECT 1 FROM pg_catalog.pg_database WHERE datname = $1', [target])).rowCount;
     if (exists) throw new Error(`target database ${target} already exists: choose a new name (it is never reused)`);
+    if (owner) {
+      const role = (await admin.query<{ super: boolean; canSet: boolean }>(OWNER_ROLE_SQL, [owner])).rows[0];
+      if (!role)
+        throw new Error(`owner role ${owner} does not exist (--owner <role>, or --owner none for a pure check)`);
+      if (role.super) throw new Error(`owner role ${owner} is a superuser: use --owner none instead`);
+      if (!role.canSet)
+        throw new Error(`the restore admin cannot SET ROLE ${owner}: run it as the superuser or a member of ${owner}`);
+    }
 
     if (recordUrl) {
       runs = await BackupRuns.connect(recordUrl);
@@ -158,11 +245,22 @@ export async function restoreDb(env: Env, o: RestoreDbOptions): Promise<RestoreD
       )
         throw new Error('the counts file is not in the expected format');
 
-      await admin.query(`CREATE DATABASE ${quoteIdent(target)}`);
+      await admin.query(createDatabaseSql(target, owner));
       created = true;
+      if (owner) {
+        const setup = ownerSetupSql(target, owner);
+        for (const sql of setup.cluster) await admin.query(sql);
+        const fresh = new pg.Client({ connectionString: targetUrl, application_name: 'nesto-restore' });
+        await fresh.connect();
+        try {
+          for (const sql of setup.inTarget) await fresh.query(sql);
+        } finally {
+          await fresh.end().catch(() => undefined);
+        }
+      }
       await runChild(
         'pg_restore',
-        pgRestoreArgs(target, dumpFile),
+        pgRestoreArgs(target, dumpFile, owner),
         childEnv(pgEnv(adminUrl, target)),
         controller.signal,
         'ignore',
@@ -171,13 +269,21 @@ export async function restoreDb(env: Env, o: RestoreDbOptions): Promise<RestoreD
       const restored = new pg.Client({ connectionString: targetUrl, application_name: 'nesto-restore' });
       await restored.connect();
       let actual: Record<string, number>;
+      let foreign: ForeignOwned[] = [];
       try {
         actual = await tableCounts(restored);
+        if (owner) foreign = (await restored.query<ForeignOwned>(FOREIGN_OWNED_SQL, [owner])).rows;
       } finally {
         await restored.end().catch(() => undefined);
       }
+      if (foreign.length)
+        throw new Error(
+          `${foreign.length} objects not owned by ${owner} after the restore: ` +
+            foreign.map((f) => `${f.kind} ${f.name} (${f.owner})`).join('; '),
+        );
       const mismatches = compareCounts(counts.tables, actual);
       result = {
+        owner,
         ok: mismatches.length === 0,
         mismatches,
         tables: Object.keys(actual).length,
@@ -187,7 +293,7 @@ export async function restoreDb(env: Env, o: RestoreDbOptions): Promise<RestoreD
       };
     } catch (error) {
       controller.abort();
-      result = { ok: false, mismatches: [], tables: 0, detail: failureDetail(error) };
+      result = { ok: false, mismatches: [], tables: 0, detail: failureDetail(error), owner };
     }
     if (created && !o.keep) {
       try {

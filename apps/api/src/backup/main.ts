@@ -5,6 +5,7 @@
  *   node apps/api/dist/backup/main.js db         one encrypted database dump now
  *   node apps/api/dist/backup/main.js media      one encrypted copy of the new photos now
  *   node apps/api/dist/backup/main.js restore-db --object <key> --identity <file> --target-db <name> [--keep]
+ *                                                [--owner <role>|none]   (default DB_OWNER_ROLE, else nesto_owner)
  *   node apps/api/dist/backup/main.js restore-media --identity <file> [--prefix <p>]
  *
  * Settings come from the environment only (never argv). Output is one scrubbed JSON line per event; exit code 1 when
@@ -21,7 +22,8 @@ const USAGE = `Usage: node apps/api/dist/backup/main.js <command>
   daemon                       run db, then media, daily at BACKUP_AT (Israel time, default 02:30)
   db                           encrypted database dump to the backup bucket
   media                        encrypted copy of new photos to the backup bucket
-  restore-db --object <key> --identity <file> --target-db <name> [--keep]
+  restore-db --object <key> --identity <file> --target-db <name> [--keep] [--owner <role>|none]
+                               (--owner default: DB_OWNER_ROLE, else nesto_owner; none = owned by the restore admin)
   restore-media --identity <file> [--prefix <p>]
 Settings: environment only (see deploy/backup/README.md).`;
 
@@ -97,6 +99,7 @@ export async function main(argv: string[], env: Env): Promise<number> {
         identity: { type: 'string' },
         'target-db': { type: 'string' },
         keep: { type: 'boolean' },
+        owner: { type: 'string' },
         prefix: { type: 'string' },
         help: { type: 'boolean' },
       },
@@ -125,9 +128,15 @@ export async function main(argv: string[], env: Env): Promise<number> {
           identity: values.identity as string,
           targetDb: values['target-db'] as string,
           keep: values.keep === true,
+          owner: values.owner as string | undefined,
         });
         for (const line of result.mismatches) logLine('error', 'row count mismatch', { table: line });
-        if (result.ok) logLine('log', 'restore-db check passed', { tables: result.tables, kept: values.keep === true });
+        if (result.ok)
+          logLine('log', 'restore-db check passed', {
+            tables: result.tables,
+            kept: values.keep === true,
+            owner: result.owner ?? 'none',
+          });
         else logLine('error', 'restore-db failed', { detail: result.detail });
         return result.ok ? 0 : 1;
       }

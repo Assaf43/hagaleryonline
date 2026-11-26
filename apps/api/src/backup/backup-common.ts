@@ -33,9 +33,14 @@ export function pgDumpArgs(snapshot: string): string[] {
   return ['--format=custom', `--snapshot=${snapshot}`, '--no-owner', '--no-acl', `--lock-wait-timeout=${LOCK_WAIT}`];
 }
 
-export function pgRestoreArgs(database: string, dumpFile: string): string[] {
+/**
+ * With `role`, pg_restore runs `SET ROLE <role>` after connecting, so every object it creates is created by, and
+ * owned by, that role (the dump's own owners are ignored either way: `--no-owner`).
+ */
+export function pgRestoreArgs(database: string, dumpFile: string, role?: string | null): string[] {
   checkDbName(database);
-  return ['--no-owner', '--no-acl', '--exit-on-error', `--dbname=${database}`, dumpFile];
+  const roleArg = role == null ? [] : [`--role=${checkRoleName(role)}`];
+  return ['--no-owner', '--no-acl', ...roleArg, '--exit-on-error', `--dbname=${database}`, dumpFile];
 }
 
 /** The recipient is a public key: fine on argv. */
@@ -57,6 +62,15 @@ export function checkRecipient(recipient: string): string {
 /** Lower-case names only: the restore target is created and dropped by name. */
 export function checkDbName(name: string): string {
   if (!DB_NAME.test(name)) throw new Error('database name must match [a-z_][a-z0-9_]* (at most 63 characters)');
+  return name;
+}
+
+/**
+ * The same rule as `assertRoleName` in system/db-grants.ts (copied: the backup tool never loads the Prisma client).
+ * The role is also quoted as an identifier wherever it goes into SQL.
+ */
+export function checkRoleName(name: string): string {
+  if (!DB_NAME.test(name)) throw new Error('role name must match [a-z_][a-z0-9_]* (at most 63 characters)');
   return name;
 }
 

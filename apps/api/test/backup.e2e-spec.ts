@@ -41,13 +41,14 @@ describe.skipIf(!!skipReason)('backup tool (e2e, MinIO + test DB)', () => {
   const publicBucket = `nesto-bk-pub-${suffix}`;
   const privateBucket = `nesto-bk-priv-${suffix}`;
   const backupBucket = `nesto-bk-backup-${suffix}`;
-  const targets = [1, 2, 3, 4].map((n) => `nesto_restore_e2e_${suffix}_${n}`);
+  const targets = [1, 2, 3, 4, 5].map((n) => `nesto_restore_e2e_${suffix}_${n}`);
   const testUrl = process.env.DATABASE_URL!;
   const adminUrl = (() => {
     const u = new URL(testUrl);
     u.pathname = '/postgres';
     return u.toString();
   })();
+  const ownerRole = `hg_test_owner_${suffix}`;
   const s3 = new S3Client({
     endpoint,
     region: 'us-east-1',
@@ -132,12 +133,15 @@ describe.skipIf(!!skipReason)('backup tool (e2e, MinIO + test DB)', () => {
       BACKUP_READ_SECRET_ACCESS_KEY: secretAccessKey,
       RESTORE_S3_ACCESS_KEY_ID: accessKeyId,
       RESTORE_S3_SECRET_ACCESS_KEY: secretAccessKey,
+      // The test cluster has no nesto_owner: every case restores as the admin unless it passes its own --owner.
+      DB_OWNER_ROLE: 'none',
     };
   });
 
   afterAll(async () => {
     for (const name of targets)
       await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch(() => undefined);
+    await admin.query(`DROP ROLE IF EXISTS "${ownerRole}"`).catch(() => undefined);
     if (runIds.length)
       await db.query('DELETE FROM backup_runs WHERE id = ANY($1::int[])', [runIds]).catch(() => undefined);
     await admin.end().catch(() => undefined);
@@ -176,9 +180,10 @@ describe.skipIf(!!skipReason)('backup tool (e2e, MinIO + test DB)', () => {
 
   it('counts mismatch fails the restore', { timeout: 120_000 }, async () => {
     const countsKey = dumpKey.replace(/\.dump\.age$/, '.counts.json.age');
-    const counts = JSON.parse(
-      ageRun(['--decrypt', '--identity', identity], await getBytes(backupBucket, countsKey)).toString(),
-    ) as { tables: Record<string, number> };
+    const original = await getBytes(backupBucket, countsKey);
+    const counts = JSON.parse(ageRun(['--decrypt', '--identity', identity], original).toString()) as {
+      tables: Record<string, number>;
+    };
     const real = counts.tables.products;
     expect(real).toBeGreaterThan(0);
     counts.tables.products = real + 1;
@@ -196,6 +201,8 @@ describe.skipIf(!!skipReason)('backup tool (e2e, MinIO + test DB)', () => {
     expect(restored.detail).toBe(`row counts differ in 1 tables: products: expected ${real + 1}, got ${real}`);
     expect(await databaseExists(targets[1])).toBe(false);
     expect(await lastRestoreRow()).toMatchObject({ ok: false, detail: restored.detail });
+    // Put the true counts back: later tests restore the same dump.
+    await s3.send(new PutObjectCommand({ Bucket: backupBucket, Key: countsKey, Body: original }));
   });
 
   it('existing target refused, empty or not', { timeout: 60_000 }, async () => {
@@ -226,6 +233,48 @@ describe.skipIf(!!skipReason)('backup tool (e2e, MinIO + test DB)', () => {
     await expect(
       restoreDb(env, { object: dumpKey, identity, targetDb: new URL(testUrl).pathname.slice(1) }),
     ).rejects.toThrow('refusing to restore into');
+  });
+
+  it('--owner: every restored object belongs to the owner role', { timeout: 120_000 }, async () => {
+    await admin.query(`CREATE ROLE "${ownerRole}" NOLOGIN`);
+    const restored = await restoreDb(env, {
+      object: dumpKey,
+      identity,
+      targetDb: targets[4],
+      keep: true,
+      owner: ownerRole,
+    });
+    expect(restored).toMatchObject({ ok: true, mismatches: [], detail: null, owner: ownerRole });
+    expect(await databaseExists(targets[4])).toBe(true);
+    await lastRestoreRow();
+
+    const target = new pg.Client({ connectionString: adminUrl.replace(/\/postgres$/, `/${targets[4]}`) });
+    await target.connect();
+    try {
+      const owners = async (sql: string) => (await target.query<{ owner: string }>(sql)).rows.map((r) => r.owner);
+      const tables = await owners(`SELECT tableowner AS owner FROM pg_tables WHERE schemaname = 'public'`);
+      expect(tables.length).toBeGreaterThan(30);
+      expect(new Set(tables)).toEqual(new Set([ownerRole]));
+      expect(
+        await owners(`SELECT pg_get_userbyid(datdba) AS owner FROM pg_database WHERE datname = current_database()`),
+      ).toEqual([ownerRole]);
+      expect(
+        await owners(`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname = 'public'`),
+      ).toEqual([ownerRole]);
+      const sequences = await owners(`SELECT sequenceowner AS owner FROM pg_sequences WHERE schemaname = 'public'`);
+      expect(new Set(sequences)).toEqual(new Set([ownerRole]));
+      // pg_trgm (trusted): created by the owner through pg_restore --role; its member functions stay the superuser's.
+      expect(
+        await owners(`SELECT pg_get_userbyid(extowner) AS owner FROM pg_extension WHERE extname = 'pg_trgm'`),
+      ).toEqual([ownerRole]);
+    } finally {
+      await target.end();
+    }
+
+    // A role that does not exist is refused before any row or download.
+    await expect(
+      restoreDb(env, { object: dumpKey, identity, targetDb: `${targets[4]}_x`, owner: `${ownerRole}_missing` }),
+    ).rejects.toThrow('does not exist');
   });
 
   it('failed upload writes ok=false with a scrubbed detail', { timeout: 60_000 }, async () => {
