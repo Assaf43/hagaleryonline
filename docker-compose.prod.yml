@@ -203,9 +203,10 @@ services:
         condition: service_healthy
       web:
         condition: service_started
-    # The admin API listens on localhost only (Caddy's default) and is never published.
+    # The admin API listens on localhost only (Caddy's default) and is never published. 127.0.0.1, not "localhost":
+    # busybox wget resolves localhost to ::1 first, where the admin endpoint does not listen (found in the rehearsal).
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://localhost:2019/config/ >/dev/null']
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:2019/config/ >/dev/null']
       interval: 10s
       timeout: 5s
       retries: 6
