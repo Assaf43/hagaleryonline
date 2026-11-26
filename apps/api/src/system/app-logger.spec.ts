@@ -53,6 +53,20 @@ describe('AppLogger', () => {
     expect(record.params).toEqual({ otp: '[redacted]', note: '[email]' });
   });
 
+  it('JSON mode scrubs a phone logged as a number or bigint, under a key, in an array and at the top level', () => {
+    process.env.LOG_FORMAT = 'json';
+    const logger = new AppLogger();
+    const out = captureStream('stdout', () =>
+      logger.log('x', { phone: 972501234567, list: [972501234567], big: 972501234567n, otp: 123456n, count: 3 }),
+    );
+    expect(out).not.toContain('972501234567');
+    expect(out).not.toContain('123456');
+    const record = JSON.parse(out.trim()) as { params: unknown };
+    expect(record.params).toEqual({ phone: '[phone]', list: ['[phone]'], big: '[phone]', otp: '[redacted]', count: 3 });
+    const top = captureStream('stdout', () => logger.log(972501234567));
+    expect((JSON.parse(top.trim()) as { message: unknown }).message).toBe('[phone]');
+  });
+
   it('JSON mode keeps a message that mentions a cookie readable, and the line valid', () => {
     process.env.LOG_FORMAT = 'json';
     const logger = new AppLogger();

@@ -30,13 +30,23 @@ const scrubColored = (text: string) =>
 const STACK_LINE = /\n[ \t]+at /;
 const inspectOneLine = (value: unknown) => inspect(value, { depth: 3, breakLength: Infinity, compact: true });
 
+/** A string scrubbed; a number kept unless its digits scrub (a phone), then the scrubbed text. */
+function scrubAlone(raw: string | number): string | number {
+  if (typeof raw === 'string') return scrub(raw);
+  const text = String(raw);
+  const out = scrub(text);
+  return out === text ? raw : out;
+}
+
 /**
  * One value under `key`: scrubbed on its own, then as the JSON pair `{"key":value}` so a secret name (`password`,
  * `otp`, `t`…) also redacts it.
  */
 function scrubEntry(key: string, raw: string | number): unknown {
-  // The value on its own first: JSON inside a string is escaped in the pair (`{\"password\":…}`).
-  const value = typeof raw === 'string' ? scrub(raw) : raw;
+  // The value on its own first: JSON inside a string is escaped in the pair (`{\"password\":…}`), and a number
+  // that is a phone (`972501234567`) becomes `[phone]`.
+  const value = scrubAlone(raw);
+  if (typeof value === 'string' && typeof raw === 'number') return value;
   const pair = `{${JSON.stringify(key)}:${JSON.stringify(value)}}`;
   if (pair.length >= SCRUB_MAX_LENGTH) return value;
   const out = scrub(pair);
@@ -53,9 +63,11 @@ function scrubEntry(key: string, raw: string | number): unknown {
 
 /** Every string (and every value under a secret name) of a log record, scrubbed; errors, maps and sets as text. */
 function scrubDeep(value: unknown, key: string | undefined, seen: WeakSet<object>, depth: number): unknown {
-  if (typeof value === 'string' || typeof value === 'number')
-    return key === undefined ? (typeof value === 'string' ? scrub(value) : value) : scrubEntry(key, value);
-  if (typeof value === 'bigint' || typeof value === 'symbol') return scrub(value.toString());
+  // A bigint is printed as its digits anyway (`stringifyReplacer`): scrub those like a string.
+  const leaf = typeof value === 'bigint' ? value.toString() : value;
+  if (typeof leaf === 'string' || typeof leaf === 'number')
+    return key === undefined ? scrubAlone(leaf) : scrubEntry(key, leaf);
+  if (typeof value === 'symbol') return scrub(value.toString());
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return '[Circular]';
   if (depth >= MAX_DEPTH) return '[Truncated]';
