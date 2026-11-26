@@ -7,6 +7,7 @@ describe('readServerEnv', () => {
       siteUrl: 'https://hagaleryonline.co.il',
       indexing: false,
       csp: 'off',
+      internalToken: '',
     });
   });
 
@@ -42,5 +43,30 @@ describe('readServerEnv', () => {
     expect(readServerEnv({ STOREFRONT_CSP: '', NODE_ENV: 'production' }).csp).toBe('enforce');
     expect(readServerEnv({ STOREFRONT_CSP: 'report_only', NODE_ENV: 'production' }).csp).toBe('enforce');
     expect(readServerEnv({ STOREFRONT_CSP: 'ENFORCE' }).csp).toBe('off');
+  });
+});
+
+describe('readServerEnv, internal token and CSP hint', () => {
+  it('reads INTERNAL_API_TOKEN once, empty when unset', () => {
+    expect(readServerEnv({}).internalToken).toBe('');
+    expect(readServerEnv({ INTERNAL_API_TOKEN: 'abc' }).internalToken).toBe('abc');
+  });
+
+  it('logs one warn line for an unknown STOREFRONT_CSP, without the value', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      lines.push(String(chunk));
+      return true;
+    });
+    try {
+      readServerEnv({ STOREFRONT_CSP: 'enforse-typo' });
+      readServerEnv({ STOREFRONT_CSP: 'enforce' });
+      readServerEnv({});
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ level: 'warn' });
+    expect(lines[0]).not.toContain('enforse-typo');
   });
 });

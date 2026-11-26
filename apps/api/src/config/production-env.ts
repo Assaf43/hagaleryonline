@@ -34,6 +34,7 @@ export const PRODUCTION_ENV_RULES: readonly EnvRule[] = [
   { name: 'OTP_PEPPER', kind: 'secret' },
   { name: 'MARKETING_TOKEN_SECRET', kind: 'secret' },
   { name: 'CONTENT_PREVIEW_SECRET', kind: 'secret' },
+  { name: 'INTERNAL_API_TOKEN', kind: 'secret' },
   { name: 'TOTP_ENCRYPTION_KEY', kind: 'key32' },
   { name: 'ORDER_TOKEN_KEY', kind: 'key32' },
   { name: 'TRUST_PROXY', kind: 'trust-proxy' },

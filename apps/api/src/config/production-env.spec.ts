@@ -39,6 +39,7 @@ function validEnv(): Record<string, string | undefined> {
     OTP_PEPPER: secret(),
     MARKETING_TOKEN_SECRET: secret(),
     CONTENT_PREVIEW_SECRET: secret(),
+    INTERNAL_API_TOKEN: secret(),
     TOTP_ENCRYPTION_KEY: key32(),
     ORDER_TOKEN_KEY: key32(),
     TRUST_PROXY: 'loopback, 172.18.0.0/16',
@@ -70,6 +71,17 @@ describe('checkProductionEnv (spec 9a.3)', () => {
 
   it('accepts a hop count as TRUST_PROXY', () => {
     expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: '1' })).toEqual([]);
+  });
+
+  it('wants INTERNAL_API_TOKEN: present, long, and not the value of another secret', () => {
+    const env = validEnv();
+    expect(checkProductionEnv({ ...env, INTERNAL_API_TOKEN: undefined })).toEqual(['INTERNAL_API_TOKEN: missing']);
+    expect(checkProductionEnv({ ...env, INTERNAL_API_TOKEN: 'short' })).toEqual([
+      'INTERNAL_API_TOKEN: too short (at least 32 characters)',
+    ]);
+    expect(checkProductionEnv({ ...env, INTERNAL_API_TOKEN: env['OTP_PEPPER'] })).toEqual([
+      'INTERNAL_API_TOKEN: same value as OTP_PEPPER',
+    ]);
   });
 
   it('names every missing variable', () => {

@@ -1,7 +1,7 @@
 /**
  * Removes personal data and secrets from text before it is logged or stored (NFR-11, spec 9b.6).
- * Pure: the storefront SSR log keeps a copy of this file; both specs share
- * `scripts/fixtures/scrub-sentinels.json`, so keep the two in step.
+ * Pure. The storefront keeps a copy (`apps/storefront/src/server-scrub.ts`, checked by `scripts/scrub-copy.spec.mjs`):
+ * change both together. Both specs share `scripts/fixtures/scrub-sentinels.json`.
  */
 
 export const SCRUB_MAX_LENGTH = 2000;

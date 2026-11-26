@@ -181,6 +181,7 @@
 | GET | /api/delivery/:token | StorefrontOriginGuard, WriteThrottleGuard |  |
 | POST | /api/delivery/:token | StorefrontOriginGuard, WriteThrottleGuard |  |
 | GET | /api/health |  |  |
+| POST | /api/internal/error-events | InternalTokenGuard |  |
 | GET | /api/localities |  |  |
 | POST | /api/marketing/webhook |  |  |
 | POST | /api/newsletter | StorefrontOriginGuard, WriteThrottleGuard |  |
