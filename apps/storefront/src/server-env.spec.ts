@@ -1,4 +1,4 @@
-import { readServerEnv } from './server-env';
+import { readServerEnv, warnUnknownCsp } from './server-env';
 
 describe('readServerEnv', () => {
   it('uses the defaults and keeps indexing off', () => {
@@ -52,16 +52,19 @@ describe('readServerEnv, internal token and CSP hint', () => {
     expect(readServerEnv({ INTERNAL_API_TOKEN: 'abc' }).internalToken).toBe('abc');
   });
 
-  it('logs one warn line for an unknown STOREFRONT_CSP, without the value', () => {
+  it('warns once at startup (warnUnknownCsp) for an unknown STOREFRONT_CSP, without the value', () => {
     const lines: string[] = [];
     const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
       lines.push(String(chunk));
       return true;
     });
     try {
-      readServerEnv({ STOREFRONT_CSP: 'enforse-typo' });
-      readServerEnv({ STOREFRONT_CSP: 'enforce' });
-      readServerEnv({});
+      // Renders call readServerEnv() many times: it stays silent.
+      for (let i = 0; i < 3; i++) readServerEnv({ STOREFRONT_CSP: 'enforse-typo' });
+      expect(lines).toHaveLength(0);
+      warnUnknownCsp({ STOREFRONT_CSP: 'enforse-typo' });
+      warnUnknownCsp({ STOREFRONT_CSP: 'enforce' });
+      warnUnknownCsp({});
     } finally {
       spy.mockRestore();
     }

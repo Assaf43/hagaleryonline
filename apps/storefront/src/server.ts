@@ -10,13 +10,14 @@ import { previewNoStore } from './preview-no-store';
 import { registerSeoRoutes } from './seo-routes';
 import { securityHeaders } from './security-headers';
 import { serverErrorHandler } from './server-error';
-import { readServerEnv } from './server-env';
+import { readServerEnv, warnUnknownCsp } from './server-env';
 import { configureReporting, logJson } from './server-log';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+warnUnknownCsp();
 const env = readServerEnv();
 configureReporting({ apiUrl: env.apiUrl, internalToken: env.internalToken });
 
