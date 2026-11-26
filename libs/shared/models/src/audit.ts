@@ -89,6 +89,7 @@ export const AUDIT_ACTION_LABELS = {
   'store.customer_confirmed': 'אישור לקוח במכירה בחנות',
   'store.customer_email_added': 'הוספת מייל ללקוח במכירה בחנות',
   'store.customer_cleared': 'הסרת לקוח ממכירה בחנות',
+  'system.error_handled': 'סימון תקלה כטופלה',
   'delivery.confirmed': 'אישור לקוח למועד האספקה',
   'delivery.change_requested': 'בקשת לקוח לשינוי מועד האספקה',
 } as const satisfies Record<string, string>;
@@ -124,6 +125,7 @@ export const AUDIT_ENTITY_LABELS = {
   support_ticket: 'פנייה',
   outbox_job: 'משימת רקע',
   vat_rate: 'שיעור מע"מ',
+  error_event: 'תקלה',
 } as const satisfies Record<string, string>;
 
 export type AuditEntityType = keyof typeof AUDIT_ENTITY_LABELS;

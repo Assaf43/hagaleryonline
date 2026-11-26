@@ -20,6 +20,7 @@ export const PERMISSIONS = [
   { key: 'support.manage', labelHe: 'תיבת פניות' },
   { key: 'customers.view', labelHe: 'צפייה בלקוחות' },
   { key: 'club.manage', labelHe: 'מועדון לקוחות' },
+  { key: 'system.view', labelHe: 'תקלות ומצב המערכת' },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]['key'];
@@ -34,7 +35,7 @@ export const SUPER_ADMIN_OPT_IN: readonly Permission[] = ['orders.cancel'];
 
 /** Starting points the Super Admin assigns (decision 49); single permissions can be added or removed per user. */
 export const PERMISSION_TEMPLATES = [
-  { code: 'manager', labelHe: 'מנהל', permissions: [...PERMISSION_KEYS] },
+  { code: 'manager', labelHe: 'מנהל', permissions: PERMISSION_KEYS.filter((p) => p !== 'system.view') },
   {
     code: 'content_editor',
     labelHe: 'עורך תוכן',

@@ -6,6 +6,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { configureApp } from './../src/configure-app.js';
 import { PrismaService } from './../src/prisma/prisma.service.js';
+import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } from './admin-session.js';
+import type { ErrorGroupDetail, ErrorGroupPage, SystemStatus } from '@hg/models';
 import { AppLogger } from './../src/system/app-logger.js';
 import { ErrorEventsService } from './../src/system/error-events.service.js';
 
@@ -123,5 +125,173 @@ describe('System error events (e2e, spec 9b.6)', () => {
     expect(await events.cleanup()).toBeGreaterThanOrEqual(1);
     expect(await prisma.errorEvent.findUnique({ where: { id: old.id } })).toBeNull();
     expect(await prisma.errorEvent.findUnique({ where: { id: recent.id } })).not.toBeNull();
+  });
+});
+
+// The admin API of the system screen (spec 9b.6, permission `system.view`).
+describe('System admin API (e2e, spec 9b.6)', () => {
+  let app: NestExpressApplication;
+  let prisma: PrismaService;
+  let events: ErrorEventsService;
+  let owner: AdminBrowser;
+  let editor: AdminBrowser;
+  let manager: AdminBrowser;
+  let stderr: { mockRestore(): void } | undefined;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ bufferLogs: true }));
+    await app.init();
+    prisma = app.get(PrismaService);
+    events = app.get(ErrorEventsService);
+    stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    await resetAdminData(prisma);
+    ({ owner, other: editor } = await signInOwnerAnd(app, 'content_editor'));
+    const created = await owner
+      .post('/users', { email: 'manager@example.test', name: 'מנהל', template: 'manager' })
+      .expect(201);
+    manager = await acceptAndSignIn(
+      app,
+      { email: 'manager@example.test', password: 'terracotta lamp quiet river' },
+      created.body.invite,
+    );
+    await prisma.errorEvent.deleteMany({});
+    await prisma.backupRun.deleteMany({});
+  });
+
+  afterAll(async () => {
+    stderr?.mockRestore();
+    await prisma.errorEvent.deleteMany({});
+    await prisma.backupRun.deleteMany({});
+    await resetAdminData(prisma);
+    await app.close();
+  });
+
+  beforeEach(async () => {
+    await prisma.backupRun.deleteMany({});
+  });
+
+  const backup = (kind: 'DB' | 'MEDIA' | 'RESTORE_TEST', daysAgo: number, ok = true) =>
+    prisma.backupRun.create({
+      data: {
+        kind,
+        startedAt: new Date(Date.now() - daysAgo * DAY),
+        finishedAt: new Date(Date.now() - daysAgo * DAY + 60_000),
+        ok,
+        bytes: 123456789n,
+        objects: kind === 'MEDIA' ? 42 : null,
+      },
+    });
+
+  it('refuses a user without system.view, a manager too, and an unsigned caller', async () => {
+    for (const b of [editor, manager]) {
+      await b.get('/system/status').expect(403);
+      await b.get('/system/errors').expect(403);
+      await b.get('/system/errors/1').expect(403);
+      await b.post('/system/errors/1/handled').expect(403);
+    }
+    await request(app.getHttpServer() as App)
+      .get('/api/admin/system/status')
+      .set('Origin', 'http://localhost:4300')
+      .expect(401);
+  });
+
+  it('gives the Super Admin the status with every field, no-store', async () => {
+    await backup('DB', 0.5);
+    await backup('MEDIA', 0.5);
+    const res = await owner.get('/system/status').expect(200);
+    expect(res.headers['cache-control']).toContain('no-store');
+    const s = res.body as SystemStatus;
+    expect(s.db).toBe('up');
+    expect(typeof s.failedJobs).toBe('number');
+    expect(s.diskFreeBytes === null || typeof s.diskFreeBytes === 'number').toBe(true);
+    expect(s.diskTotalBytes === null || typeof s.diskTotalBytes === 'number').toBe(true);
+    expect(s.lastBackup.db).toMatchObject({ kind: 'db', ok: true, bytes: 123456789, objects: null });
+    expect(s.lastBackup.media).toMatchObject({ kind: 'media', ok: true, objects: 42 });
+    expect(s.lastRestoreTest).toBeNull();
+    expect(typeof s.version).toBe('string');
+    expect(s.uptimeSeconds).toBeGreaterThanOrEqual(0);
+  });
+
+  it('restoreTestStale: true with a DB backup and no (or a 40-day-old) restore test, false with a 10-day-old one or no backup', async () => {
+    const stale = async () => ((await owner.get('/system/status').expect(200)).body as SystemStatus).restoreTestStale;
+    expect(await stale()).toBe(false);
+    await backup('DB', 1);
+    expect(await stale()).toBe(true);
+    await backup('RESTORE_TEST', 40);
+    expect(await stale()).toBe(true);
+    await backup('RESTORE_TEST', 10);
+    expect(await stale()).toBe(false);
+    const last = ((await owner.get('/system/status').expect(200)).body as SystemStatus).lastRestoreTest;
+    expect(last?.kind).toBe('restore_test');
+  });
+
+  it('lists open errors newest first, handles one, audits it once and reopens it when it returns', async () => {
+    const mk = (key: string, minsAgo: number, message: string) =>
+      prisma.errorEvent.create({
+        data: {
+          fingerprint: `e2e-sysadmin-${key}`,
+          kind: 'ERROR',
+          source: 'API',
+          message,
+          stack: 'Error: x\n    at here',
+          path: '/api/x',
+          count: 3,
+          firstSeen: new Date(Date.now() - 3 * DAY),
+          lastSeen: new Date(Date.now() - minsAgo * 60_000),
+        },
+      });
+    const older = await mk('older', 30, 'System admin older');
+    const newer = await mk('newer', 5, 'System admin newer');
+
+    const open = (await owner.get('/system/errors').expect(200)).body as ErrorGroupPage;
+    expect(open.items.map((i) => i.id)).toEqual([newer.id, older.id]);
+    expect(open).toMatchObject({ total: 2, page: 1, pageSize: 20 });
+    expect(open.items[0]).not.toHaveProperty('stack');
+
+    const detail = (await owner.get(`/system/errors/${newer.id}`).expect(200)).body as ErrorGroupDetail;
+    expect(detail.stack).toContain('at here');
+    expect(detail.handledBy).toBeNull();
+
+    await owner.post(`/system/errors/${newer.id}/handled`).expect(204);
+    await owner.post(`/system/errors/${newer.id}/handled`).expect(204);
+    const audit = await prisma.auditLog.findMany({ where: { action: 'system.error_handled' } });
+    expect(audit).toHaveLength(1);
+    expect(audit[0].entityType).toBe('error_event');
+    expect(audit[0].entityId).toBe(String(newer.id));
+
+    expect(((await owner.get('/system/errors').expect(200)).body as ErrorGroupPage).items.map((i) => i.id)).toEqual([
+      older.id,
+    ]);
+    const handled = (await owner.get('/system/errors?state=handled').expect(200)).body as ErrorGroupPage;
+    expect(handled.items.map((i) => i.id)).toEqual([newer.id]);
+    expect(handled.items[0].handledAt).not.toBeNull();
+    expect(((await owner.get(`/system/errors/${newer.id}`).expect(200)).body as ErrorGroupDetail).handledBy).toBe(
+      'בעלת העסק',
+    );
+    expect(((await owner.get('/system/errors?state=all').expect(200)).body as ErrorGroupPage).total).toBe(2);
+  });
+
+  it('a handled group reopens on a new occurrence and no longer names who handled it', async () => {
+    events.capture({ kind: 'error', source: 'api', message: 'System admin returning error', path: '/api/y' });
+    await events.flush();
+    const row = await prisma.errorEvent.findFirstOrThrow({ where: { message: 'System admin returning error' } });
+    await owner.post(`/system/errors/${row.id}/handled`).expect(204);
+    events.capture({ kind: 'error', source: 'api', message: 'System admin returning error', path: '/api/y' });
+    await events.flush();
+    const open = (await owner.get('/system/errors').expect(200)).body as ErrorGroupPage;
+    expect(open.items.find((i) => i.id === row.id)?.reopenedAt).not.toBeNull();
+    const detail = (await owner.get(`/system/errors/${row.id}`).expect(200)).body as ErrorGroupDetail;
+    expect(detail.handledAt).toBeNull();
+    expect(detail.handledBy).toBeNull();
+  });
+
+  it('answers 400 with a code for a bad state or page, and 404 for an unknown or malformed id', async () => {
+    expect((await owner.get('/system/errors?state=nope').expect(400)).body.code).toBe('invalid_input');
+    expect((await owner.get('/system/errors?page=0').expect(400)).body.code).toBe('invalid_input');
+    expect((await owner.get('/system/errors?page=x').expect(400)).body.code).toBe('invalid_input');
+    await owner.get('/system/errors/99999999').expect(404);
+    await owner.get('/system/errors/abc').expect(404);
+    await owner.post('/system/errors/99999999/handled').expect(404);
   });
 });

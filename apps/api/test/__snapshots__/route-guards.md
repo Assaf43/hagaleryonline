@@ -156,6 +156,10 @@
 | POST | /api/admin/support/:number/notes | SameOriginGuard, AdminAuthGuard | support.manage |
 | POST | /api/admin/support/:number/status | SameOriginGuard, AdminAuthGuard | support.manage |
 | GET | /api/admin/support/count-new | SameOriginGuard, AdminAuthGuard | support.manage |
+| GET | /api/admin/system/errors | SameOriginGuard, AdminAuthGuard | system.view |
+| GET | /api/admin/system/errors/:id | SameOriginGuard, AdminAuthGuard | system.view |
+| POST | /api/admin/system/errors/:id/handled | SameOriginGuard, AdminAuthGuard | system.view |
+| GET | /api/admin/system/status | SameOriginGuard, AdminAuthGuard | system.view |
 | GET | /api/admin/users | SameOriginGuard, AdminAuthGuard | super admin |
 | POST | /api/admin/users | SameOriginGuard, AdminAuthGuard | super admin |
 | PATCH | /api/admin/users/:id | SameOriginGuard, AdminAuthGuard | super admin |

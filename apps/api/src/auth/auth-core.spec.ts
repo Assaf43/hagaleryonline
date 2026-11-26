@@ -118,3 +118,19 @@ describe('effective permissions (decision 49)', () => {
     expect(effectivePermissions({ ...base, template: 'manager' })).toContain('orders.cancel');
   });
 });
+
+describe('system.view (spec 9b.6)', () => {
+  const base = { isSuperAdmin: false, extraPermissions: [], removedPermissions: [] };
+
+  it('is held by the Super Admin without an opt-in, and by no template', () => {
+    expect(effectivePermissions({ ...base, isSuperAdmin: true, template: null })).toContain('system.view');
+    for (const template of ['manager', 'content_editor', 'customer_service', 'store_seller'])
+      expect(effectivePermissions({ ...base, template })).not.toContain('system.view');
+  });
+
+  it('can be granted to one user', () => {
+    expect(effectivePermissions({ ...base, template: 'manager', extraPermissions: ['system.view'] })).toContain(
+      'system.view',
+    );
+  });
+});
