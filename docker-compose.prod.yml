@@ -130,7 +130,8 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM is required}
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:?SUPPORT_EMAIL is required}
       ALERT_EMAIL: ${ALERT_EMAIL:-}
-      BACKUP_EXPECTED: ${BACKUP_EXPECTED:-false}
+      # This file always runs the backup service, so a missing successful DB backup must alert (Review Focus 3).
+      BACKUP_EXPECTED: ${BACKUP_EXPECTED:-true}
     networks: [internal, edge]
     depends_on:
       postgres:
