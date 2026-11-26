@@ -89,7 +89,11 @@ describe('DB grants (e2e, Phase 9b)', () => {
 
   it('every table has app DML except the listed ones', async () => {
     const ran = await applyDbGrants(prisma, roles, () => undefined);
-    expect(ran.length).toBeGreaterThan(0);
+    // The statements PostgreSQL built with format(): 9 for the app, 8 for the backup role (with its sequence).
+    expect(ran).toHaveLength(17);
+    expect(ran).toContain(`GRANT SELECT ON TABLE public._prisma_migrations TO ${roles.app}`);
+    expect(ran).toContain(`GRANT USAGE, SELECT ON SEQUENCE backup_runs_id_seq TO ${roles.backup}`);
+    expect(ran.join('\n')).not.toMatch(/%/);
     const granted = await privileges(roles.app);
     expect(Object.keys(granted).length).toBeGreaterThan(30);
     for (const [table, list] of Object.entries(granted)) {

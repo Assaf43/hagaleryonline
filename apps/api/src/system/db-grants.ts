@@ -12,7 +12,7 @@ import { PrismaClient } from '../generated/prisma/client.js';
  * revokes before grants, so the privileges always end up exactly as listed below whatever they were before.
  */
 
-/** Lower-case PostgreSQL identifiers only: they are quoted too, but nothing else is ever put into the SQL. */
+/** Lower-case PostgreSQL identifiers only; PostgreSQL quotes them too (`%I`) and they are only bound parameters. */
 const ROLE_NAME = /^[a-z_][a-z0-9_]{0,62}$/;
 
 export interface DbRoles {
@@ -20,42 +20,40 @@ export interface DbRoles {
   backup: string;
 }
 
-const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
-
 export function assertRoleName(name: string): void {
   if (!ROLE_NAME.test(name)) throw new Error(`invalid DB role name: ${JSON.stringify(name).slice(0, 80)}`);
 }
 
+/*
+ * Statement templates for PostgreSQL's `format()`: `%1$I` = the role, `%2$I` = the current database, `%3$s` = the
+ * `backup_runs` id sequence as a regclass (already quoted by PostgreSQL). They are constants of this module; the role
+ * name is only ever a bound parameter and PostgreSQL itself quotes it with `%I` (no string-built SQL, spec 9a.2).
+ */
+
 /** The app: DML on every table, sequences, functions; consent history insert-only; migrations history read-only. */
-function appStatements(role: string, database: string): string[] {
-  const r = quote(role);
-  return [
-    `GRANT CONNECT ON DATABASE ${quote(database)} TO ${r}`,
-    `GRANT USAGE ON SCHEMA public TO ${r}`,
-    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${r}`,
-    `REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM ${r}`,
-    `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${r}`,
-    `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${r}`,
-    `REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.marketing_consent_events FROM ${r}`,
-    `REVOKE ALL ON TABLE public._prisma_migrations FROM ${r}`,
-    `GRANT SELECT ON TABLE public._prisma_migrations TO ${r}`,
-  ];
-}
+const APP_TEMPLATES = [
+  'GRANT CONNECT ON DATABASE %2$I TO %1$I',
+  'GRANT USAGE ON SCHEMA public TO %1$I',
+  'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %1$I',
+  'REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM %1$I',
+  'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %1$I',
+  'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %1$I',
+  'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.marketing_consent_events FROM %1$I',
+  'REVOKE ALL ON TABLE public._prisma_migrations FROM %1$I',
+  'GRANT SELECT ON TABLE public._prisma_migrations TO %1$I',
+] as const;
 
 /** The backup job: reads everything; writes only its own `backup_runs` rows (insert, then update when done). */
-function backupStatements(role: string, database: string, backupRunsSeq: string | null): string[] {
-  const r = quote(role);
-  return [
-    `GRANT CONNECT ON DATABASE ${quote(database)} TO ${r}`,
-    `GRANT USAGE ON SCHEMA public TO ${r}`,
-    `GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${r}`,
-    `REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM ${r}`,
-    `GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO ${r}`,
-    `REVOKE USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public FROM ${r}`,
-    `GRANT INSERT, UPDATE ON TABLE public.backup_runs TO ${r}`,
-    ...(backupRunsSeq ? [`GRANT USAGE, SELECT ON SEQUENCE ${backupRunsSeq} TO ${r}`] : []),
-  ];
-}
+const BACKUP_TEMPLATES = [
+  'GRANT CONNECT ON DATABASE %2$I TO %1$I',
+  'GRANT USAGE ON SCHEMA public TO %1$I',
+  'GRANT SELECT ON ALL TABLES IN SCHEMA public TO %1$I',
+  'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM %1$I',
+  'GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO %1$I',
+  'REVOKE USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public FROM %1$I',
+  'GRANT INSERT, UPDATE ON TABLE public.backup_runs TO %1$I',
+] as const;
+const BACKUP_SEQUENCE_TEMPLATE = 'GRANT USAGE, SELECT ON SEQUENCE %3$s TO %1$I';
 
 /**
  * Grants the app and backup roles their privileges; returns the statements it ran. A role that does not exist is
@@ -82,15 +80,13 @@ export async function applyDbGrants(
       if (!ctx.owner) throw new Error('no _prisma_migrations table: run prisma migrate deploy first');
       if (!ctx.isOwner) throw new Error('apply-db-grants must run as the owner of the tables (MIGRATE_DATABASE_URL)');
 
-      const [seq] = await tx.$queryRaw<{ name: string | null }[]>`
-      SELECT format('%I.%I', n.nspname, s.relname) AS name
-        FROM pg_class s JOIN pg_namespace n ON n.oid = s.relnamespace
-       WHERE s.oid = pg_get_serial_sequence('public.backup_runs', 'id')::regclass`;
+      const [seq] = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT pg_get_serial_sequence('public.backup_runs', 'id') IS NOT NULL AS "exists"`;
 
       const ran: string[] = [];
-      for (const [role, statements] of [
-        [roles.app, appStatements(roles.app, ctx.database)],
-        [roles.backup, backupStatements(roles.backup, ctx.database, seq?.name ?? null)],
+      for (const [role, templates] of [
+        [roles.app, APP_TEMPLATES],
+        [roles.backup, seq?.exists ? [...BACKUP_TEMPLATES, BACKUP_SEQUENCE_TEMPLATE] : BACKUP_TEMPLATES],
       ] as const) {
         const [found] = await tx.$queryRaw<{ privileged: boolean }[]>`
         SELECT r.rolsuper OR pg_has_role(r.oid, c.relowner, 'MEMBER') AS privileged
@@ -101,9 +97,16 @@ export async function applyDbGrants(
           continue;
         }
         if (found.privileged) throw new Error(`DB role ${role} is a superuser or the table owner: refusing to grant`);
-        for (const sql of statements) {
-          await tx.$executeRawUnsafe(sql);
-          ran.push(sql);
+        for (const template of templates) {
+          // PostgreSQL builds the statement from the constant template and the bound role name (quoted by %I), keeps
+          // it in a transaction-local setting, and a parameterless DO block runs it.
+          const [built] = await tx.$queryRaw<{ statement: string }[]>`
+          SELECT set_config('hg.grant_statement',
+                            format(${template}::text, ${role}::text, current_database(),
+                                   pg_get_serial_sequence('public.backup_runs', 'id')::regclass::text),
+                            true) AS statement`;
+          await tx.$executeRaw`DO $$ BEGIN EXECUTE current_setting('hg.grant_statement'); END $$`;
+          ran.push(built.statement);
         }
       }
       return ran;
