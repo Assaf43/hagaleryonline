@@ -1,0 +1,233 @@
+<h1>תקלות ומצב המערכת</h1>
+
+@if (statusError()) {
+  <div class="form-error" role="alert">
+    <p>{{ statusError() }}</p>
+    <button matButton="outlined" type="button" (click)="reload()">נסו שוב</button>
+  </div>
+}
+
+@if (status(); as s) {
+  @if (s.restoreTestStale) {
+    <p class="stale" role="alert">לא בוצעה בדיקת שחזור ב-35 הימים האחרונים</p>
+  }
+
+  <div class="cards">
+    <section class="card" [class.bad]="s.db === 'down'">
+      <h2>מסד הנתונים</h2>
+      <p class="value">{{ s.db === 'up' ? 'פעיל' : 'לא זמין' }}</p>
+    </section>
+
+    <section class="card" [class.warn]="disk()?.low">
+      <h2>מקום פנוי בדיסק</h2>
+      @if (disk(); as d) {
+        <p class="value">
+          <bdi>{{ d.free }}</bdi> GB מתוך <bdi>{{ d.total }}</bdi> GB (<bdi>{{ d.percent }}%</bdi>)
+        </p>
+        @if (d.low) {
+          <p class="note">מעט מקום פנוי</p>
+        }
+      } @else {
+        <p class="value">לא ידוע</p>
+      }
+    </section>
+
+    <section class="card" [class.warn]="s.failedJobs > 0">
+      <h2>משימות שנכשלו</h2>
+      <p class="value">
+        @if (canOpenJobs()) {
+          <a routerLink="/settings/failed-jobs"
+            ><bdi>{{ s.failedJobs }}</bdi></a
+          >
+        } @else {
+          <bdi>{{ s.failedJobs }}</bdi>
+        }
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>גיבוי אחרון</h2>
+      <ul class="runs">
+        @for (r of backups(); track r.label) {
+          <li>
+            <span class="run-label">{{ r.label }}</span>
+            <span class="run-state" [attr.data-state]="r.state">{{ r.stateLabel }}</span>
+            @if (r.when) {
+              <bdi class="run-when">{{ r.when }}</bdi>
+            }
+            @if (r.size) {
+              <bdi class="run-size">{{ r.size }}</bdi>
+            }
+            @if (r.detail) {
+              <bdi dir="ltr" class="run-detail">{{ r.detail }}</bdi>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+
+    <section class="card" [class.warn]="s.restoreTestStale">
+      <h2>בדיקת שחזור אחרונה</h2>
+      @if (restore(); as r) {
+        <p class="value">
+          <span class="run-state" [attr.data-state]="r.state">{{ r.stateLabel }}</span>
+          @if (r.when) {
+            <bdi class="run-when">{{ r.when }}</bdi>
+          }
+        </p>
+        @if (r.detail) {
+          <bdi dir="ltr" class="run-detail">{{ r.detail }}</bdi>
+        }
+      }
+    </section>
+
+    <section class="card">
+      <h2>גרסה</h2>
+      <p class="value">
+        <bdi dir="ltr">{{ s.version }}</bdi>
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>זמן פעולה</h2>
+      <p class="value">
+        <bdi>{{ uptime() }}</bdi>
+      </p>
+    </section>
+  </div>
+} @else if (!statusError()) {
+  <p class="page-intro" role="status">טוען…</p>
+}
+
+<h2 class="section-title" id="errors-title">תקלות</h2>
+<div class="filters" role="group" aria-label="סינון תקלות">
+  @for (f of filters; track f.value) {
+    <button
+      type="button"
+      class="filter"
+      [class.active]="state() === f.value"
+      [attr.aria-pressed]="state() === f.value"
+      (click)="choose(f.value)"
+    >
+      {{ f.label }}
+    </button>
+  }
+</div>
+
+@if (groupsError()) {
+  <div class="form-error" role="alert">
+    <p>{{ groupsError() }}</p>
+    <button matButton="outlined" type="button" (click)="reload()">נסו שוב</button>
+  </div>
+}
+
+@if (groups(); as g) {
+  @if (g.items.length === 0) {
+    <p class="empty">{{ emptyText() }}</p>
+  } @else {
+    <table class="groups" aria-labelledby="errors-title" [attr.aria-busy]="loading()">
+      <thead>
+        <tr>
+          <th scope="col">הודעה</th>
+          <th scope="col">מקור</th>
+          <th scope="col">כתובת</th>
+          <th scope="col">מספר פעמים</th>
+          <th scope="col">נראתה לראשונה</th>
+          <th scope="col">נראתה לאחרונה</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (item of g.items; track item.id) {
+          <tr class="group" [class.open]="openId() === item.id">
+            <td class="message">
+              <button
+                type="button"
+                class="toggle"
+                [attr.aria-expanded]="openId() === item.id"
+                [attr.aria-controls]="'group-' + item.id"
+                (click)="toggle(item)"
+              >
+                <bdi dir="auto">{{ item.message }}</bdi>
+              </button>
+              @if (item.reopenedAt) {
+                <span class="badge badge-disabled reopened">חזרה</span>
+              }
+              @if (item.kind === 'warn') {
+                <span class="badge kind-warn">אזהרה</span>
+              }
+            </td>
+            <td data-label="מקור">{{ sources[item.source] }}</td>
+            <td data-label="כתובת">
+              @if (item.path) {
+                <bdi dir="ltr" class="path">{{ item.path }}</bdi>
+              } @else {
+                <span class="muted">—</span>
+              }
+            </td>
+            <td data-label="מספר פעמים">
+              <bdi>{{ item.count }}</bdi>
+            </td>
+            <td data-label="נראתה לראשונה">
+              <bdi>{{ when(item.firstSeen) }}</bdi>
+            </td>
+            <td data-label="נראתה לאחרונה">
+              <bdi>{{ when(item.lastSeen) }}</bdi>
+            </td>
+          </tr>
+          @if (openId() === item.id) {
+            <tr class="detail" [id]="'group-' + item.id">
+              <td colspan="6">
+                @if (detailError()) {
+                  <p class="form-error" role="alert">{{ detailError() }}</p>
+                }
+                @if (detail(); as d) {
+                  @if (d.handledAt) {
+                    <p class="handled">
+                      טופלה
+                      @if (d.handledBy) {
+                        על ידי {{ d.handledBy }}
+                      }
+                      ב-<bdi>{{ when(d.handledAt) }}</bdi>
+                    </p>
+                  }
+                  @if (d.stack) {
+                    <pre dir="ltr" class="stack">{{ d.stack }}</pre>
+                  } @else {
+                    <p class="muted">אין פירוט טכני</p>
+                  }
+                  @if (!d.handledAt) {
+                    <button
+                      matButton="filled"
+                      type="button"
+                      class="mark-handled"
+                      [disabled]="marking()"
+                      (click)="markHandled(item)"
+                    >
+                      סימון כטופל
+                    </button>
+                  }
+                } @else if (!detailError()) {
+                  <p class="muted" role="status">טוען…</p>
+                }
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+
+    @if (pageCount() > 1) {
+      <nav class="pager" aria-label="עמודים">
+        <button matButton="outlined" type="button" [disabled]="page() <= 1" (click)="go(page() - 1)">הקודם</button>
+        <span
+          >עמוד <bdi>{{ page() }}</bdi> מתוך <bdi>{{ pageCount() }}</bdi></span
+        >
+        <button matButton="outlined" type="button" [disabled]="page() >= pageCount()" (click)="go(page() + 1)">
+          הבא
+        </button>
+      </nav>
+    }
+  }
+} @else if (!groupsError()) {
+  <p class="page-intro" role="status">טוען…</p>
+}
