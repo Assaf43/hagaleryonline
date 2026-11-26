@@ -101,7 +101,7 @@ describe('docker-compose.prod.yml', () => {
     expect(prod.api).toContain("fetch('http://localhost:3000/api/health')");
     expect(prod.api).toMatch(/interval: 10s/);
     expect(prod.web).toContain("port:4000,path:'/'");
-    expect(prod.caddy).toContain('wget -qO- http://localhost:2019/config/ >/dev/null');
+    expect(prod.caddy).toContain('wget -qO- http://127.0.0.1:2019/config/ >/dev/null');
     expect(prod.api).toMatch(/depends_on:\n {6}postgres:\n {8}condition: service_healthy/);
     expect(prod.web).toMatch(/depends_on:\n {6}api:\n {8}condition: service_healthy/);
   });
