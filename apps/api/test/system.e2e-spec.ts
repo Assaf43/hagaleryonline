@@ -10,6 +10,8 @@ import { acceptAndSignIn, resetAdminData, signInOwnerAnd, type AdminBrowser } fr
 import type { ErrorGroupDetail, ErrorGroupPage, SystemStatus } from '@hg/models';
 import { AppLogger } from './../src/system/app-logger.js';
 import { ErrorEventsService } from './../src/system/error-events.service.js';
+import { SystemAlertsService } from './../src/system/system-alerts.service.js';
+import { OutboxService } from './../src/outbox/outbox.service.js';
 
 const DAY = 24 * 60 * 60_000;
 
@@ -293,5 +295,114 @@ describe('System admin API (e2e, spec 9b.6)', () => {
     await owner.get('/system/errors/99999999').expect(404);
     await owner.get('/system/errors/abc').expect(404);
     await owner.post('/system/errors/99999999/handled').expect(404);
+  });
+});
+
+// Alert e-mails through the outbox (spec 9b.6): the real flush hook, the real transaction, the mock e-mail provider.
+describe('System alerts (e2e, spec 9b.6)', () => {
+  let app: NestExpressApplication;
+  let prisma: PrismaService;
+  let events: ErrorEventsService;
+  let alerts: SystemAlertsService;
+  let outbox: OutboxService;
+  let stderr: { mockRestore(): void } | undefined;
+  const saved = { alert: process.env.ALERT_EMAIL, backup: process.env.BACKUP_EXPECTED };
+
+  const jobs = () => prisma.outboxJob.findMany({ where: { type: 'email.system_alert' } });
+  const clean = async () => {
+    await prisma.outboxJob.deleteMany({ where: { type: 'email.system_alert' } });
+    await prisma.errorEvent.deleteMany({});
+    await prisma.backupRun.deleteMany({});
+    await prisma.notificationLog.deleteMany({ where: { template: 'system_alert' } });
+  };
+
+  beforeAll(async () => {
+    process.env.ALERT_EMAIL = 'alerts@example.test';
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = configureApp(moduleRef.createNestApplication<NestExpressApplication>({ bufferLogs: true }));
+    app.useLogger(app.get(AppLogger));
+    await app.init();
+    prisma = app.get(PrismaService);
+    events = app.get(ErrorEventsService);
+    alerts = app.get(SystemAlertsService);
+    outbox = app.get(OutboxService);
+    stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  });
+
+  beforeEach(clean);
+
+  afterAll(async () => {
+    stderr?.mockRestore();
+    await clean();
+    for (const [name, value] of [
+      ['ALERT_EMAIL', saved.alert],
+      ['BACKUP_EXPECTED', saved.backup],
+    ] as const)
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    await app.close();
+  });
+
+  it('a new error group sends one scrubbed e-mail to ALERT_EMAIL and marks the group alerted', async () => {
+    events.capture({
+      kind: 'error',
+      source: 'api',
+      message: 'Alert e2e failure for sentinel.user@example.test',
+      path: '/api/a?t=secret',
+    });
+    events.capture({ kind: 'warn', source: 'api', message: 'Alert e2e only a warning' });
+    await events.flush();
+    const [job, ...more] = await jobs();
+    expect(more).toEqual([]);
+    expect(JSON.stringify(job.payload)).not.toContain('@');
+    expect(JSON.stringify(job.payload)).not.toContain('secret');
+    expect(job.payload).toMatchObject({ reason: 'new_error', summary: 'Alert e2e failure for [email]' });
+    const group = await prisma.errorEvent.findFirstOrThrow({ where: { message: { startsWith: 'Alert e2e failure' } } });
+    expect(group.alertedAt).not.toBeNull();
+    const warn = await prisma.errorEvent.findFirstOrThrow({ where: { message: 'Alert e2e only a warning' } });
+    expect(warn.alertedAt).toBeNull();
+
+    await outbox.runDue(10);
+    const [log] = await prisma.notificationLog.findMany({ where: { template: 'system_alert' } });
+    expect(log.status).toBe('SENT');
+    expect(log.subject).toBe('NESTO: תקלה חדשה במערכת');
+    expect(log.body).toContain('/system');
+    expect(log.body).not.toContain('@');
+  });
+
+  it('a failed backup row alerts once; with no ALERT_EMAIL at send time the job completes without sending', async () => {
+    const run = await prisma.backupRun.create({
+      data: { kind: 'DB', startedAt: new Date(), finishedAt: new Date(), ok: false },
+    });
+    await alerts.checkBackups();
+    await alerts.checkBackups();
+    const list = await jobs();
+    expect(list.map((j) => j.dedupeKey)).toEqual([`system_alert:backup_failed:${run.id}`]);
+    expect((await prisma.backupRun.findUniqueOrThrow({ where: { id: run.id } })).alertedAt).not.toBeNull();
+
+    delete process.env.ALERT_EMAIL;
+    try {
+      await outbox.runDue(10);
+    } finally {
+      process.env.ALERT_EMAIL = 'alerts@example.test';
+    }
+    expect((await prisma.outboxJob.findUniqueOrThrow({ where: { id: list[0].id } })).state).toBe('DONE');
+    expect(await prisma.notificationLog.count({ where: { template: 'system_alert' } })).toBe(0);
+  });
+
+  it('a missing database backup alerts once a day, only with BACKUP_EXPECTED=true', async () => {
+    alerts.startedAt = new Date(Date.now() - 27 * 60 * 60_000);
+    await alerts.checkBackups();
+    expect(await jobs()).toEqual([]);
+    process.env.BACKUP_EXPECTED = 'true';
+    try {
+      await alerts.checkBackups();
+      await alerts.checkBackups();
+    } finally {
+      delete process.env.BACKUP_EXPECTED;
+    }
+    const list = await jobs();
+    expect(list).toHaveLength(1);
+    expect(list[0].payload).toMatchObject({ reason: 'backup_missing', summary: 'db' });
   });
 });

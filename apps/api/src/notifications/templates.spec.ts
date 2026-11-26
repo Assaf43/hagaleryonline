@@ -216,3 +216,31 @@ describe('personal-code messages (decisions 93–94, 96)', () => {
     );
   });
 });
+
+describe('system_alert e-mail (spec 9b.6)', () => {
+  const link = 'https://admin.example.test/system';
+  const base = { summary: 'Payment provider timeout', at: '26.11.2026 14:05', link };
+
+  it.each([
+    ['new_error', 'NESTO: תקלה חדשה במערכת'],
+    ['reopened_error', 'NESTO: תקלה חזרה'],
+    ['backup_failed', 'NESTO: הגיבוי נכשל'],
+    ['backup_missing', 'NESTO: לא בוצע גיבוי ב-26 השעות האחרונות'],
+  ] as const)('%s has its subject, the summary, the time and the system link', (reason, subject) => {
+    const m = renderEmail('system_alert', { reason, ...base });
+    expect(m.subject).toBe(subject);
+    expect(m.html).toContain('dir="rtl"');
+    for (const part of [base.summary, base.at, link]) {
+      expect(m.html).toContain(part);
+      expect(m.text).toContain(part);
+    }
+  });
+
+  it('has no query string and no e-mail address in its body, and escapes the summary', () => {
+    const m = renderEmail('system_alert', { reason: 'new_error', ...base, summary: '<b>x</b>' });
+    expect(m.html).not.toContain('<b>x</b>');
+    expect(m.html).not.toMatch(/\?[a-z]+=/i);
+    expect(m.html).not.toMatch(/[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
+    expect(m.text).not.toMatch(/\?[a-z]+=/i);
+  });
+});

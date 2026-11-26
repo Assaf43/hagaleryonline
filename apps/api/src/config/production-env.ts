@@ -121,9 +121,11 @@ export function productionEnvWarnings(env: Record<string, string | undefined>): 
     ]),
     ['AUTH_IP_ATTEMPT_LIMIT', AUTH_IP_ATTEMPT_DEFAULT],
   ];
-  return limits
+  const warnings = limits
     .filter(([name]) => env[name]?.trim())
     .map(([name, limit]) => `${name}=${Number(env[name])} overrides the production limit (${limit})`);
+  if (!env.ALERT_EMAIL?.trim()) warnings.push('ALERT_EMAIL is not set: no alert e-mails for errors or failed backups');
+  return warnings;
 }
 
 /**

@@ -102,6 +102,7 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
   private overflow: PendingGroup | undefined;
   private flushTimer: NodeJS.Timeout | undefined;
   private cleanupTimer: NodeJS.Timeout | undefined;
+  private readonly flushListeners: ((changes: ErrorGroupChange[]) => Promise<void> | void)[] = [];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -120,6 +121,15 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.flushTimer);
     clearInterval(this.cleanupTimer);
     await this.flush();
+  }
+
+  /**
+   * Registers a listener that gets the new or reopened groups of each flush that has any (the alerts, spec 9b.6).
+   * A listener that throws is reported on stderr only; it never breaks the flush. The events service knows nothing
+   * of the outbox: the listener's owner brings it.
+   */
+  onFlush(listener: (changes: ErrorGroupChange[]) => Promise<void> | void): void {
+    this.flushListeners.push(listener);
   }
 
   /** Counts one event under its group. Synchronous and never throws. */
@@ -206,6 +216,14 @@ export class ErrorEventsService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       printFailure(`flush of ${batch.length} group(s)`, error);
     }
+    if (changes.length)
+      for (const listener of this.flushListeners) {
+        try {
+          await listener(changes);
+        } catch (error) {
+          printFailure('flush listener', error);
+        }
+      }
     return changes;
   }
 

@@ -43,6 +43,7 @@ function validEnv(): Record<string, string | undefined> {
     TOTP_ENCRYPTION_KEY: key32(),
     ORDER_TOKEN_KEY: key32(),
     TRUST_PROXY: 'loopback, 172.18.0.0/16',
+    ALERT_EMAIL: 'alerts@example.test',
   };
 }
 
@@ -195,6 +196,14 @@ describe('productionEnvWarnings', () => {
 
   it('is empty without overrides', () => {
     expect(productionEnvWarnings(validEnv())).toEqual([]);
+  });
+
+  it('warns, but does not refuse, when ALERT_EMAIL is unset', () => {
+    const env = { ...validEnv(), ALERT_EMAIL: ' ' };
+    expect(productionEnvWarnings(env)).toEqual([
+      'ALERT_EMAIL is not set: no alert e-mails for errors or failed backups',
+    ]);
+    expect(checkProductionEnv(env)).toEqual([]);
   });
 });
 

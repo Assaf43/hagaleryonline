@@ -6,13 +6,14 @@ import { InternalErrorsController } from './internal-errors.controller.js';
 import { SystemAdminController } from './system-admin.controller.js';
 import { SystemStatusService } from './system-status.service.js';
 import { ErrorEventsService } from './error-events.service.js';
+import { SystemAlertsService } from './system-alerts.service.js';
 
 /** JSON logs, the request context and grouped error events (spec 9b.6). Global: any module may log or capture. */
 @Global()
 @Module({
   imports: [AuthModule, OutboxModule],
   controllers: [InternalErrorsController, SystemAdminController],
-  providers: [ErrorEventsService, AppLogger, SystemStatusService],
+  providers: [ErrorEventsService, AppLogger, SystemStatusService, SystemAlertsService],
   exports: [ErrorEventsService, AppLogger],
 })
 export class SystemModule {}
