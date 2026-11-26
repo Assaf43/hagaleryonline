@@ -93,6 +93,9 @@ describe('SystemPage ("תקלות ומצב המערכת")', () => {
     const disk = card(el, 'מקום פנוי בדיסק');
     expect(disk.textContent).toContain('50.0');
     expect(disk.textContent).toContain('50%');
+    const amounts = Array.from(disk.querySelectorAll('bdi[dir="ltr"]')).map((b) => b.textContent?.trim());
+    expect(amounts).toEqual(['50.0 GB', '100.0 GB', '50%']);
+    expect(card(el, 'גיבוי אחרון').querySelector('bdi[dir="ltr"].run-size')?.textContent).toMatch(/MB$/);
     expect(disk.classList.contains('warn')).toBe(false);
     const jobs = card(el, 'משימות שנכשלו');
     expect(jobs.textContent).toContain('3');

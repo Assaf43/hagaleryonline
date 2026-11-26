@@ -29,7 +29,9 @@
       <h2>מקום פנוי בדיסק</h2>
       @if (disk(); as d) {
         <p class="value">
-          <bdi>{{ d.free }}</bdi> GB מתוך <bdi>{{ d.total }}</bdi> GB (<bdi>{{ d.percent }}%</bdi>)
+          <bdi dir="ltr">{{ d.free }} GB</bdi> מתוך <bdi dir="ltr">{{ d.total }} GB</bdi> (<bdi dir="ltr"
+            >{{ d.percent }}%</bdi
+          >)
         </p>
         @if (d.low) {
           <p class="note">מעט מקום פנוי</p>
@@ -63,7 +65,7 @@
               <bdi class="run-when">{{ r.when }}</bdi>
             }
             @if (r.size) {
-              <bdi class="run-size">{{ r.size }}</bdi>
+              <bdi dir="ltr" class="run-size">{{ r.size }}</bdi>
             }
             @if (r.detail) {
               <bdi dir="ltr" class="run-detail">{{ r.detail }}</bdi>
