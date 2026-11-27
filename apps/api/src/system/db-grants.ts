@@ -30,7 +30,10 @@ export function assertRoleName(name: string): void {
  * name is only ever a bound parameter and PostgreSQL itself quotes it with `%I` (no string-built SQL, spec 9a.2).
  */
 
-/** The app: DML on every table, sequences, functions; consent history insert-only; migrations history read-only. */
+/**
+ * The app: DML on every table, sequences, functions; consent history and system marks insert-only; migrations history
+ * read-only.
+ */
 const APP_TEMPLATES = [
   'GRANT CONNECT ON DATABASE %2$I TO %1$I',
   'GRANT USAGE ON SCHEMA public TO %1$I',
@@ -39,6 +42,7 @@ const APP_TEMPLATES = [
   'GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO %1$I',
   'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO %1$I',
   'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.marketing_consent_events FROM %1$I',
+  'REVOKE UPDATE, DELETE, TRUNCATE ON TABLE public.system_marks FROM %1$I',
   'REVOKE ALL ON TABLE public._prisma_migrations FROM %1$I',
   'GRANT SELECT ON TABLE public._prisma_migrations TO %1$I',
 ] as const;

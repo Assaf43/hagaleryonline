@@ -26,7 +26,20 @@ interface Job {
 }
 
 /** Fakes the outbox's dedupe (a second key is kept as it is) and the rows the service reads and updates. */
-function setup(env: Record<string, string>, backupRuns: { id: number; kind: string }[] = []) {
+interface FakeRun {
+  id: number;
+  kind: string;
+  startedAt?: Date;
+  finishedAt?: Date | null;
+}
+const NOW = new Date('2026-11-26T10:20:00.000Z');
+
+function setup(
+  env: Record<string, string>,
+  backupRuns: FakeRun[] = [],
+  marks: Map<string, Date> = new Map(),
+  at: Date = NOW,
+) {
   const jobs = new Map<string, Job>();
   const alerted: number[] = [];
   const alertedRuns: number[] = [];
@@ -38,6 +51,7 @@ function setup(env: Record<string, string>, backupRuns: { id: number; kind: stri
   } as unknown as OutboxService;
   let lastOkDb: { finishedAt: Date } | null = null;
   const unalerted = [...backupRuns];
+  const gte = (c: { gte?: Date }) => c.gte as Date;
   const tx = {
     errorEvent: {
       update: vi.fn(({ where }: { where: { id: number } }) => {
@@ -54,17 +68,33 @@ function setup(env: Record<string, string>, backupRuns: { id: number; kind: stri
   };
   const prisma = {
     $transaction: (fn: (t: unknown) => Promise<unknown>) => fn(tx),
+    $executeRaw: vi.fn((_strings: TemplateStringsArray, _key: string, when: Date) => {
+      if (!marks.has('backup_watch_since')) marks.set('backup_watch_since', when);
+      return Promise.resolve(1);
+    }),
+    systemMark: {
+      findUnique: vi.fn(({ where }: { where: { key: string } }) => {
+        const v = marks.get(where.key);
+        return Promise.resolve(v ? { key: where.key, at: v } : null);
+      }),
+    },
     backupRun: {
-      findMany: vi.fn(() => Promise.resolve(unalerted)),
+      findMany: vi.fn(({ where }: { where: { OR: [{ finishedAt: { gte: Date } }, { startedAt: { gte: Date } }] } }) => {
+        const cutoff = gte(where.OR[0].finishedAt);
+        return Promise.resolve(
+          unalerted.filter((r) => {
+            const t = r.finishedAt ?? r.startedAt;
+            return !t || t >= cutoff;
+          }),
+        );
+      }),
       findFirst: vi.fn(() => Promise.resolve(lastOkDb)),
     },
   } as unknown as PrismaService;
   const service = new SystemAlertsService(prisma, outbox, config(env), {
     onFlush: () => undefined,
   } as unknown as ErrorEventsService);
-  const now = new Date('2026-11-26T10:20:00.000Z');
-  service.now = () => now;
-  service.startedAt = new Date('2026-11-24T10:20:00.000Z');
+  service.now = () => at;
   return { service, jobs, alerted, alertedRuns, setLastOk: (d: Date | null) => (lastOkDb = d && { finishedAt: d }) };
 }
 
@@ -150,8 +180,50 @@ describe('SystemAlertsService', () => {
     expect(alertedRuns).toEqual([]);
   });
 
+  it('failed run older than 7 days is not alerted', async () => {
+    const old = new Date('2026-11-18T10:00:00.000Z'); // 8 days before NOW
+    const { service, jobs, alertedRuns } = setup(ON, [{ id: 8, kind: 'DB', finishedAt: old, startedAt: old }]);
+    await service.checkBackups();
+    expect(jobs.size).toBe(0);
+    expect(alertedRuns).toEqual([]);
+  });
+
+  it('failed run without finishedAt uses startedAt', async () => {
+    const recent = new Date('2026-11-25T10:00:00.000Z');
+    const old = new Date('2026-11-10T10:00:00.000Z');
+    const { service, jobs } = setup(ON, [
+      { id: 9, kind: 'DB', finishedAt: null, startedAt: recent },
+      { id: 10, kind: 'DB', finishedAt: null, startedAt: old },
+    ]);
+    await service.checkBackups();
+    expect([...jobs.keys()]).toEqual(['system_alert:backup_failed:9']);
+  });
+
+  it('missing-backup clock survives a restart', async () => {
+    const env = { ...ON, BACKUP_EXPECTED: 'true' };
+    const marks = new Map<string, Date>();
+    const first = setup(env, [], marks);
+    await first.service.checkBackups();
+    expect(first.jobs.size).toBe(0);
+    const later = new Date(NOW.getTime() + 27 * 60 * 60_000);
+    const second = setup(env, [], marks, later);
+    await second.service.checkBackups();
+    expect(second.jobs.size).toBe(1);
+    expect([...second.jobs.values()][0].payload).toMatchObject({ reason: 'backup_missing' });
+  });
+
+  it('watch mark is written once', async () => {
+    const env = { ...ON, BACKUP_EXPECTED: 'true' };
+    const marks = new Map<string, Date>();
+    await setup(env, [], marks).service.checkBackups();
+    const written = marks.get('backup_watch_since');
+    await setup(env, [], marks, new Date(NOW.getTime() + 3_600_000)).service.checkBackups();
+    expect(marks.get('backup_watch_since')).toEqual(written);
+    expect(written).toEqual(NOW);
+  });
+
   it('failed backup alerts once', async () => {
-    const { service, jobs, alertedRuns } = setup(ON, [{ id: 7, kind: 'DB' }]);
+    const { service, jobs, alertedRuns } = setup(ON, [{ id: 7, kind: 'DB', finishedAt: NOW }]);
     await service.checkBackups();
     await service.checkBackups();
     expect([...jobs.keys()]).toEqual(['system_alert:backup_failed:7']);

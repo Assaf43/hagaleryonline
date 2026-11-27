@@ -431,7 +431,12 @@ describe('System alerts (e2e, spec 9b.6)', () => {
   });
 
   it('a missing database backup alerts once a day, only with BACKUP_EXPECTED=true', async () => {
-    alerts.startedAt = new Date(Date.now() - 27 * 60 * 60_000);
+    const since = new Date(Date.now() - 27 * 60 * 60_000);
+    await prisma.systemMark.upsert({
+      where: { key: 'backup_watch_since' },
+      create: { key: 'backup_watch_since', at: since },
+      update: { at: since },
+    });
     await alerts.checkBackups();
     expect(await jobs()).toEqual([]);
     process.env.BACKUP_EXPECTED = 'true';
@@ -440,9 +445,24 @@ describe('System alerts (e2e, spec 9b.6)', () => {
       await alerts.checkBackups();
     } finally {
       delete process.env.BACKUP_EXPECTED;
+      await prisma.systemMark.deleteMany({});
     }
     const list = await jobs();
     expect(list).toHaveLength(1);
     expect(list[0].payload).toMatchObject({ reason: 'backup_missing', summary: 'db' });
+  });
+  it('the watch mark is written once on the first expected-backup check and never moves', async () => {
+    await prisma.systemMark.deleteMany({});
+    process.env.BACKUP_EXPECTED = 'true';
+    try {
+      await alerts.checkBackups();
+      const first = await prisma.systemMark.findUniqueOrThrow({ where: { key: 'backup_watch_since' } });
+      await alerts.checkBackups();
+      const second = await prisma.systemMark.findUniqueOrThrow({ where: { key: 'backup_watch_since' } });
+      expect(second.at).toEqual(first.at);
+    } finally {
+      delete process.env.BACKUP_EXPECTED;
+      await prisma.systemMark.deleteMany({});
+    }
   });
 });

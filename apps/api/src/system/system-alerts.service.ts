@@ -20,6 +20,9 @@ export interface SystemAlertPayload {
 export const CHECK_BACKUPS_EVERY_MS = 5 * 60_000;
 /** No successful database backup for this long raises the "missing" alert (spec 9b.6). */
 export const BACKUP_MAX_AGE_MS = 26 * 60 * 60_000;
+/** A failed backup run older than this never sends mail (a restored database, or a run from before `ALERT_EMAIL`). */
+export const FAILED_RUN_ALERT_WINDOW_MS = 7 * 24 * 60 * 60_000;
+const WATCH_MARK = 'backup_watch_since';
 export const SUMMARY_MAX_LENGTH = 300;
 const FAILED_RUNS_PER_CHECK = 20;
 /** Alert budget (in memory, one API process): beyond it one storm summary replaces the single alerts. */
@@ -51,8 +54,6 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
   private budgetUsed = 0;
   /** Overridable in tests. */
   now: () => Date = () => new Date();
-  /** When this process started: "no backup yet" counts from here. */
-  startedAt: Date = this.now();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -131,9 +132,14 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
   async checkBackups(): Promise<void> {
     if (!this.enabled()) return;
     const now = this.now();
+    const windowStart = new Date(now.getTime() - FAILED_RUN_ALERT_WINDOW_MS);
     try {
       const failed = await this.prisma.backupRun.findMany({
-        where: { ok: false, alertedAt: null },
+        where: {
+          ok: false,
+          alertedAt: null,
+          OR: [{ finishedAt: { gte: windowStart } }, { finishedAt: null, startedAt: { gte: windowStart } }],
+        },
         select: { id: true, kind: true },
         orderBy: { id: 'asc' },
         take: FAILED_RUNS_PER_CHECK,
@@ -163,8 +169,9 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
         orderBy: { finishedAt: 'desc' },
         select: { finishedAt: true },
       });
-      // Without any success, the clock starts when this API started: a fresh install is not "late" yet.
-      const since = last?.finishedAt ?? this.startedAt;
+      // Without any success, the clock starts at the first check ever (a persisted mark, so an API restart does not
+      // reset it): a fresh install is not "late" yet.
+      const since = last?.finishedAt ?? (await this.watchSince(now));
       if (now.getTime() - since.getTime() < BACKUP_MAX_AGE_MS) return;
       const payload: SystemAlertPayload = { reason: 'backup_missing', summary: 'db', at: now.toISOString() };
       await this.prisma.$transaction((tx) =>
@@ -177,5 +184,13 @@ export class SystemAlertsService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       printFailure('missing backup alert', error);
     }
+  }
+
+  /** The persisted start of the "no backup yet" clock: written once, then only read. */
+  private async watchSince(now: Date): Promise<Date> {
+    await this.prisma
+      .$executeRaw`INSERT INTO system_marks (key, at) VALUES (${WATCH_MARK}, ${now}) ON CONFLICT (key) DO NOTHING`;
+    const mark = await this.prisma.systemMark.findUnique({ where: { key: WATCH_MARK } });
+    return mark?.at ?? now;
   }
 }
