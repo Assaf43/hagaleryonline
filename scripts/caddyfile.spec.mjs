@@ -37,7 +37,22 @@ describe('global options', () => {
   it('orders rate_limit and reads the extra options from the environment', () => {
     expect(global).toMatch(/order rate_limit before basic_?auth/);
     expect(global).toContain('{$CADDY_GLOBAL_OPTIONS}');
-    expect(global).not.toContain('trusted_proxies');
+  });
+
+  it('trusts only CF_TRUSTED_RANGES and takes the client IP from CF-Connecting-IP (decision 106)', () => {
+    const servers = block(global, 'servers {');
+    expect(servers).toMatch(/^\s*trusted_proxies static \{\$CF_TRUSTED_RANGES\}\s*$/m);
+    expect(servers).toMatch(/^\s*client_ip_headers CF-Connecting-IP\s*$/m);
+    expect(servers).toMatch(/^\s*trusted_proxies_strict\s*$/m);
+    expect(config.match(/trusted_proxies /g)).toHaveLength(1);
+  });
+
+  it('imports the two snippet files by name, never env-* / tls-* at the top level', () => {
+    const top = config.replace(/\n\{\$(SITE|ADMIN)_HOST\} \{[\s\S]*$/, '');
+    expect(top).toMatch(/^import admin-headers\.caddy$/m);
+    expect(top).toMatch(/^import api-limits\.caddy$/m);
+    expect(top).not.toMatch(/^import \*/m);
+    expect(top).not.toMatch(/import (env|tls)-/);
   });
 
   it('filters the default (error) logger like the access log', () => {
@@ -50,7 +65,7 @@ describe('global options', () => {
 
   it('keeps handle_errors so Caddy-made errors carry HSTS and no Server', () => {
     const errors = block(common, 'handle_errors {');
-    expect(errors).toContain('Strict-Transport-Security "max-age=31536000"');
+    expect(errors).toContain('Strict-Transport-Security "max-age=31536000; includeSubDomains"');
     expect(errors).toMatch(/^\s*-Server\s*$/m);
     // The handled error stays visible on the access line, its query cut off.
     expect(errors).toContain('log_append error_message {err.message}');
@@ -79,13 +94,42 @@ describe('site blocks', () => {
     expect(site).not.toContain('admin_headers');
   });
 
+  it('both import the environment and TLS switch files', () => {
+    for (const body of [site, admin]) {
+      expect(body).toMatch(/^\s*import env-\{\$CADDY_ENV\}\.caddy\s*$/m);
+      expect(body).toMatch(/^\s*import tls-\{\$CADDY_TLS\}\.caddy\s*$/m);
+    }
+  });
+
+  it('every app proxy sends the client IP as X-Forwarded-For and drops CF-Connecting-IP', () => {
+    const proxies = [...config.matchAll(/reverse_proxy (api:3000|web:4000) \{/g)];
+    expect(proxies.map((m) => m[1]).sort()).toEqual(['api:3000', 'api:3000', 'web:4000']);
+    expect(config).not.toMatch(/reverse_proxy (api:3000|web:4000)\s*\n/);
+    for (const m of proxies) {
+      const body = block(config.slice(m.index), `reverse_proxy ${m[1]} {`);
+      expect(body).toMatch(/^\s*header_up X-Forwarded-For \{client_ip\}\s*$/m);
+      expect(body).toMatch(/^\s*header_up -CF-Connecting-IP\s*$/m);
+    }
+  });
+
+  it('body limits: site 55MB for damaged photos and 1MB elsewhere (never nested, raw URI), admin 16MB', () => {
+    const raw = '{http.request.orig_uri}.matches("^/api/support/damaged(\\\\?.*)?$")';
+    expect(site).toContain('@damaged expression `' + raw + '`');
+    expect(site).toContain('@not_damaged not expression `' + raw + '`');
+    expect(site).toMatch(/request_body @damaged \{\s*max_size 55MB\s*\}/);
+    expect(site).toMatch(/request_body @not_damaged \{\s*max_size 1MB\s*\}/);
+    expect(site.match(/request_body/g)).toHaveLength(2);
+    expect(admin).toMatch(/request_body \{\s*max_size 16MB\s*\}/);
+    expect(admin.match(/request_body/g)).toHaveLength(1);
+  });
+
   it('the site proxies /api to api:3000 and the rest to web:4000', () => {
-    expect(site).toMatch(/handle \/api\/\* \{\s*reverse_proxy api:3000\s*\}/);
+    expect(site).toMatch(/handle \/api\/\* \{\s*reverse_proxy api:3000 \{/);
     expect(site).toMatch(/reverse_proxy web:4000/);
   });
 
   it('the admin proxies /api to api:3000, refuses the webhooks and serves /srv/admin', () => {
-    expect(admin).toMatch(/handle \/api\/\* \{\s*reverse_proxy api:3000\s*\}/);
+    expect(admin).toMatch(/handle \/api\/\* \{\s*reverse_proxy api:3000 \{/);
     expect(admin).toMatch(/path \/api\/payments\/webhook \/api\/marketing\/webhook/);
     expect(admin).toContain('root * /srv/admin');
     expect(admin).toContain('try_files {path} /index.html');
@@ -101,10 +145,10 @@ describe('site blocks', () => {
 });
 
 describe('(common)', () => {
-  it('compresses, sends HSTS without includeSubDomains / preload and drops Server', () => {
+  it('compresses, sends HSTS with includeSubDomains (no preload) and drops Server', () => {
     expect(common).toMatch(/encode zstd gzip/);
-    expect(common).toContain('Strict-Transport-Security "max-age=31536000"');
-    expect(common).not.toMatch(/includeSubDomains|preload/);
+    expect(common.match(/Strict-Transport-Security "max-age=31536000; includeSubDomains"/g)).toHaveLength(2);
+    expect(common).not.toMatch(/preload/);
     expect(common).toMatch(/^\s*-Server\s*$/m);
   });
 
@@ -157,6 +201,8 @@ describe('(media)', () => {
     expect(proxy).toMatch(/header_up Host \{upstream_hostport\}/);
     expect(proxy).toMatch(/header_up -Authorization/);
     expect(proxy).toMatch(/header_up -Cookie/);
+    expect(proxy).toMatch(/header_up -X-Forwarded-For/);
+    expect(proxy).toMatch(/header_up -CF-Connecting-IP/);
     expect(proxy).toMatch(/header_down -X-Amz-\*/i);
   });
 

@@ -1,6 +1,7 @@
 # Size and rate limits for the signed webhooks (spec 9a.3). Imported by Phase 9b
 # inside the site block that proxies /api. rate_limit needs the caddy-ratelimit
-# plugin (see README.md).
+# plugin (see README.md). The key is {client_ip}: behind Cloudflare that is CF-Connecting-IP from a
+# trusted range, otherwise the peer address, so every visitor has a bucket and a spoofed header buys none.
 (webhook_limits) {
 	@signed_webhooks path /api/payments/webhook /api/marketing/webhook
 
@@ -10,7 +11,7 @@
 
 	rate_limit @signed_webhooks {
 		zone webhooks {
-			key {remote_host}
+			key {client_ip}
 			events 120
 			window 1m
 		}
