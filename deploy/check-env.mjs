@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-// Cross-checks of one production / staging / rehearsal env file (spec 9c, NFR-12), run by deploy/deploy.sh as step 0
-// inside nesto-app:<tag> before anything changes:
-//   docker run --rm -i --network none -v <env-file>:/env:ro -v <compose-file>:/compose.yml:ro nesto-app:<tag> \
-//     -v <deploy/cloudflare-ips.txt>:/cloudflare-ips.txt:ro nesto-app:<tag> node - /env /compose.yml /cloudflare-ips.txt
+// Cross-checks of one production / staging / rehearsal env file (spec 9c, NFR-12), run by deploy/deploy.sh as step 1b
+// inside nesto-app:<tag> before anything changes, with the script on stdin:
+//   docker run --rm -i --pull never --network none --read-only --cap-drop ALL --user "$(id -u):$(id -g)" \
+//     -v <env-file>:/env:ro -v <repo>/docker-compose.prod.yml:/compose.yml:ro \
+//     -v <repo>/deploy/cloudflare-ips.txt:/cloudflare-ips.txt:ro \
+//     nesto-app:<tag> node - /env /compose.yml /cloudflare-ips.txt < deploy/check-env.mjs
 // or from the host: node deploy/check-env.mjs <env-file> [compose-file [cloudflare-ips-file]]   (defaults: the
 // docker-compose.prod.yml at the repo root and deploy/cloudflare-ips.txt beside this script; run from stdin without a
-// third argument, CF_TRUSTED_RANGES is checked for CIDR syntax only). Plain Node with no dependencies and no import / export, so it runs from stdin as well as from a file.
+// third argument, CF_TRUSTED_RANGES is checked for CIDR syntax only). Plain Node with no dependencies and no import /
+// export, so it runs from stdin as well as from a file.
 // It never prints a value, only variable names and rules. Exit 0 = ok, 1 = problems (all listed), 2 = usage or
 // unreadable input. The API checks each value on its own at startup (apps/api/src/config/production-env.ts); this
-// file checks what only the whole file can tell: the hosts agree, TRUST_PROXY is the edge network, the Caddy mode fits the app.
+// file checks what only the whole file can tell: the hosts agree, TRUST_PROXY is the edge network, the Caddy mode and
+// TLS source fit the app, and STAGING_AUTH_HASH survives Compose's `$` interpolation.
 
 const fs = process.getBuiltinModule('node:fs');
 const path = process.getBuiltinModule('node:path');
@@ -34,9 +38,14 @@ function isCidr(value) {
   return bits <= 32 && parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255);
 }
 
-/** Compose env-file syntax: `NAME=value`, `export NAME=value`, `#` comments, '…' / "…" quotes, ` #` after a value. */
+/**
+ * Compose env-file syntax: `NAME=value`, `export NAME=value`, `#` comments, '…' / "…" quotes, ` #` after a value.
+ * Returns the values (quotes removed, `$` left as written) and, per name, the quote it was written in ('', "'" or
+ * '"'): Compose interpolates `$` in unquoted and double-quoted values only.
+ */
 function parseEnvFile(text) {
   const env = {};
+  const quotes = {};
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
@@ -44,13 +53,33 @@ function parseEnvFile(text) {
     if (!match) continue;
     let value = match[2];
     const quote = value[0];
-    if ((quote === '"' || quote === "'") && value.indexOf(quote, 1) > 0)
+    if ((quote === '"' || quote === "'") && value.indexOf(quote, 1) > 0) {
       value = value.slice(1, value.indexOf(quote, 1));
-    else value = value.replace(/\s+#.*$/, '').trim();
+      quotes[match[1]] = quote;
+    } else {
+      value = value.replace(/\s+#.*$/, '').trim();
+      quotes[match[1]] = '';
+    }
     env[match[1]] = value;
   }
-  return env;
+  return { env, quotes };
 }
+
+/**
+ * The value a container receives for a value Compose interpolates, or null when Compose would expand part of it:
+ * single-quoted is literal; unquoted or double-quoted, `$$` is one `$` and any other `$` starts a variable.
+ */
+function composeValue(value, quote) {
+  if (quote === "'") return value;
+  if (value.replace(/\$\$/g, '').includes('$')) return null;
+  return value.replace(/\$\$/g, '$');
+}
+
+/** A bcrypt hash as `caddy hash-password` prints it: $2a$ / $2b$ / $2y$, a cost of 04-31, 53 more characters. */
+const BCRYPT = /^\$2[aby]\$(0[4-9]|[12]\d|3[01])\$[./A-Za-z0-9]{53}$/;
+
+/** `localhost` or a name ending in `.localhost`. */
+const isLocalhost = (host) => /^(?:[a-z0-9-]+\.)*localhost$/i.test(host);
 
 /**
  * The subnet of the top-level `networks: edge:` entry of a compose file, by indentation (no YAML parser): the first
@@ -90,7 +119,7 @@ function hostOf(value) {
 }
 
 /** One line per problem (names and rules only). */
-function check(env, subnet, cloudflare) {
+function check({ env, quotes }, subnet, cloudflare) {
   const problems = [];
   const get = (name) => (env[name] ?? '').trim();
   const need = (name) => {
@@ -131,13 +160,33 @@ function check(env, subnet, cloudflare) {
     if (!CADDY_ENVS.includes(caddy)) problems.push('CADDY_ENV: must be production, staging or rehearsal');
     else if ((caddy === 'production') !== appProduction)
       problems.push('CADDY_ENV, APP_ENV: production on both or on neither');
-    // Caddy believes the client IP header only from these ranges; staging and production sit behind Cloudflare.
     if (caddy === 'production' || caddy === 'staging') {
+      // Caddy believes the client IP header only from these ranges; staging and production sit behind Cloudflare,
+      // and the set must be exactly deploy/cloudflare-ips.txt (a refreshed list means a regenerated env file).
       const ranges = get('CF_TRUSTED_RANGES').split(/\s+/).filter(Boolean);
       if (!ranges.length) problems.push('CF_TRUSTED_RANGES: missing');
       else if (ranges.some((range) => !isCidr(range))) problems.push('CF_TRUSTED_RANGES: every entry must be a CIDR');
-      else if (cloudflare && ranges.some((range) => !cloudflare.includes(range)))
-        problems.push('CF_TRUSTED_RANGES: every entry must be listed in deploy/cloudflare-ips.txt');
+      else if (cloudflare) {
+        const given = new Set(ranges.map((range) => range.toLowerCase()));
+        const listed = new Set(cloudflare.map((range) => range.toLowerCase()));
+        if ([...given].some((range) => !listed.has(range)))
+          problems.push('CF_TRUSTED_RANGES: every entry must be listed in deploy/cloudflare-ips.txt');
+        if ([...listed].some((range) => !given.has(range)))
+          problems.push('CF_TRUSTED_RANGES: must hold every range of deploy/cloudflare-ips.txt');
+      }
+      // Cloudflare (Full strict) talks to the origin with its Origin CA certificate, never Caddy's own.
+      if (get('CADDY_TLS') !== 'origin') problems.push(`CADDY_TLS: must be origin when CADDY_ENV=${caddy}`);
+      const originDir = get('CADDY_ORIGIN_DIR').replace(/[\\/]+$/, '');
+      if (!originDir || /(^|[\\/])no-origin$/.test(originDir))
+        problems.push(`CADDY_ORIGIN_DIR: must be the Origin CA folder when CADDY_ENV=${caddy}`);
+    }
+    // The rehearsal is local only: localhost names and Caddy's own (local) certificates.
+    if (caddy === 'rehearsal') {
+      for (const name of ['SITE_HOST', 'ADMIN_HOST'])
+        if (get(name) && !isLocalhost(get(name)))
+          problems.push(`${name}: must be localhost or end in .localhost when CADDY_ENV=rehearsal`);
+      if (get('CADDY_TLS') && get('CADDY_TLS') !== 'auto')
+        problems.push('CADDY_TLS: must be auto (or empty) when CADDY_ENV=rehearsal');
     }
     if (caddy === 'staging')
       for (const name of ['STAGING_AUTH_USER', 'STAGING_AUTH_HASH'])
@@ -145,6 +194,14 @@ function check(env, subnet, cloudflare) {
   }
   if (get('CADDY_TLS') && !CADDY_TLS_MODES.includes(get('CADDY_TLS')))
     problems.push('CADDY_TLS: must be origin or auto');
+  // A bcrypt hash is full of `$`: unquoted or in double quotes Compose expands `$2a`, `$14`, ... and Caddy gets a
+  // stub. It must be in single quotes (or have every `$` doubled).
+  if (get('STAGING_AUTH_HASH')) {
+    const hash = composeValue(get('STAGING_AUTH_HASH'), quotes.STAGING_AUTH_HASH ?? '');
+    if (hash === null)
+      problems.push("STAGING_AUTH_HASH: Compose would expand its '$': write it in single quotes, or every '$' as '$$'");
+    else if (!BCRYPT.test(hash)) problems.push('STAGING_AUTH_HASH: must be a bcrypt hash (caddy hash-password)');
+  }
   if ((get('SEO_INDEXING') === 'true') !== appProduction)
     problems.push('SEO_INDEXING: true exactly when APP_ENV is production');
   return problems;

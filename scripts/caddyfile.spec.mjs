@@ -101,13 +101,14 @@ describe('site blocks', () => {
     }
   });
 
-  it('every app proxy sends the client IP as X-Forwarded-For and drops CF-Connecting-IP', () => {
+  it('every app proxy sends the client IP as X-Forwarded-For, the request host as X-Forwarded-Host, and drops CF-Connecting-IP', () => {
     const proxies = [...config.matchAll(/reverse_proxy (api:3000|web:4000) \{/g)];
     expect(proxies.map((m) => m[1]).sort()).toEqual(['api:3000', 'api:3000', 'web:4000']);
     expect(config).not.toMatch(/reverse_proxy (api:3000|web:4000)\s*\n/);
     for (const m of proxies) {
       const body = block(config.slice(m.index), `reverse_proxy ${m[1]} {`);
       expect(body).toMatch(/^\s*header_up X-Forwarded-For \{client_ip\}\s*$/m);
+      expect(body).toMatch(/^\s*header_up X-Forwarded-Host \{host\}\s*$/m);
       expect(body).toMatch(/^\s*header_up -CF-Connecting-IP\s*$/m);
     }
   });

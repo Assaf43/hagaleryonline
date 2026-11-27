@@ -74,6 +74,12 @@ const MIN_SECRET_LENGTH = 32;
 const MIN_DB_PASSWORD_LENGTH = 20;
 /** `TRUST_PROXY` entries that trust every hop. */
 const TRUST_EVERYONE: ReadonlySet<string> = new Set(['true', '*', '0.0.0.0/0', '::/0']);
+/**
+ * proxy-addr's named ranges that cover every private network (10/8, 172.16/12, 192.168/16, fc00::/7) or every
+ * link-local address (169.254/16, fe80::/10): any container on the host could then set X-Forwarded-For. `loopback`
+ * stays allowed.
+ */
+const TRUST_NAMED_WIDE: ReadonlySet<string> = new Set(['uniquelocal', 'linklocal']);
 /** The widest `TRUST_PROXY` ranges accepted: a /8 (IPv4) and a /16 (IPv6); the edge network is a /24. */
 const MIN_IPV4_PREFIX = 8;
 const MIN_IPV6_PREFIX = 16;
@@ -182,6 +188,8 @@ function problemOf(rule: EnvRule, value: string, staging: boolean): string | nul
     case 'trust-proxy':
       if (value.split(',').some((part) => TRUST_EVERYONE.has(part.trim())))
         return 'must name the proxy, not trust everyone';
+      if (value.split(',').some((part) => TRUST_NAMED_WIDE.has(part.trim().toLowerCase())))
+        return 'must name the proxy, not the uniquelocal or linklocal ranges';
       return value.split(',').some((part) => isWideRange(part.trim()))
         ? 'must name the proxy, not a range wider than /8 (IPv4) or /16 (IPv6)'
         : null;

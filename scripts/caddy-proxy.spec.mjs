@@ -289,6 +289,21 @@ describe.skipIf(skip)('Caddy behind Cloudflare (real Caddy, Docker)', () => {
     expect(direct.headers['x-forwarded-for']).toBe(ip.direct);
   }, 60_000);
 
+  it('client X-Forwarded-Host replaced by the request host, also from a trusted source', () => {
+    // Caddy passes a trusted hop's X-Forwarded-Host on by default, and Cloudflare forwards the client's own.
+    const evil = { 'X-Forwarded-Host': 'evil.example.test' };
+    for (const source of ['direct', 'cf']) {
+      for (const [host, path] of [
+        [PROD.site, '/api/x'],
+        [PROD.site, '/'],
+        [PROD.admin, '/api/x'],
+      ]) {
+        const seen = echoed(request(source, { url: `https://${host}${path}`, headers: evil }));
+        expect(seen.headers['x-forwarded-host'], `${source} ${host}${path}`).toBe(host);
+      }
+    }
+  }, 60_000);
+
   it('webhook rate limit: one bucket per real client, a spoofed header buys no new bucket', () => {
     const url = `https://${PROD.site}/api/payments/webhook`;
     // Through Cloudflare: 121 calls from one visitor hit the limit, a second visitor still gets through.

@@ -68,10 +68,20 @@ the rehearsal; empty is allowed), `CF_TRUSTED_RANGES`, `CADDY_ENV`, `CADDY_TLS`,
   is the result: every `reverse_proxy api:3000` / `web:4000` sends it as the only
   `X-Forwarded-For` value (a client's own value is replaced, never appended) and drops
   `CF-Connecting-IP`, and the webhook rate limit uses `key {client_ip}`. The API trusts
-  only Caddy's network (`TRUST_PROXY`), so it reads exactly that one address.
+  only Caddy's network (`TRUST_PROXY`), so it reads exactly that one address. The same
+  proxies pin `X-Forwarded-Host` to the request host (`{host}`): Caddy would otherwise pass a
+  trusted hop's value on, and Cloudflare forwards whatever the client sent.
 - **`CF_TRUSTED_RANGES`** is the list in `deploy/cloudflare-ips.txt`, space-joined (the env
-  tooling writes it; an empty value trusts nothing). The rehearsal sets `127.0.0.1/32`, so
-  nothing on the Docker network is trusted by accident.
+  tooling writes it). The value is required: compose refuses an empty or unset one
+  (`${CF_TRUSTED_RANGES:?}`), and on staging and production `deploy/check-env.mjs` wants
+  exactly the set in `cloudflare-ips.txt`. The rehearsal sets `127.0.0.1/32`, so nothing on
+  the Docker network is trusted by accident.
+- **IPv6 at the origin.** Keep the origin's DNS record A-only (no AAAA), or enable IPv6 in
+  Docker. Otherwise IPv6 connections reach Caddy through `docker-proxy` with the bridge
+  gateway as the source address: no Cloudflare range matches, `CF-Connecting-IP` is ignored,
+  and every customer shares one client IP (one throttle bucket). Never add the bridge gateway
+  to the trusted ranges to "fix" it: every connection through the proxy could then pick its
+  own IP.
 - **Refresh `cloudflare-ips.txt`** when Cloudflare announces a change (and before each
   launch step): fetch both lists, keep one CIDR per line, update the date in the header,
   and review the diff before committing. A range must never be typed from memory:
@@ -86,6 +96,8 @@ the rehearsal; empty is allowed), `CF_TRUSTED_RANGES`, `CADDY_ENV`, `CADDY_TLS`,
   ```
 
   Then regenerate the env (`CF_TRUSTED_RANGES`) and the firewall rules, and redeploy Caddy.
+  Until the env file is regenerated, `deploy.sh` refuses to deploy: `deploy/check-env.mjs`
+  compares `CF_TRUSTED_RANGES` with the committed list and names the mismatch.
 
 - **Environment switch** `import env-{$CADDY_ENV}.caddy` in both site blocks:
   - `env-production.caddy`: nothing.
@@ -128,7 +140,8 @@ only the Dockerfile's `caddy-builder` stage into
 
 ```sh
 docker build --target caddy -t nesto-caddy:check .
-# JSON, no warnings:
+# JSON; the only warnings are three "Unnecessary header_up X-Forwarded-Host" lines. Caddy is wrong there: it passes a
+# trusted hop's X-Forwarded-Host on unchanged, so the pin is needed (scripts/caddy-proxy.spec.mjs fails without it).
 docker run --rm -e SITE_HOST=nesto.localhost -e ADMIN_HOST=admin.nesto.localhost \
   -e S3_PUBLIC_BUCKET=nesto-media-public -e S3_PUBLIC_UPSTREAM=http://minio:9000 \
   -e CADDY_GLOBAL_OPTIONS=local_certs -e CADDY_ENV=rehearsal -e CADDY_TLS=auto \
@@ -186,7 +199,8 @@ Cloudflare's address, and every caller would share one bucket.
 ## 9b check
 
 Done in the 9b-2 local rehearsal (production images, `local_certs`, MinIO as the S3 test double):
-`caddy adapt` gives JSON with no warnings and `caddy fmt --diff` is clean; the admin host answers
+`caddy adapt` gave JSON with no warnings (9c-1 later added the `X-Forwarded-Host` pin, which
+Caddy warns about, see Validate) and `caddy fmt --diff` is clean; the admin host answers
 with every header from the snippet, HSTS and no `Server` header; `?t=` / `?preview=` sentinels,
 `Cookie` and `Referer` never reach the Caddy log; 130 webhook POSTs in a minute gave 120 x 401
 then 429, a 70 KB body gave 413, the webhooks answer 404 on the admin host; `/api/internal/*` and

@@ -22,11 +22,27 @@ two):
 - `DEPLOY_STATE_DIR` - current / previous tag and the lock, default `deploy/state`.
 
 Env check (before anything changes): `deploy.sh` runs `deploy/check-env.mjs` in the new `nesto-app` image (no network,
-the env file and `docker-compose.prod.yml` mounted read-only). It refuses when `SITE_HOST`, `SITE_URL`, `STOREFRONT_URL`
-and `NG_ALLOWED_HOSTS` or `ADMIN_HOST` and `ADMIN_URL` disagree, when `TRUST_PROXY` is not the compose file's edge
-subnet, when `CADDY_ENV` is not production / staging / rehearsal or does not match `APP_ENV` and `SEO_INDEXING`
-(production on all three, or on none), and on staging without `STAGING_AUTH_USER` / `STAGING_AUTH_HASH`. It names keys,
-never values. From the host: `node deploy/check-env.mjs <env-file>`.
+no capabilities, read-only root, the caller's uid; the env file, `docker-compose.prod.yml` and
+`deploy/cloudflare-ips.txt` mounted read-only). It lists every problem at once and refuses when:
+
+- `SITE_HOST`, `SITE_URL`, `STOREFRONT_URL` and `NG_ALLOWED_HOSTS` disagree, or `ADMIN_HOST` and `ADMIN_URL` do (any
+  of them missing counts too);
+- `TRUST_PROXY` is not the compose file's edge subnet (`networks.edge`);
+- `CADDY_ENV` is missing or not production / staging / rehearsal, or does not match `APP_ENV` (production on both or
+  on neither; an empty `APP_ENV` is production), or `SEO_INDEXING` is not `true` exactly when `APP_ENV` is production;
+- `CADDY_TLS` is set to anything but `origin` or `auto`;
+- on staging and production: `CF_TRUSTED_RANGES` is not exactly the set of `deploy/cloudflare-ips.txt` (an extra or a
+  missing range is refused; order and spacing are free), `CADDY_TLS` is not `origin`, or `CADDY_ORIGIN_DIR` is empty or
+  the repo's `no-origin` folder;
+- on the rehearsal: `SITE_HOST` or `ADMIN_HOST` is not `localhost` / `*.localhost`, or `CADDY_TLS` is not `auto` (or
+  empty);
+- on staging: `STAGING_AUTH_USER` or `STAGING_AUTH_HASH` is empty;
+- `STAGING_AUTH_HASH` would not reach Caddy intact (a `$` outside single quotes that is not written `$$`: Compose
+  would expand it), or is not a bcrypt hash (`$2a$` / `$2b$` / `$2y$`, cost, 53 characters).
+
+It names keys and rules, never values. From the host: `node deploy/check-env.mjs <env-file>`. The container runs with
+`--cap-drop ALL`, so even root cannot read a 0600 env file owned by another user: the env file must be owned by the
+user who runs `deploy.sh` (root on the server).
 
 Stale lock: if a deploy was killed, `deploy/state/.lock` stays behind. When no deploy is running, `rmdir` it.
 

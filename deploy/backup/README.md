@@ -22,6 +22,13 @@ one scrubbed JSON line per event and never prints a key or decrypted content.
 
 Exit codes: 0 ok, 1 a run or a check failed, 2 a usage error.
 
+**Production check.** With `NODE_ENV=production` (as in the `backup` service) every command first runs the tool's own
+check (`assertBackupProductionEnv` in `backup-common.ts`) and refuses to start when it fails: `BACKUP_S3_ENDPOINT` and
+`S3_ENDPOINT` must be https URLs (http only with `APP_ENV=staging` and a host without a dot or ending in `.localhost`,
+the rehearsal's MinIO), `BACKUP_AGE_RECIPIENT` must be an age public key (`age1…`), and a remote
+`BACKUP_DATABASE_URL` (a host with a dot) needs `sslmode=require`, `verify-ca` or `verify-full`. The error is one line
+that names each variable and the rule, never a value.
+
 ## Keys per command
 
 The nightly commands get their settings from the `backup` service in

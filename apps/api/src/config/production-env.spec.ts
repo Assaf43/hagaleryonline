@@ -211,6 +211,21 @@ describe('checkProductionEnv (spec 9a.3)', () => {
     }
   });
 
+  it('refuses the uniquelocal and linklocal named ranges, alone or in a list, and keeps loopback', () => {
+    for (const value of [
+      'uniquelocal',
+      'linklocal',
+      'loopback, uniquelocal',
+      ' LinkLocal ',
+      '172.31.240.0/24,linklocal',
+    ])
+      expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: value }), value).toEqual([
+        'TRUST_PROXY: must name the proxy, not the uniquelocal or linklocal ranges',
+      ]);
+    expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: 'loopback' })).toEqual([]);
+    expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: 'loopback, 172.31.240.0/24' })).toEqual([]);
+  });
+
   it('allows the edge subnet', () => {
     for (const value of [
       '172.31.240.0/24',
