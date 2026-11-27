@@ -1,5 +1,6 @@
 import {
   ageDecryptArgs,
+  assertBackupProductionEnv,
   ageEncryptArgs,
   checkRecipient,
   checkRoleName,
@@ -89,6 +90,86 @@ describe('checkRoleName', () => {
     expect(checkRoleName('a'.repeat(63))).toBe('a'.repeat(63));
     for (const bad of ['1abc', 'Owner', 'own-er', 'a'.repeat(64), 'x"y'])
       expect(() => checkRoleName(bad), bad).toThrow('role name must match');
+  });
+});
+
+describe('assertBackupProductionEnv', () => {
+  const SENTINEL = 'SENTINEL-backup-value-never-printed';
+  const prodEnv = (extra: Record<string, string | undefined> = {}) => ({
+    NODE_ENV: 'production',
+    BACKUP_DATABASE_URL: URL_WITH_SECRET,
+    BACKUP_AGE_RECIPIENT: RECIPIENT,
+    BACKUP_S3_ENDPOINT: 'https://backups.example.test',
+    S3_ENDPOINT: 'https://s3.example.test',
+    ...extra,
+  });
+  const problemOf = (env: Record<string, string | undefined>): string => {
+    try {
+      assertBackupProductionEnv(env);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return '';
+  };
+
+  it('accepts a production environment, and does nothing outside production', () => {
+    expect(problemOf(prodEnv())).toBe('');
+    expect(problemOf(prodEnv({ BACKUP_DATABASE_URL: 'postgresql://u:p@postgres:5432/nesto' }))).toBe('');
+    expect(problemOf({})).toBe('');
+    expect(problemOf({ NODE_ENV: 'development', S3_ENDPOINT: 'http://s3.example.test' })).toBe('');
+  });
+
+  it('backup refuses http endpoint in production', () => {
+    const message = problemOf(
+      prodEnv({ BACKUP_S3_ENDPOINT: 'http://minio:9000', S3_ENDPOINT: `http://${SENTINEL}.example.test` }),
+    );
+    expect(message).toContain('BACKUP_S3_ENDPOINT: must be an https URL');
+    expect(message).toContain('S3_ENDPOINT: must be an https URL');
+    expect(message).not.toContain(SENTINEL);
+    expect(message).not.toContain('minio');
+    expect(message).not.toContain('\n');
+  });
+
+  it('backup allows http minio host on staging', () => {
+    const staging = { APP_ENV: 'staging', BACKUP_S3_ENDPOINT: 'http://minio:9000', S3_ENDPOINT: 'http://minio:9000' };
+    expect(problemOf(prodEnv(staging))).toBe('');
+    expect(problemOf(prodEnv({ ...staging, S3_ENDPOINT: 'http://minio.localhost:9000' }))).toBe('');
+    expect(problemOf(prodEnv({ ...staging, BACKUP_S3_ENDPOINT: 'http://s3.example.test' }))).toContain(
+      'BACKUP_S3_ENDPOINT: must be an https URL',
+    );
+  });
+
+  it('backup refuses remote db without sslmode', () => {
+    const remote = `postgresql://nesto_backup:${SENTINEL}@db.example.test:5432/nesto`;
+    for (const url of [
+      remote,
+      `${remote}?sslmode=prefer`,
+      `${remote}?sslmode=disable`,
+      remote.replace('db.example.test', '10.0.0.5'),
+    ]) {
+      const message = problemOf(prodEnv({ BACKUP_DATABASE_URL: url }));
+      expect(message, url).toContain(
+        'BACKUP_DATABASE_URL: a remote database needs sslmode=require, verify-ca or verify-full',
+      );
+      expect(message).not.toContain(SENTINEL);
+    }
+    for (const mode of ['require', 'verify-ca', 'verify-full'])
+      expect(problemOf(prodEnv({ BACKUP_DATABASE_URL: `${remote}?sslmode=${mode}` })), mode).toBe('');
+    expect(problemOf(prodEnv({ BACKUP_DATABASE_URL: SENTINEL }))).toBe(
+      'Refusing to run in production: BACKUP_DATABASE_URL: not a postgresql:// URL',
+    );
+  });
+
+  it('backup refuses non-age recipient', () => {
+    const message = problemOf(prodEnv({ BACKUP_AGE_RECIPIENT: `AGE-SECRET-KEY-1${SENTINEL}` }));
+    expect(message).toBe('Refusing to run in production: BACKUP_AGE_RECIPIENT: must be an age public key (age1...)');
+  });
+
+  it('names every missing variable in one line', () => {
+    expect(problemOf({ NODE_ENV: 'production' })).toBe(
+      'Refusing to run in production: BACKUP_DATABASE_URL: missing; BACKUP_AGE_RECIPIENT: missing; ' +
+        'BACKUP_S3_ENDPOINT: missing; S3_ENDPOINT: missing',
+    );
   });
 });
 

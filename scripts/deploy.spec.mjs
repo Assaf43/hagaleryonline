@@ -9,7 +9,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..').replaceAll('\\'
 const hasBash = spawnSync('bash', ['-c', 'true']).status === 0;
 if (!hasBash) console.warn('deploy.spec: bash not found on PATH, specs skipped');
 
-let dir, bin, stateDir, logFile;
+let dir, bin, stateDir, logFile, envFile;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'deploy-spec-')).replaceAll('\\', '/');
@@ -19,6 +19,8 @@ beforeEach(() => {
   mkdirSync(bin);
   copyFileSync(join(root, 'scripts/fixtures/fake-docker.sh'), `${bin}/docker`);
   chmodSync(`${bin}/docker`, 0o755);
+  envFile = `${dir}/env.prod`;
+  writeFileSync(envFile, 'APP_ENV=staging\n');
   writeFileSync(logFile, '');
 });
 
@@ -37,6 +39,7 @@ const run = (script, args = [], env = {}) => {
       PATH: `${bin}${delimiter}${process.env.PATH}`,
       FAKE_DOCKER_LOG: logFile,
       DEPLOY_STATE_DIR: stateDir,
+      DEPLOY_ENV_FILE: envFile,
       ...env,
     },
   });
@@ -66,6 +69,7 @@ describe.skipIf(!hasBash)('deploy scripts', () => {
     const c = calls();
     const order = [
       idx(c, /image inspect nesto-app:v2/),
+      idx(c, / run --rm -i .*nesto-app:v2 node - \/env \/compose\.yml/),
       idx(c, /up -d --wait postgres minio/),
       idx(c, /run --rm minio-setup/),
       idx(c, /--profile deploy run --rm migrate/),
@@ -73,6 +77,52 @@ describe.skipIf(!hasBash)('deploy scripts', () => {
     ];
     expect(order.every((n) => n >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('step 0: refuses without an env file, before any docker call', () => {
+    for (const env of [
+      { DEPLOY_ENV_FILE: '' },
+      { DEPLOY_ENV_FILE: '', DEPLOY_COMPOSE_ARGS: '-f docker-compose.prod.yml' },
+    ]) {
+      const r = run('deploy.sh', ['v2'], env);
+      expect(r.code).toBe(1);
+      expect(r.out).toContain('No env file: set DEPLOY_ENV_FILE or pass --env-file in DEPLOY_COMPOSE_ARGS');
+    }
+    const several = run('deploy.sh', ['v2'], {
+      DEPLOY_ENV_FILE: '',
+      DEPLOY_COMPOSE_ARGS: `-f docker-compose.prod.yml --env-file ${envFile} --env-file=${envFile}`,
+    });
+    expect(several.code).toBe(1);
+    expect(several.out).toContain('several --env-file');
+    const gone = run('deploy.sh', ['v2'], { DEPLOY_ENV_FILE: `${dir}/missing.env` });
+    expect(gone.code).toBe(1);
+    expect(gone.out).toContain('Env file not found');
+    expect(calls()).toEqual([]);
+  });
+
+  it('step 0: the env file defaults to the --env-file of DEPLOY_COMPOSE_ARGS', () => {
+    for (const flag of [`--env-file ${envFile}`, `--env-file=${envFile}`]) {
+      writeFileSync(logFile, '');
+      const r = run('deploy.sh', ['v2'], {
+        DEPLOY_ENV_FILE: '',
+        DEPLOY_COMPOSE_ARGS: `-p nesto-x -f docker-compose.prod.yml ${flag}`,
+      });
+      expect(r.code, r.out).toBe(0);
+      const check = calls().find((l) => / run --rm -i /.test(l));
+      expect(check).toContain(`-v ${envFile}:/env:ro`);
+      expect(check).toContain(`-v ${root}/docker-compose.prod.yml:/compose.yml:ro`);
+      expect(check).toContain('--network none');
+      expect(check).toContain('--pull never');
+    }
+  });
+
+  it('a failed env check changes nothing', () => {
+    setState('v1', 'v0');
+    const r = run('deploy.sh', ['v2'], { FAKE_FAIL: 'check-env' });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('The env file failed the checks above; still running v1');
+    expect(calls().some((l) => / up /.test(l) || l.includes('migrate'))).toBe(false);
+    expect([state('current'), state('previous')]).toEqual(['v1', 'v0']);
   });
 
   it('migrate failure keeps old', () => {

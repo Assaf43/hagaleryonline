@@ -189,6 +189,45 @@ describe('checkProductionEnv (spec 9a.3)', () => {
     }
   });
 
+  it('refuses TRUST_PROXY split catch-alls', () => {
+    for (const value of [
+      '0.0.0.0/1,128.0.0.0/1',
+      '::/1,8000::/1',
+      '10.0.0.0/7',
+      'loopback, 172.31.240.0/24, 64.0.0.0/2',
+      '2001::/15',
+      '10.0.0.0/254.0.0.0',
+      '::ffff:0.0.0.0/96',
+      '::ffff:0:0/96',
+      '0:0:0:0:0:ffff:0.0.0.0/96',
+      '0:0:0:0:0:ffff:0:0/100',
+      '::FFFF:10.0.0.0/101',
+      'fe80::zz/64',
+      '10.0.0.0/x',
+    ]) {
+      expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: value }), value).toEqual([
+        'TRUST_PROXY: must name the proxy, not a range wider than /8 (IPv4) or /16 (IPv6)',
+      ]);
+    }
+  });
+
+  it('allows the edge subnet', () => {
+    for (const value of [
+      '172.31.240.0/24',
+      '10.0.0.0/8',
+      'loopback, 172.31.240.0/24',
+      '2001:db8::/16',
+      '10.0.0.0/255.0.0.0',
+      '172.31.240.7',
+      '::ffff:172.31.240.0/120',
+      '::ffff:ac1f:f000/120',
+      '0:0:0:0:0:ffff:ac1f:f000/104',
+      '::/16',
+      'fd00:1:2:3:4:5:6:7/64',
+    ])
+      expect(checkProductionEnv({ ...validEnv(), TRUST_PROXY: value }), value).toEqual([]);
+  });
+
   it('wants a DATABASE_URL password of at least 20 characters, never printing it', () => {
     for (const url of [
       'postgresql://app:SENTINEL-short@db:5432/nesto',

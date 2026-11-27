@@ -8,11 +8,12 @@
  *                                                [--owner <role>|none]   (default DB_OWNER_ROLE, else nesto_owner)
  *   node apps/api/dist/backup/main.js restore-media --identity <file> [--prefix <p>]
  *
- * Settings come from the environment only (never argv). Output is one scrubbed JSON line per event; exit code 1 when
+ * Settings come from the environment only (never argv); with NODE_ENV=production they are checked first
+ * (`assertBackupProductionEnv`). Output is one scrubbed JSON line per event; exit code 1 when
  * a run or a restore check failed, 2 for a usage error.
  */
 import { parseArgs } from 'node:util';
-import { failureDetail, logLine, type Env } from './backup-common.js';
+import { assertBackupProductionEnv, failureDetail, logLine, type Env } from './backup-common.js';
 import { dbBackupConfig, runDbBackup, type BackupResult } from './backup-db.js';
 import { mediaBackupConfig, runMediaBackup } from './backup-media.js';
 import { restoreDb, restoreMedia } from './restore.js';
@@ -27,6 +28,7 @@ const USAGE = `Usage: node apps/api/dist/backup/main.js <command>
   restore-media --identity <file> [--prefix <p>]
 Settings: environment only (see deploy/backup/README.md).`;
 
+const COMMANDS: ReadonlySet<string> = new Set(['daemon', 'db', 'media', 'restore-db', 'restore-media']);
 const MAX_TIMEOUT = 2_147_483_647;
 
 function sleepUntil(when: Date, signal: AbortSignal): Promise<void> {
@@ -114,6 +116,9 @@ export async function main(argv: string[], env: Env): Promise<number> {
   }
 
   try {
+    // Production only: a wrong endpoint, recipient or database TLS setting stops every command before it connects
+    // (an unknown command stays a usage error).
+    if (COMMANDS.has(command)) assertBackupProductionEnv(env);
     switch (command) {
       case 'daemon':
         await daemon(env);

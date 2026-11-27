@@ -4,6 +4,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import pg from 'pg';
 import { parseBoolean } from '../media/media.module.js';
+import { isAllowedS3Endpoint } from '../media/s3-storage.js';
 import { scrub } from '../system/scrub.js';
 
 /**
@@ -19,6 +20,50 @@ export function need(env: Env, name: string): string {
   const value = env[name];
   if (!value) throw new Error(`${name} is required`);
   return value;
+}
+
+// ---------- production check ----------
+
+/** sslmode values that refuse a plain connection (libpq `prefer` / `allow` fall back to one). */
+const SAFE_SSLMODES: ReadonlySet<string> = new Set(['require', 'verify-ca', 'verify-full']);
+
+/** The problem of `BACKUP_DATABASE_URL`, or null. A host with a dot is remote (a compose service name has none). */
+function backupDatabaseProblem(value: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return 'not a postgresql:// URL';
+  }
+  if (url.protocol !== 'postgresql:' && url.protocol !== 'postgres:') return 'not a postgresql:// URL';
+  if (!url.hostname.includes('.')) return null;
+  return SAFE_SSLMODES.has(url.searchParams.get('sslmode') ?? '')
+    ? null
+    : 'a remote database needs sslmode=require, verify-ca or verify-full';
+}
+
+/**
+ * The backup tool's own production check (spec 9c, NFR-09 / NFR-12), run first for every command when
+ * `NODE_ENV=production`: the object-store endpoints follow the API's rule (`isAllowedS3Endpoint`: https, http only for a
+ * local host with `APP_ENV=staging`), the recipient is an age public key, and a remote database is reached over TLS.
+ * Throws one single-line error naming every problem by variable, never a value.
+ */
+export function assertBackupProductionEnv(env: Env): void {
+  if (env.NODE_ENV !== 'production') return;
+  const staging = env.APP_ENV?.trim() === 'staging';
+  const problems: string[] = [];
+  const check = (name: string, problemOf: (value: string) => string | null) => {
+    const value = env[name]?.trim() ?? '';
+    const problem = value ? problemOf(value) : 'missing';
+    if (problem) problems.push(`${name}: ${problem}`);
+  };
+  check('BACKUP_DATABASE_URL', backupDatabaseProblem);
+  check('BACKUP_AGE_RECIPIENT', (value) => (value.startsWith('age1') ? null : 'must be an age public key (age1...)'));
+  for (const name of ['BACKUP_S3_ENDPOINT', 'S3_ENDPOINT'])
+    check(name, (value) =>
+      isAllowedS3Endpoint(value, staging) ? null : 'must be an https URL (http only for a local host in staging)',
+    );
+  if (problems.length) throw new Error(`Refusing to run in production: ${problems.join('; ')}`);
 }
 
 // ---------- spawn arguments (never a secret) ----------

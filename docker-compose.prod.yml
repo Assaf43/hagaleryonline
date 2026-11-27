@@ -224,6 +224,8 @@ services:
     <<: *node-hardening
     environment:
       NODE_ENV: production
+      # staging allows an http object store on a local host (the rehearsal's MinIO), as in the API.
+      APP_ENV: ${APP_ENV:-production}
       BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:?BACKUP_DATABASE_URL is required}
       BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?BACKUP_AGE_RECIPIENT is required}
       # Israel time.

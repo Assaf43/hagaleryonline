@@ -8,16 +8,25 @@ validation) and [backup/README.md](backup/README.md) (backups, restore). Secrets
 
 ```sh
 deploy/build.sh <tag>      # builds nesto-app, nesto-caddy, nesto-backup at <tag>
-deploy/deploy.sh <tag>     # infra -> setup services -> migrate gate -> health gate; keeps the previous tag for rollback
+deploy/deploy.sh <tag>     # env check -> infra -> setup services -> migrate gate -> health gate; keeps the previous tag
 deploy/rollback.sh         # redeploys the previous tag without migrating (the schema is expand-only)
 ```
 
-Environment of `deploy.sh` / `rollback.sh` (all optional):
+Environment of `deploy.sh` / `rollback.sh` (optional, except that `deploy.sh` needs an env file from one of the first
+two):
 
 - `DEPLOY_COMPOSE_ARGS` - compose arguments, default `-f docker-compose.prod.yml` (add `--env-file <file>` here).
+- `DEPLOY_ENV_FILE` - the env file `deploy.sh` checks first, default the `--env-file` of `DEPLOY_COMPOSE_ARGS`.
 - `DEPLOY_INFRA_SERVICES` - services started first, default `postgres`.
 - `DEPLOY_SETUP_SERVICES` - one-shot services run once before the migration, default none.
 - `DEPLOY_STATE_DIR` - current / previous tag and the lock, default `deploy/state`.
+
+Env check (before anything changes): `deploy.sh` runs `deploy/check-env.mjs` in the new `nesto-app` image (no network,
+the env file and `docker-compose.prod.yml` mounted read-only). It refuses when `SITE_HOST`, `SITE_URL`, `STOREFRONT_URL`
+and `NG_ALLOWED_HOSTS` or `ADMIN_HOST` and `ADMIN_URL` disagree, when `TRUST_PROXY` is not the compose file's edge
+subnet, when `CADDY_ENV` is not production / staging / rehearsal or does not match `APP_ENV` and `SEO_INDEXING`
+(production on all three, or on none), and on staging without `STAGING_AUTH_USER` / `STAGING_AUTH_HASH`. It names keys,
+never values. From the host: `node deploy/check-env.mjs <env-file>`.
 
 Stale lock: if a deploy was killed, `deploy/state/.lock` stays behind. When no deploy is running, `rmdir` it.
 
