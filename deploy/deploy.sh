@@ -71,7 +71,8 @@ fi
 if ! MSYS_NO_PATHCONV=1 docker run --rm -i --pull never --network none --read-only --cap-drop ALL \
   --user "$(id -u):$(id -g)" \
   -v "$env_file:/env:ro" -v "$here/docker-compose.prod.yml:/compose.yml:ro" \
-  "nesto-app:$tag" node - /env /compose.yml < deploy/check-env.mjs; then
+  -v "$here/deploy/cloudflare-ips.txt:/cloudflare-ips.txt:ro" \
+  "nesto-app:$tag" node - /env /compose.yml /cloudflare-ips.txt < deploy/check-env.mjs; then
   echo "The env file failed the checks above; still running $running" >&2
   exit 1
 fi

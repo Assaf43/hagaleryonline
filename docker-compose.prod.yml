@@ -6,7 +6,7 @@
 #
 # The env file holds the names in deploy/env.prod.example (no values in the repo). Each service receives only the
 # variables it reads (explicit `environment:` mappings, no shared env_file): the cluster superuser password reaches
-# only postgres, the backup keys only backup, and caddy only its five settings. A missing required value stops
+# only postgres, the backup keys only backup, and caddy only its settings. A missing required value stops
 # Compose before anything runs (`${NAME:?}`); the API then checks the values themselves at startup.
 # The local rehearsal adds deploy/rehearsal/docker-compose.rehearsal.yml (MinIO) on top of this file.
 # The dev database is docker-compose.yml, never this file.
@@ -185,6 +185,9 @@ services:
     image: nesto-caddy:${IMAGE_TAG:?IMAGE_TAG is required}
     restart: unless-stopped
     logging: *logging
+    # Only what binding 80 / 443 needs: no other Linux capability and no privilege gain.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     security_opt: ['no-new-privileges:true']
     ports:
       - '80:80'
@@ -197,9 +200,18 @@ services:
       S3_PUBLIC_BUCKET: ${S3_PUBLIC_BUCKET:?S3_PUBLIC_BUCKET is required}
       S3_PUBLIC_UPSTREAM: ${S3_PUBLIC_UPSTREAM:?S3_PUBLIC_UPSTREAM is required}
       CADDY_GLOBAL_OPTIONS: ${CADDY_GLOBAL_OPTIONS:-}
+      # production | staging | rehearsal: picks the env-<CADDY_ENV>.caddy file (noindex, staging login gate).
+      CADDY_ENV: ${CADDY_ENV:?CADDY_ENV is required}
+      # origin: the Cloudflare Origin CA certificate under /etc/caddy/origin; auto: Caddy's own certificates.
+      CADDY_TLS: ${CADDY_TLS:-auto}
+      # Cloudflare ranges whose X-Forwarded-For / CF-Connecting-IP Caddy believes (space-separated CIDRs).
+      CF_TRUSTED_RANGES: ${CF_TRUSTED_RANGES:?CF_TRUSTED_RANGES is required}
+      STAGING_AUTH_USER: ${STAGING_AUTH_USER:-}
+      STAGING_AUTH_HASH: ${STAGING_AUTH_HASH:-}
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      - ${CADDY_ORIGIN_DIR:-./deploy/caddy/no-origin}:/etc/caddy/origin:ro
     networks: [edge]
     depends_on:
       api:

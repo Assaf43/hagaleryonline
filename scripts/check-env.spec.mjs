@@ -47,6 +47,8 @@ const staging = () => ({
   TRUST_PROXY: '172.31.240.0/24',
   STAGING_AUTH_USER: 'reviewer',
   STAGING_AUTH_HASH: 'fake-bcrypt-hash-for-tests',
+  CADDY_TLS: 'origin',
+  CF_TRUSTED_RANGES: '173.245.48.0/20 2400:cb00::/32',
 });
 
 describe('deploy/check-env.mjs', () => {
@@ -116,6 +118,44 @@ describe('deploy/check-env.mjs', () => {
     expect(r.stderr).toContain('STAGING_AUTH_HASH: required when CADDY_ENV=staging');
     // The rehearsal has no login gate.
     expect(check({ ...staging(), CADDY_ENV: 'rehearsal', STAGING_AUTH_USER: '', STAGING_AUTH_HASH: '' }).code).toBe(0);
+  });
+
+  it('check-env requires Cloudflare ranges for staging and production, and a valid CADDY_TLS', () => {
+    const none = check({ ...staging(), CF_TRUSTED_RANGES: '  ' });
+    expect(none.code).toBe(1);
+    expect(none.stderr).toContain('CF_TRUSTED_RANGES: missing');
+    const prod = { ...staging(), APP_ENV: 'production', CADDY_ENV: 'production', SEO_INDEXING: 'true' };
+    expect(check({ ...prod, CF_TRUSTED_RANGES: '' }).stderr).toContain('CF_TRUSTED_RANGES: missing');
+    // Syntax is checked even without the list (the in-container run passes the list; this one does not).
+    for (const bad of ['10.0.0.0', '999.1.1.1/8', '10.0.0.0/33', 'any', '10.0.0.0/8 nope'])
+      expect(check({ ...staging(), CF_TRUSTED_RANGES: bad }).stderr, bad).toContain('every entry must be a CIDR');
+    // The rehearsal has no Cloudflare in front: the variable is only needed by compose.
+    expect(check({ ...staging(), CADDY_ENV: 'rehearsal', CF_TRUSTED_RANGES: '' }).code).toBe(0);
+    // origin and auto are both fine for every Caddy env; empty means auto; anything else is refused.
+    for (const tls of ['origin', 'auto', '']) expect(check({ ...staging(), CADDY_TLS: tls }).code, tls).toBe(0);
+    expect(check({ ...staging(), CADDY_TLS: 'both' }).stderr).toContain('CADDY_TLS: must be origin or auto');
+  });
+
+  it('check-env refuses a range that is not in the Cloudflare list, when it has the list', () => {
+    const file = join(tempDir(), 'env');
+    writeFileSync(file, formatEnv(Object.entries({ ...staging(), CF_TRUSTED_RANGES: '173.245.48.0/20 10.0.0.0/8' })));
+    const list = join(root, 'deploy', 'cloudflare-ips.txt');
+    const r = spawnSync(process.execPath, ['-', file, COMPOSE, list], { input: SCRIPT, encoding: 'utf8' });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('CF_TRUSTED_RANGES: every entry must be listed in deploy/cloudflare-ips.txt');
+    expect(r.stderr).not.toContain('10.0.0.0');
+    const ok = join(tempDir(), 'env');
+    writeFileSync(ok, formatEnv(Object.entries(staging())));
+    expect(spawnSync(process.execPath, ['-', ok, COMPOSE, list], { input: SCRIPT, encoding: 'utf8' }).status).toBe(0);
+    // From the host the list beside the script is used by default.
+    const host = spawnSync(process.execPath, [join(root, 'deploy', 'check-env.mjs'), file], { encoding: 'utf8' });
+    expect(host.status).toBe(1);
+    expect(host.stderr).toContain('listed in deploy/cloudflare-ips.txt');
+    const missing = spawnSync(process.execPath, ['-', ok, COMPOSE, join(tempDir(), 'nope')], {
+      input: SCRIPT,
+      encoding: 'utf8',
+    });
+    expect(missing.status).toBe(2);
   });
 
   it('check-env never prints values', () => {

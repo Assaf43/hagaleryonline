@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -163,12 +163,29 @@ describe('docker-compose.prod.yml', () => {
     const caddyVars = [...prod.caddy.matchAll(/\$\{([A-Z0-9_]+)/g)].map((m) => m[1]).sort();
     expect(caddyVars).toEqual([
       'ADMIN_HOST',
+      'CADDY_ENV',
       'CADDY_GLOBAL_OPTIONS',
+      'CADDY_ORIGIN_DIR',
+      'CADDY_TLS',
+      'CF_TRUSTED_RANGES',
       'IMAGE_TAG',
       'S3_PUBLIC_BUCKET',
       'S3_PUBLIC_UPSTREAM',
       'SITE_HOST',
+      'STAGING_AUTH_HASH',
+      'STAGING_AUTH_USER',
     ]);
+  });
+
+  it('caddy runs with only NET_BIND_SERVICE, and Cloudflare, env and TLS settings are wired', () => {
+    expect(prod.caddy).toMatch(/cap_drop: \[ALL\]/);
+    expect(prod.caddy).toMatch(/cap_add: \[NET_BIND_SERVICE\]/);
+    expect(prod.caddy).toContain('no-new-privileges:true');
+    for (const name of ['CADDY_ENV', 'CF_TRUSTED_RANGES'])
+      expect(prod.caddy, name).toContain(name + ': ${' + name + ':?');
+    expect(prod.caddy).toMatch(/CADDY_TLS: \$\{CADDY_TLS:-auto\}/);
+    expect(prod.caddy).toContain('${CADDY_ORIGIN_DIR:-./deploy/caddy/no-origin}:/etc/caddy/origin:ro');
+    expect(existsSync(join(root, 'deploy/caddy/no-origin/.gitkeep'))).toBe(true);
   });
 
   it('caddy settings that must never be empty are required (an empty bucket would open /media)', () => {

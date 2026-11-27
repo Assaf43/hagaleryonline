@@ -74,9 +74,26 @@ describe('buildRehearsalEnv', () => {
     });
   });
 
+  it('writes rehearsal caddy env', () => {
+    const env = envOf(buildRehearsalEnv({ ageRecipient: RECIPIENT }));
+    expect(env).toMatchObject({
+      CADDY_ENV: 'rehearsal',
+      CADDY_TLS: 'auto',
+      CF_TRUSTED_RANGES: '127.0.0.1/32',
+      STAGING_AUTH_USER: '',
+      STAGING_AUTH_HASH: '',
+    });
+  });
+
   it('gives every variable both compose files interpolate (except IMAGE_TAG, set by deploy.sh)', () => {
     const env = envOf(buildRehearsalEnv({ ageRecipient: RECIPIENT }));
-    const optional = new Set(['IMAGE_TAG', 'DB_APP_ROLE', 'DB_BACKUP_ROLE', 'PAYMENT_SANDBOX_ALLOW_REMOTE']);
+    const optional = new Set([
+      'IMAGE_TAG',
+      'DB_APP_ROLE',
+      'DB_BACKUP_ROLE',
+      'PAYMENT_SANDBOX_ALLOW_REMOTE',
+      'CADDY_ORIGIN_DIR',
+    ]);
     const names = [
       ...composeNames('docker-compose.prod.yml'),
       ...composeNames('deploy/rehearsal/docker-compose.rehearsal.yml'),
