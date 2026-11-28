@@ -1,0 +1,47 @@
+[
+  {
+    "migration": "20261105120000_images",
+    "pattern": "DROP CONSTRAINT (fkey/pkey)",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261105120000_images",
+    "pattern": "DROP COLUMN",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261111150000_promotions_checks",
+    "pattern": "RENAME",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261111150000_promotions_checks",
+    "pattern": "DROP CONSTRAINT (fkey/pkey)",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261112220000_invoices_restrict",
+    "pattern": "DROP CONSTRAINT (fkey/pkey)",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261116100000_marketing_contacts",
+    "pattern": "DROP COLUMN",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261116160000_personal_codes",
+    "pattern": "RENAME",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261116160000_personal_codes",
+    "pattern": "ALTER COLUMN TYPE",
+    "reason": "before 9c, no production data"
+  },
+  {
+    "migration": "20261116160000_personal_codes",
+    "pattern": "DROP TYPE",
+    "reason": "before 9c, no production data"
+  }
+]

@@ -1,0 +1,16 @@
+# Staging (CADDY_ENV=staging): never indexed, and every request needs the staging login except the health
+# check (uptime monitor) and robots.txt (crawlers must still read "Disallow"). Imported inside both site
+# blocks; on the admin host /robots.txt falls through to the SPA's try_files, which is harmless.
+# STAGING_AUTH_HASH is a bcrypt hash made with `caddy hash-password` in the caddy image. An empty user or
+# hash makes Caddy refuse to start, so a misconfigured staging fails closed.
+header X-Robots-Tag "noindex, nofollow"
+
+# Matched on the raw request URI (query allowed), not the cleaned path: an encoded path such as
+# /x/%2e%2e%2frobots.txt cleans to /robots.txt but is forwarded raw, so it must stay gated.
+@gated not expression `{http.request.orig_uri}.matches("^/(api/health|robots\\.txt)(\\?.*)?$")`
+basic_auth @gated {
+	"{$STAGING_AUTH_USER}" "{$STAGING_AUTH_HASH}"
+}
+
+# The gate password stops here: no upstream needs the Authorization header (runs after basic_auth).
+request_header @gated -Authorization

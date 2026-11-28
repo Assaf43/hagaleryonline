@@ -1,20 +1,20 @@
 # Caddy
 
-The production Caddyfile and the snippets it imports. The `caddy` target of the
-root `Dockerfile` copies `Caddyfile` and `*.caddy` to `/etc/caddy/` and the admin
-build to `/srv/admin`.
+The production Caddyfile and the files it imports. The `caddy` target of the root
+`Dockerfile` copies `Caddyfile`, the two snippet files, `env-*.caddy` and `tls-*.caddy`
+to `/etc/caddy/` and the admin build to `/srv/admin`. The Cloudflare Origin CA
+certificate is never in the image: compose mounts it at `/etc/caddy/origin`.
 
 ## Caddyfile
 
 - Global options: `order rate_limit before basic_auth` (`basicauth` is the deprecated
-  name in Caddy 2.11), then `{$CADDY_GLOBAL_OPTIONS}`. No `trusted_proxies` in 9b:
-  nothing sits in front of Caddy, so a client's `X-Forwarded-For` is ignored. 9c adds
-  Cloudflare's ranges. `log default` (stderr: errors, TLS, startup, debug) uses the same
+  name in Caddy 2.11), the Cloudflare client-IP settings (see "Behind Cloudflare"), then
+  `{$CADDY_GLOBAL_OPTIONS}`. `log default` (stderr: errors, TLS, startup, debug) uses the same
   filter as the access log (`uri` and `request>uri` without the query, no `Referer`,
   `Cookie`, `Authorization`), so `?t=` / `?preview=` never reach any log, even with
   `debug`. 9c must not add its own `log default` in `CADDY_GLOBAL_OPTIONS`.
-- `(common)`, on both hosts: `encode zstd gzip`; HSTS `max-age=31536000` (no
-  `includeSubDomains` / `preload` until 9c); no `Server` header (also on Caddy's own
+- `(common)`, on both hosts: `encode zstd gzip`; HSTS `max-age=31536000; includeSubDomains`
+  (no `preload`); no `Server` header (also on Caddy's own
   error answers, through `handle_errors`); an access log on stdout whose `request>uri`
   has the query string cut off (tokens, preview links) and without the `Referer`,
   `Cookie`, `Authorization` request headers or the `Set-Cookie` response header.
@@ -28,33 +28,124 @@ build to `/srv/admin`.
 - `(media)`, on both hosts: `/media/<key>` -> `{$S3_PUBLIC_UPSTREAM}/{$S3_PUBLIC_BUCKET}/<key>`
   (path-style; matches `S3Storage.publicUrl`). Only `GET` / `HEAD` (others 405 with
   `Allow`); the original request URI must be a plain key (`[A-Za-z0-9._/-]`, no `%`
-  escapes, `\`, `..` or `//`, else 404); the query string, `Authorization` and `Cookie`
+  escapes, `\`, `..` or `//`, else 404); the query string, `Authorization`, `Cookie`, `X-Forwarded-For` and `CF-Connecting-IP`
   are dropped and `Host` is the upstream's, so a client cannot use Caddy as an S3 proxy
   with its own credentials or reach another bucket. Found photos get
   `Cache-Control: public, max-age=31536000, immutable`; every answer gets `nosniff`;
   `X-Amz-*`, `X-Ratelimit-*` and `X-Xss-Protection` from S3 are removed. A path trick such
   as `/media/../<bucket>/...` never matches `/media/*` (the matcher cleans the path) and
   goes to the storefront or the admin files, never to S3.
-- `{$SITE_HOST}`: `common`, `blocked`, `webhook_limits`, `media`; `/api/*` -> `api:3000`,
-  the rest -> `web:4000` (the storefront sets its own headers and CSP).
-- `{$ADMIN_HOST}`: `common`, `blocked`, `admin_headers`, `media`; the two webhooks answer
-  404 (they live only on the site host); `/api/*` -> `api:3000`; the rest from
+- `{$SITE_HOST}`: `env-{$CADDY_ENV}.caddy`, `tls-{$CADDY_TLS}.caddy`, `common`, `blocked`,
+  `webhook_limits`, `media`; `/api/*` -> `api:3000`, the rest -> `web:4000` (the storefront
+  sets its own headers and CSP). Body limits: `/api/support/damaged` 55MB (5 photos of
+  10 MiB in one form plus multipart overhead; Caddy's `MB` is 1000 x 1000 bytes), every other path 1MB (`@not_damaged`), the webhooks 64KB.
+- `{$ADMIN_HOST}`: `env-{$CADDY_ENV}.caddy`, `tls-{$CADDY_TLS}.caddy`, `common`, `blocked`,
+  `admin_headers`, `media`; body limit 16MB (product and content photos up to 15 MB,
+  Excel 5 MB); the two webhooks answer 404 (they live only on the site host); `/api/*` -> `api:3000`; the rest from
   `/srv/admin` with `try_files {path} /index.html`. Content-hashed files
   (`<name>-<8 chars>.js|css`, `static-media/*`) are `immutable` for a year and a
   missing one is a 404; `index.html` and every other file are `no-cache`.
 
+Body limits never nest: two `request_body` limits on one request do not replace each
+other, the smaller one wins (checked with real Caddy: with a catch-all 1MB next to the
+large matcher, a 40 MB damaged report got 413). So the general limit uses the negated
+matcher `@not_damaged`, and the webhooks' 64KB works because it is the smaller one.
+Both matchers test the raw request URI (`{http.request.orig_uri}`), not the cleaned path,
+so an encoded path such as `/x/..%2fapi/support/damaged` (forwarded raw) keeps 1MB.
+
 Env read: `SITE_HOST`, `ADMIN_HOST`, `S3_PUBLIC_BUCKET`, `S3_PUBLIC_UPSTREAM`
 (e.g. `http://minio:9000` in the rehearsal), `CADDY_GLOBAL_OPTIONS` (`local_certs` in
-the rehearsal; empty is allowed). `scripts/caddyfile.spec.mjs` checks the text.
+the rehearsal; empty is allowed), `CF_TRUSTED_RANGES`, `CADDY_ENV`, `CADDY_TLS`,
+`STAGING_AUTH_USER`, `STAGING_AUTH_HASH`. `scripts/caddyfile.spec.mjs` and
+`scripts/caddy-snippets.spec.mjs` check the text; `scripts/caddy-proxy.spec.mjs` runs it.
+
+## Behind Cloudflare (decision 106)
+
+- **Client IP.** The global `servers` block has `trusted_proxies static {$CF_TRUSTED_RANGES}`,
+  `client_ip_headers CF-Connecting-IP` and `trusted_proxies_strict`. Only a connection from
+  a listed range may name the client in `CF-Connecting-IP`; from anywhere else the header
+  (and any `X-Forwarded-For`) is ignored and the peer address is the client. `{client_ip}`
+  is the result: every `reverse_proxy api:3000` / `web:4000` sends it as the only
+  `X-Forwarded-For` value (a client's own value is replaced, never appended) and drops
+  `CF-Connecting-IP`, and the webhook rate limit uses `key {client_ip}`. The API trusts
+  only Caddy's network (`TRUST_PROXY`), so it reads exactly that one address. The same
+  proxies pin `X-Forwarded-Host` to the request host (`{host}`): Caddy would otherwise pass a
+  trusted hop's value on, and Cloudflare forwards whatever the client sent.
+- **`CF_TRUSTED_RANGES`** is the list in `deploy/cloudflare-ips.txt`, space-joined (the env
+  tooling writes it). The value is required: compose refuses an empty or unset one
+  (`${CF_TRUSTED_RANGES:?}`), and on staging and production `deploy/check-env.mjs` wants
+  exactly the set in `cloudflare-ips.txt`. The rehearsal sets `127.0.0.1/32`, so nothing on
+  the Docker network is trusted by accident.
+- **IPv6 at the origin.** Keep the origin's DNS record A-only (no AAAA), or enable IPv6 in
+  Docker. Otherwise IPv6 connections reach Caddy through `docker-proxy` with the bridge
+  gateway as the source address: no Cloudflare range matches, `CF-Connecting-IP` is ignored,
+  and every customer shares one client IP (one throttle bucket). Never add the bridge gateway
+  to the trusted ranges to "fix" it: every connection through the proxy could then pick its
+  own IP.
+- **Refresh `cloudflare-ips.txt`** when Cloudflare announces a change (and before each
+  launch step): fetch both lists, keep one CIDR per line, update the date in the header,
+  and review the diff before committing. A range must never be typed from memory:
+
+  ```sh
+  { echo "# Cloudflare edge ranges, fetched $(date -u +%F) from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6."
+    sed -n '2,3p' deploy/cloudflare-ips.txt
+    curl -fsS https://www.cloudflare.com/ips-v4; echo
+    curl -fsS https://www.cloudflare.com/ips-v6; echo
+  } | tr -d '\r' | sed '/^$/d' > deploy/cloudflare-ips.new && mv deploy/cloudflare-ips.new deploy/cloudflare-ips.txt
+  git diff deploy/cloudflare-ips.txt
+  ```
+
+  Then regenerate the env (`CF_TRUSTED_RANGES`) and the firewall rules, and redeploy Caddy.
+  Until the env file is regenerated, `deploy.sh` refuses to deploy: `deploy/check-env.mjs`
+  compares `CF_TRUSTED_RANGES` with the committed list and names the mismatch.
+
+- **Environment switch** `import env-{$CADDY_ENV}.caddy` in both site blocks:
+  - `env-production.caddy`: nothing.
+  - `env-staging.caddy`: `X-Robots-Tag: noindex, nofollow` and a login gate
+    (`basic_auth` with `STAGING_AUTH_USER` and the bcrypt `STAGING_AUTH_HASH` from
+    `caddy hash-password` in the caddy image). **Gate exemptions:** `/api/health` (uptime
+    checks) and `/robots.txt` (crawlers must still read `Disallow: /`), matched on the raw
+    request URI with an optional query, so an encoded path that only cleans to an exempt one
+    (`/x/%2e%2e%2frobots.txt`) stays gated; on the admin host
+    `/robots.txt` falls through to the SPA's `try_files`, which is harmless. After the gate,
+    `request_header -Authorization` keeps the gate password away from the upstreams. The two
+    values are quoted, so an empty user or hash makes Caddy refuse to start: a misconfigured
+    staging fails closed. Note that the payment and marketing webhooks are gated too, so a
+    provider's sandbox cannot call staging until they are exempted.
+  - `env-rehearsal.caddy`: the same `X-Robots-Tag`, no gate.
+  - An empty or unset `CADDY_ENV` names `env-.caddy`, which does not exist, and Caddy refuses
+    to start. Never set it to a glob character such as `*`.
+- **TLS switch** `import tls-{$CADDY_TLS}.caddy`: `origin` loads the Cloudflare Origin CA
+  certificate from `/etc/caddy/origin/cert.pem` and `key.pem`; `auto` adds nothing (Caddy's
+  own certificates, or `local_certs` from `CADDY_GLOBAL_OPTIONS` in the rehearsal). Empty
+  fails like `CADDY_ENV`.
+
+### Proxy spec
+
+`npx vitest run scripts/caddy-proxy.spec.mjs` starts real Caddy on a throwaway Docker
+network (every container and network named `nesto9c1-cp-<pid>-…`, removed afterwards; no
+host port published) with `scripts/fixtures/echo-upstream.mjs` as `api` and `web`, and two
+client containers: one listed in `CF_TRUSTED_RANGES` (a Cloudflare edge) and one not. It
+covers the client IP (untrusted, trusted, overwritten `X-Forwarded-For`, one rate-limit
+bucket per real client), the staging gate and its exemptions, production without gate or
+`X-Robots-Tag`, HSTS, the body limits and the refusal to start without `CADDY_ENV`,
+`CADDY_TLS` or the staging credentials. It is opt-in: it runs only with Docker and `CADDY_TEST_IMAGE` set or
+`CADDY_PROXY_SPEC=1`, so a plain `npm test` skips it. CI passes
+`CADDY_TEST_IMAGE=nesto-caddy:ci`; with `CADDY_PROXY_SPEC=1` alone the spec builds
+only the Dockerfile's `caddy-builder` stage into
+`nesto9c1-caddy-test:local` and mounts `deploy/caddy/` (images removed afterwards unless
+`CADDY_TEST_KEEP_IMAGES=1`).
 
 ### Validate
 
 ```sh
 docker build --target caddy -t nesto-caddy:check .
-# JSON, no warnings:
+# JSON; the only warnings are three "Unnecessary header_up X-Forwarded-Host" lines. Caddy is wrong there: it passes a
+# trusted hop's X-Forwarded-Host on unchanged, so the pin is needed (scripts/caddy-proxy.spec.mjs fails without it).
 docker run --rm -e SITE_HOST=nesto.localhost -e ADMIN_HOST=admin.nesto.localhost \
   -e S3_PUBLIC_BUCKET=nesto-media-public -e S3_PUBLIC_UPSTREAM=http://minio:9000 \
-  -e CADDY_GLOBAL_OPTIONS=local_certs nesto-caddy:check caddy adapt --config /etc/caddy/Caddyfile
+  -e CADDY_GLOBAL_OPTIONS=local_certs -e CADDY_ENV=rehearsal -e CADDY_TLS=auto \
+  -e CF_TRUSTED_RANGES=127.0.0.1/32 nesto-caddy:check caddy adapt --config /etc/caddy/Caddyfile
 docker run --rm nesto-caddy:check caddy fmt --diff /etc/caddy/Caddyfile   # no line starting with + or -
 ```
 
@@ -74,7 +165,7 @@ and `--path-as-is`: a public object answers 200 with `immutable` and `nosniff` a
   photos from the phone), `X-Robots-Tag` and `-Server`. It has no HSTS; the 9b site
   block adds it.
 - `api-limits.caddy` defines `(webhook_limits)`: a 64KB body limit and a rate limit
-  (120 events per minute per `{remote_host}`) on `/api/payments/webhook` and
+  (120 events per minute per `{client_ip}`) on `/api/payments/webhook` and
   `/api/marketing/webhook`.
 
 ## Use in 9b
@@ -101,13 +192,15 @@ shop.example.test {
 `rate_limit` is not part of stock Caddy. Build a custom image with
 `xcaddy build --with github.com/mholt/caddy-ratelimit`, and keep
 `order rate_limit before basicauth` in the global options (a plugin directive has
-no default position). Behind a proxy, make sure `{remote_host}` is the real client
-address (set `trusted_proxies`), or every caller shares one bucket.
+no default position). Behind a proxy the key must be the real client address: 9c uses
+`{client_ip}` with `trusted_proxies` (see "Behind Cloudflare"); `{remote_host}` would be
+Cloudflare's address, and every caller would share one bucket.
 
 ## 9b check
 
 Done in the 9b-2 local rehearsal (production images, `local_certs`, MinIO as the S3 test double):
-`caddy adapt` gives JSON with no warnings and `caddy fmt --diff` is clean; the admin host answers
+`caddy adapt` gave JSON with no warnings (9c-1 later added the `X-Forwarded-Host` pin, which
+Caddy warns about, see Validate) and `caddy fmt --diff` is clean; the admin host answers
 with every header from the snippet, HSTS and no `Server` header; `?t=` / `?preview=` sentinels,
 `Cookie` and `Referer` never reach the Caddy log; 130 webhook POSTs in a minute gave 120 x 401
 then 429, a 70 KB body gave 413, the webhooks answer 404 on the admin host; `/api/internal/*` and

@@ -3,6 +3,7 @@ import { APP_ENVS } from './app-env.js';
 import { DEV_PREVIEW_SECRET } from '../content/preview-token.js';
 import { DEV_PEPPER } from '../customers/otp.service.js';
 import { DEV_TOKEN_SECRET } from '../marketing/marketing-tokens.js';
+import { isAllowedS3Endpoint } from '../media/s3-storage.js';
 import { DEV_ORDER_TOKEN_KEY } from '../orders/order-token.js';
 import { DEFAULT_LIMITS, type ThrottleBucket } from '../orders/write-throttle.js';
 
@@ -16,11 +17,12 @@ import { DEFAULT_LIMITS, type ThrottleBucket } from '../orders/write-throttle.js
  * - `secret`: at least 32 characters;
  * - `key32`: base64 of exactly 32 bytes;
  * - `trust-proxy`: set, and not `true` / `*` / `0.0.0.0/0` / `::/0`, alone or in a list (each would trust every
- *   client's `X-Forwarded-For`);
+ *   client's `X-Forwarded-For`), and no range wider than /8 (IPv4) or /16 (IPv6) (`0.0.0.0/1,128.0.0.0/1` is the
+ *   same catch-all, split);
  * - `database-url`: set, not the development password, and a password of at least 20 characters;
  * - `s3`: exactly `s3` (production photos live in object storage, never on the app's disk);
  * - `s3-endpoint`: an `https:` URL, or `http:` only with `APP_ENV=staging` and a local host (no dot, or `*.localhost`,
- *   e.g. the rehearsal's `http://minio:9000`).
+ *   e.g. the rehearsal's `http://minio:9000`): `isAllowedS3Endpoint` of `media/s3-storage.ts`.
  *
  * `APP_ENV` is checked apart from the rules: unset or `production` / `staging` (see `app-env.ts`).
  */
@@ -72,6 +74,15 @@ const MIN_SECRET_LENGTH = 32;
 const MIN_DB_PASSWORD_LENGTH = 20;
 /** `TRUST_PROXY` entries that trust every hop. */
 const TRUST_EVERYONE: ReadonlySet<string> = new Set(['true', '*', '0.0.0.0/0', '::/0']);
+/**
+ * proxy-addr's named ranges that cover every private network (10/8, 172.16/12, 192.168/16, fc00::/7) or every
+ * link-local address (169.254/16, fe80::/10): any container on the host could then set X-Forwarded-For. `loopback`
+ * stays allowed.
+ */
+const TRUST_NAMED_WIDE: ReadonlySet<string> = new Set(['uniquelocal', 'linklocal']);
+/** The widest `TRUST_PROXY` ranges accepted: a /8 (IPv4) and a /16 (IPv6); the edge network is a /24. */
+const MIN_IPV4_PREFIX = 8;
+const MIN_IPV6_PREFIX = 16;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function isHttpsOrigin(value: string): boolean {
@@ -93,18 +104,72 @@ function databasePassword(value: string): string {
   }
 }
 
-/** https, or http on a local host (no dot, or `*.localhost`) when `staging`; no path, query or fragment either way. */
-function isS3Endpoint(value: string, staging: boolean): boolean {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return false;
+/**
+ * True when one `TRUST_PROXY` entry is an address range wider than /8 (IPv4) or /16 (IPv6), e.g. the split catch-all
+ * `0.0.0.0/1,128.0.0.0/1`. Netmask notation (`10.0.0.0/255.0.0.0`) and IPv4-mapped IPv6 ranges in any notation
+ * (`::ffff:0.0.0.0/96`, `::ffff:0:0/96`, `0:0:0:0:0:ffff:0.0.0.0/96`) count by their real width, as proxy-addr reads
+ * them; an entry with an unreadable address or prefix counts as wide (refused rather than guessed).
+ */
+function isWideRange(entry: string): boolean {
+  const slash = entry.indexOf('/');
+  if (slash < 0) return false;
+  const address = entry.slice(0, slash).toLowerCase();
+  const suffix = entry.slice(slash + 1);
+  const v6 = address.includes(':');
+  let prefix: number;
+  if (/^\d{1,3}$/.test(suffix)) prefix = Number(suffix);
+  else if (!v6 && /^\d{1,3}(\.\d{1,3}){3}$/.test(suffix)) prefix = netmaskBits(suffix);
+  else return true;
+  if (!v6) return prefix < MIN_IPV4_PREFIX;
+  const groups = ipv6Groups(address);
+  if (!groups) return true;
+  // proxy-addr turns an IPv4-mapped range (::ffff:0:0/96) into the IPv4 range of width prefix - 96.
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) return prefix - 96 < MIN_IPV4_PREFIX;
+  return prefix < MIN_IPV6_PREFIX;
+}
+
+/**
+ * The eight 16-bit groups of an IPv6 address in any notation (`::` shorthand, an embedded dotted IPv4 tail, zone ids
+ * are not accepted), or null when it is not one.
+ */
+function ipv6Groups(address: string): number[] | null {
+  let text = address;
+  const tail: number[] = [];
+  const dotted = /^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
+  if (dotted) {
+    const octets = dotted[2].split('.').map(Number);
+    if (octets.some((octet) => octet > 255)) return null;
+    tail.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
+    text = dotted[1].endsWith('::') ? dotted[1] : dotted[1].slice(0, -1);
   }
-  if (url.pathname !== '/' || url.search || url.hash || value.includes('?')) return false;
-  if (url.protocol === 'https:') return true;
-  const host = url.hostname.toLowerCase();
-  return staging && url.protocol === 'http:' && (!host.includes('.') || host.endsWith('.localhost'));
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (!part) return [];
+    const out: number[] = [];
+    for (const group of part.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      out.push(parseInt(group, 16));
+    }
+    return out;
+  };
+  const head = parse(halves[0]);
+  const rest = halves.length === 2 ? parse(halves[1]) : [];
+  if (!head || !rest) return null;
+  const given = head.length + rest.length + tail.length;
+  if (halves.length === 1) return given === 8 ? [...head, ...tail] : null;
+  if (given > 7) return null;
+  return [...head, ...Array.from({ length: 8 - given }, () => 0), ...rest, ...tail];
+}
+
+/** The leading one-bits of a dotted netmask (`255.0.0.0` → 8); -1 when it is not a netmask. */
+function netmaskBits(mask: string): number {
+  const bits = mask
+    .split('.')
+    .map((part) => Number(part).toString(2).padStart(8, '0'))
+    .join('');
+  if (bits.length !== 32 || !/^1*0*$/.test(bits)) return -1;
+  return bits.replace(/0+$/, '').length;
 }
 
 /** The problem of one variable, or null. */
@@ -121,8 +186,12 @@ function problemOf(rule: EnvRule, value: string, staging: boolean): string | nul
       if (!BASE64.test(value) || Buffer.from(value, 'base64').length !== 32) return 'must be 32 bytes, base64';
       return KNOWN_DEV_VALUES.has(value) ? 'is a development value' : null;
     case 'trust-proxy':
-      return value.split(',').some((part) => TRUST_EVERYONE.has(part.trim()))
-        ? 'must name the proxy, not trust everyone'
+      if (value.split(',').some((part) => TRUST_EVERYONE.has(part.trim())))
+        return 'must name the proxy, not trust everyone';
+      if (value.split(',').some((part) => TRUST_NAMED_WIDE.has(part.trim().toLowerCase())))
+        return 'must name the proxy, not the uniquelocal or linklocal ranges';
+      return value.split(',').some((part) => isWideRange(part.trim()))
+        ? 'must name the proxy, not a range wider than /8 (IPv4) or /16 (IPv6)'
         : null;
     case 'database-url':
       if (value.includes('hagalery_dev')) return 'uses the development password';
@@ -132,7 +201,9 @@ function problemOf(rule: EnvRule, value: string, staging: boolean): string | nul
     case 's3':
       return value === 's3' ? null : 'must be s3';
     case 's3-endpoint':
-      return isS3Endpoint(value, staging) ? null : 'must be an https URL (http only for a local host in staging)';
+      return isAllowedS3Endpoint(value, staging)
+        ? null
+        : 'must be an https URL (http only for a local host in staging)';
   }
 }
 

@@ -142,7 +142,12 @@ export class SystemStatusService {
     };
   }
 
-  /** Free and total bytes of the disk the app runs on; null when the platform cannot say. */
+  /**
+   * Free and total bytes of the disk the app runs on; null when the platform cannot say.
+   * `statfs('/')` inside the `api` container reads its overlay root, which is Docker's data-root filesystem: the
+   * same one that holds the Postgres volume, the images and the logs, so it is the disk that can fill. The server
+   * kit keeps Docker's data-root on the root disk; on staging the value must match `df -B1 /var/lib/docker` within 1%.
+   */
   private async disk(): Promise<Pick<SystemStatus, 'diskFreeBytes' | 'diskTotalBytes'>> {
     try {
       const s = await statfs('/');

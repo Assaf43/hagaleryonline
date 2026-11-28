@@ -87,16 +87,73 @@ describe('api-limits.caddy', () => {
 
   it('keeps key, events and window inside the zone block', () => {
     const body = block(text, 'zone webhooks {');
-    expect(body).toMatch(/key\s+\{remote_host\}/);
+    expect(body).toMatch(/key\s+\{client_ip\}/);
     expect(body).toMatch(/events\s+120/);
     expect(body).toMatch(/window\s+1m/);
   });
 
-  it('rate limits per remote host, 120 events a minute', () => {
+  it('rate limits per client IP (CF-Connecting-IP from a trusted range), 120 events a minute', () => {
     expect(text).toContain('rate_limit @signed_webhooks');
-    expect(text).toMatch(/key\s+\{remote_host\}/);
+    expect(text).toMatch(/key\s+\{client_ip\}/);
+    expect(text).not.toContain('{remote_host}');
     expect(text).toMatch(/events\s+120/);
     expect(text).toMatch(/window\s+1m/);
+  });
+});
+
+// Plain directives (no snippet wrapper), imported inside the site blocks; comments never count.
+const directives = (name) =>
+  read(name)
+    .split('\n')
+    .filter((line) => line.trim() && !line.trim().startsWith('#'))
+    .join('\n');
+
+describe('env-*.caddy', () => {
+  it('production adds nothing', () => {
+    expect(directives('env-production.caddy')).toBe('');
+  });
+
+  it('rehearsal: noindex, no gate', () => {
+    expect(directives('env-rehearsal.caddy')).toBe('header X-Robots-Tag "noindex, nofollow"');
+  });
+
+  it('staging: noindex, the login gate except /api/health and /robots.txt, the password not forwarded', () => {
+    const text = directives('env-staging.caddy');
+    expect(text).toMatch(/^header X-Robots-Tag "noindex, nofollow"$/m);
+    // On the raw request URI, so an encoded path that cleans to an exempt one stays gated.
+    expect(text).toContain(
+      '@gated not expression `{http.request.orig_uri}.matches("^/(api/health|robots\\\\.txt)(\\\\?.*)?$")`',
+    );
+    expect(text).not.toMatch(/@gated not path/);
+    // Quoted, so an empty user or hash is an empty token and Caddy refuses to start.
+    expect(block(text, 'basic_auth @gated {').trim()).toBe('"{$STAGING_AUTH_USER}" "{$STAGING_AUTH_HASH}"');
+    expect(text).toMatch(/^request_header @gated -Authorization$/m);
+    expect(text).not.toMatch(/\$2[aby]\$/);
+  });
+});
+
+describe('tls-*.caddy', () => {
+  it('origin uses the mounted Cloudflare Origin CA certificate, auto adds nothing', () => {
+    expect(directives('tls-origin.caddy')).toBe('tls /etc/caddy/origin/cert.pem /etc/caddy/origin/key.pem');
+    expect(directives('tls-auto.caddy')).toBe('');
+  });
+});
+
+describe('cloudflare-ips.txt', () => {
+  const text = readFileSync(join(dir, '..', 'cloudflare-ips.txt'), 'utf8');
+  const ranges = text.split('\n').filter((line) => line.trim() && !line.startsWith('#'));
+
+  it('has a dated header and one CIDR per line, IPv4 and IPv6, never a catch-all', () => {
+    expect(text).toMatch(
+      /^# .*fetched \d{4}-\d{2}-\d{2} from https:\/\/www\.cloudflare\.com\/ips-v4 and https:\/\/www\.cloudflare\.com\/ips-v6/,
+    );
+    expect(text).not.toContain('\r');
+    for (const range of ranges) expect(range).toMatch(/^(\d{1,3}(\.\d{1,3}){3}\/\d{1,2}|[0-9a-f:]+::\/\d{1,3})$/);
+    expect(ranges.filter((r) => r.includes('.')).length).toBeGreaterThan(5);
+    expect(ranges.filter((r) => r.includes(':')).length).toBeGreaterThan(3);
+    expect(new Set(ranges).size).toBe(ranges.length);
+    expect(ranges).not.toContain('0.0.0.0/0');
+    expect(ranges).not.toContain('::/0');
   });
 });
 

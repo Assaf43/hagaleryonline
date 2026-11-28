@@ -1,0 +1,3 @@
+# CADDY_TLS=origin: the Cloudflare Origin CA certificate, mounted read-only at /etc/caddy/origin.
+# Imported inside both site blocks of the Caddyfile.
+tls /etc/caddy/origin/cert.pem /etc/caddy/origin/key.pem

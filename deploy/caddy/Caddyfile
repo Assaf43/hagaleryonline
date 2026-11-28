@@ -2,11 +2,24 @@
 #   {$SITE_HOST}  - the storefront: /api -> api:3000, /media -> the public S3 bucket, the rest -> web:4000
 #   {$ADMIN_HOST} - the admin: /api -> api:3000, /media -> the public S3 bucket, the rest -> /srv/admin
 # Env: SITE_HOST, ADMIN_HOST, S3_PUBLIC_BUCKET, S3_PUBLIC_UPSTREAM (path-style S3 endpoint),
-# CADDY_GLOBAL_OPTIONS (the rehearsal sets local_certs; 9c sets its ACME / Cloudflare options).
-# The snippets admin_headers and webhook_limits come from the *.caddy files next to this one.
+# CADDY_GLOBAL_OPTIONS (the rehearsal sets local_certs), CF_TRUSTED_RANGES (space-separated CIDRs: Cloudflare's
+# ranges from deploy/cloudflare-ips.txt; the rehearsal sets a range that trusts nothing real),
+# CADDY_ENV (production | staging | rehearsal -> env-<name>.caddy), CADDY_TLS (origin | auto -> tls-<name>.caddy),
+# STAGING_AUTH_USER / STAGING_AUTH_HASH (staging gate only, a bcrypt hash from `caddy hash-password`).
+# The snippets admin_headers and webhook_limits come from admin-headers.caddy and api-limits.caddy.
 {
 	# rate_limit comes from the caddy-ratelimit plugin and has no default position.
 	order rate_limit before basic_auth
+
+	# Behind Cloudflare (decision 106): the client IP is CF-Connecting-IP, but only when the connection comes
+	# from one of Cloudflare's ranges. From any other source the header is ignored and the peer address is the
+	# client, so nobody can pick their own IP (throttles, logs) by sending the header. {client_ip} below is the
+	# result; it goes to the upstreams as X-Forwarded-For and keys the webhook rate limit.
+	servers {
+		trusted_proxies static {$CF_TRUSTED_RANGES}
+		client_ip_headers CF-Connecting-IP
+		trusted_proxies_strict
+	}
 
 	# Every non-access log (errors such as "upstream down", TLS, startup) goes through the same filter
 	# as the access log: the http.log.error entries carry the request, and its query (?t=, ?preview=),
@@ -27,15 +40,18 @@
 	{$CADDY_GLOBAL_OPTIONS}
 }
 
-import *.caddy
+# Only the two snippet files: env-*.caddy and tls-*.caddy hold plain directives and are imported inside
+# the site blocks below, never at the top level.
+import admin-headers.caddy
+import api-limits.caddy
 
-# Compression, HSTS (no includeSubDomains / preload until 9c decides), no Server header, and an
-# access log without query strings (tokens, preview links) or credentials.
+# Compression, HSTS (includeSubDomains, no preload), no Server header, and an access log without query
+# strings (tokens, preview links) or credentials.
 (common) {
 	encode zstd gzip
 
 	header {
-		Strict-Transport-Security "max-age=31536000"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
 
@@ -60,7 +76,7 @@ import *.caddy
 	handle_errors {
 		log_append error_message {err.message}
 		header {
-			Strict-Transport-Security "max-age=31536000"
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
 			-Server
 		}
 	}
@@ -106,6 +122,9 @@ import *.caddy
 				header_up Host {upstream_hostport}
 				header_up -Authorization
 				header_up -Cookie
+				# No visitor IP to the object store.
+				header_up -X-Forwarded-For
+				header_up -CF-Connecting-IP
 				header_down -X-Amz-*
 				header_down -X-Ratelimit-*
 				header_down -X-Xss-Protection
@@ -116,26 +135,62 @@ import *.caddy
 }
 
 {$SITE_HOST} {
+	# The environment (staging gate, noindex) and the TLS source. An empty or missing CADDY_ENV / CADDY_TLS
+	# names a file that does not exist (env-.caddy), and Caddy refuses to start.
+	import env-{$CADDY_ENV}.caddy
+	import tls-{$CADDY_TLS}.caddy
 	import common
 	import blocked
 	import webhook_limits
 	import media
 
+	# Body limits from the API's own (plus margin): damaged-product photos are up to 5 x 10 MiB in one form
+	# (52 428 800 bytes plus multipart overhead; Caddy's MB is 1000 x 1000 bytes, so 55MB), every other
+	# request is JSON. The two matchers never overlap, because nested request_body limits do not replace
+	# each other: the smaller one always wins. They match the raw request URI, not the cleaned path, so an
+	# encoded path that only cleans to the damaged route (/x/..%2fapi/support/damaged) keeps 1MB.
+	# The webhooks keep their 64KB (webhook_limits).
+	@damaged expression `{http.request.orig_uri}.matches("^/api/support/damaged(\\?.*)?$")`
+	@not_damaged not expression `{http.request.orig_uri}.matches("^/api/support/damaged(\\?.*)?$")`
+	request_body @damaged {
+		max_size 55MB
+	}
+	request_body @not_damaged {
+		max_size 1MB
+	}
+
 	handle /api/* {
-		reverse_proxy api:3000
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Host {host}
+			header_up -CF-Connecting-IP
+		}
 	}
 
 	# The storefront sets its own security headers and CSP (per-request nonce).
 	handle {
-		reverse_proxy web:4000
+		reverse_proxy web:4000 {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Host {host}
+			header_up -CF-Connecting-IP
+		}
 	}
 }
 
 {$ADMIN_HOST} {
+	# The environment (staging gate, noindex) and the TLS source. An empty or missing CADDY_ENV / CADDY_TLS
+	# names a file that does not exist (env-.caddy), and Caddy refuses to start.
+	import env-{$CADDY_ENV}.caddy
+	import tls-{$CADDY_TLS}.caddy
 	import common
 	import blocked
 	import admin_headers
 	import media
+
+	# Product and content photos are up to 15 MB (IMAGE_UPLOAD / CONTENT_IMAGE.maxBytes), Excel 5 MB.
+	request_body {
+		max_size 16MB
+	}
 
 	# The signed webhooks live only on the site host.
 	@webhooks path /api/payments/webhook /api/marketing/webhook
@@ -144,7 +199,11 @@ import *.caddy
 	}
 
 	handle /api/* {
-		reverse_proxy api:3000
+		reverse_proxy api:3000 {
+			header_up X-Forwarded-For {client_ip}
+			header_up X-Forwarded-Host {host}
+			header_up -CF-Connecting-IP
+		}
 	}
 
 	handle {

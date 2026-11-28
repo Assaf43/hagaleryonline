@@ -1,0 +1,2 @@
+# CADDY_TLS=auto: Caddy's default certificates (ACME), or local_certs from CADDY_GLOBAL_OPTIONS in the
+# rehearsal. Imported inside both site blocks of the Caddyfile; intentionally holds no directive.

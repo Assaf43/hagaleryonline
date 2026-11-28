@@ -1,0 +1,2 @@
+# Local rehearsal (CADDY_ENV=rehearsal): never indexed, no login gate. Imported inside both site blocks.
+header X-Robots-Tag "noindex, nofollow"

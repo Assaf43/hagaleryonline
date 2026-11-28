@@ -1668,3 +1668,11 @@ model BackupRun {
   @@index([kind, startedAt(sort: Desc)])
   @@map("backup_runs")
 }
+
+/// Small persisted markers of the system screen / alerts (e.g. when the missing-backup clock started).
+model SystemMark {
+  key String   @id
+  at  DateTime @db.Timestamptz(3)
+
+  @@map("system_marks")
+}

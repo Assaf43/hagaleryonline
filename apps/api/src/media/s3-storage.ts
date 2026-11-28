@@ -37,6 +37,25 @@ export function contentTypeFor(key: string): string {
   return CONTENT_TYPES[extension] ?? 'application/octet-stream';
 }
 
+/**
+ * The endpoint rule of production object storage (the API's media buckets and the backup bucket): an `https:` URL, or
+ * `http:` only when `staging` and the host is local (no dot, or `*.localhost`, e.g. the rehearsal's
+ * `http://minio:9000`); no path, query or fragment either way. Used by the production checks of the API
+ * (`config/production-env.ts`) and the backup tool (`backup/backup-common.ts`).
+ */
+export function isAllowedS3Endpoint(value: string, staging: boolean): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.pathname !== '/' || url.search || url.hash || value.includes('?')) return false;
+  if (url.protocol === 'https:') return true;
+  const host = url.hostname.toLowerCase();
+  return staging && url.protocol === 'http:' && (!host.includes('.') || host.endsWith('.localhost'));
+}
+
 /** Request timeout for every call (real adapters must not hang). */
 const REQUEST_TIMEOUT_MS = 10_000;
 const DELETE_BATCH = 1000;

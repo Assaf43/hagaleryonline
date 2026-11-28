@@ -77,7 +77,9 @@ ARG APP_VERSION=dev
 LABEL org.opencontainers.image.revision=${APP_VERSION} \
   org.opencontainers.image.title="NESTO caddy"
 COPY --from=caddy-builder /usr/bin/caddy /usr/bin/caddy
-COPY deploy/caddy/*.caddy deploy/caddy/Caddyfile /etc/caddy/
+# The Caddyfile, its two snippet files and the env-<CADDY_ENV>.caddy / tls-<CADDY_TLS>.caddy switch files.
+# The Origin CA certificate is never baked in: compose mounts it at /etc/caddy/origin.
+COPY deploy/caddy/Caddyfile deploy/caddy/admin-headers.caddy deploy/caddy/api-limits.caddy deploy/caddy/env-*.caddy deploy/caddy/tls-*.caddy /etc/caddy/
 COPY --from=build /app/apps/admin/dist/admin/browser /srv/admin
 
 # ---------- backup: app + pg_dump 18 + age ----------

@@ -107,6 +107,13 @@ export function buildRehearsalEnv(opts) {
     ['ADMIN_HOST', 'admin.nesto.localhost'],
     ['S3_PUBLIC_UPSTREAM', minio],
     ['CADDY_GLOBAL_OPTIONS', 'local_certs'],
+    // Checked by deploy/check-env.mjs: the rehearsal has no staging login gate, so both auth values stay empty.
+    ['CADDY_ENV', 'rehearsal'],
+    // Caddy issues its own local certificate; the "Cloudflare" in front of the rehearsal is this machine only.
+    ['CADDY_TLS', 'auto'],
+    ['CF_TRUSTED_RANGES', '127.0.0.1/32'],
+    ['STAGING_AUTH_USER', ''],
+    ['STAGING_AUTH_HASH', ''],
     // backup
     ['BACKUP_AGE_RECIPIENT', ageRecipient],
     ['BACKUP_AT', '02:30'],
